@@ -48,6 +48,7 @@
 #include <JavaScriptCore/InspectorFrontendRouter.h>
 #include <JavaScriptCore/JSLock.h>
 #include <JavaScriptCore/Strong.h>
+#include <wtf/CheckedPtr.h>
 #include <wtf/Stopwatch.h>
 #include <wtf/TZoneMallocInlines.h>
 
@@ -60,10 +61,10 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(FrameInspectorController);
 
 FrameInspectorController::FrameInspectorController(LocalFrame& frame)
     : m_frame(frame)
-    , m_instrumentingAgents(InstrumentingAgents::create(*this, frame.protectedPage()->protectedInspectorController()->instrumentingAgents()))
-    , m_injectedScriptManager(makeUniqueRef<WebInjectedScriptManager>(*this, WebInjectedScriptHost::create()))
+    , m_instrumentingAgents(InstrumentingAgents::create(*this, protect(frame.page())->protectedInspectorController()->instrumentingAgents()))
+    , m_injectedScriptManager(protect(frame.page())->protectedInspectorController()->injectedScriptManager())
     , m_frontendRouter(FrontendRouter::create())
-    , m_backendDispatcher(BackendDispatcher::create(m_frontendRouter.copyRef(), &frame.protectedPage()->protectedInspectorController()->backendDispatcher()))
+    , m_backendDispatcher(BackendDispatcher::create(m_frontendRouter.copyRef(), &protect(frame.page())->protectedInspectorController()->backendDispatcher()))
     , m_executionStopwatch(Stopwatch::create())
 {
 }
@@ -87,7 +88,7 @@ FrameAgentContext FrameInspectorController::frameAgentContext()
 {
     AgentContext baseContext = {
         *this,
-        m_injectedScriptManager,
+        m_injectedScriptManager.get(),
         m_frontendRouter.get(),
         m_backendDispatcher
     };
@@ -107,10 +108,6 @@ void FrameInspectorController::createLazyAgents()
         return;
 
     m_didCreateLazyAgents = true;
-
-    m_injectedScriptManager->connect();
-    if (auto& commandLineAPIHost = m_injectedScriptManager->commandLineAPIHost())
-        commandLineAPIHost->init(m_instrumentingAgents.copyRef());
 }
 
 void FrameInspectorController::connectFrontend(Inspector::FrontendChannel& frontendChannel, bool isAutomaticInspection, bool immediatelyPause)
@@ -128,8 +125,9 @@ void FrameInspectorController::connectFrontend(Inspector::FrontendChannel& front
     InspectorInstrumentation::frontendCreated();
 
     if (connectedFirstFrontend) {
-        m_agents.didCreateFrontendAndBackend();
         InspectorInstrumentation::registerInstrumentingAgents(m_instrumentingAgents.get());
+        m_injectedScriptManager->addClient();
+        m_agents.didCreateFrontendAndBackend();
     }
 }
 
@@ -140,9 +138,9 @@ void FrameInspectorController::disconnectFrontend(Inspector::FrontendChannel& fr
 
     bool disconnectedLastFrontend = !m_frontendRouter->hasFrontends();
     if (disconnectedLastFrontend) {
-        InspectorInstrumentation::unregisterInstrumentingAgents(m_instrumentingAgents.get());
         m_agents.willDestroyFrontendAndBackend(DisconnectReason::InspectorDestroyed);
-        m_injectedScriptManager->discardInjectedScripts();
+        m_injectedScriptManager->removeClient();
+        InspectorInstrumentation::unregisterInstrumentingAgents(m_instrumentingAgents.get());
     }
 }
 
@@ -157,7 +155,7 @@ void FrameInspectorController::inspectedFrameDestroyed()
     InspectorInstrumentation::unregisterInstrumentingAgents(m_instrumentingAgents.get());
     m_agents.willDestroyFrontendAndBackend(DisconnectReason::InspectedTargetDestroyed);
 
-    m_injectedScriptManager->disconnect();
+    m_injectedScriptManager->removeClient();
     m_frontendRouter->disconnectAllFrontends();
 
     m_agents.discardValues();

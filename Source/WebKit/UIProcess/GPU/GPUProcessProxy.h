@@ -154,10 +154,6 @@ public:
     bool isMetalShaderValidationEnabledForTesting() const { return m_isMetalShaderValidationEnabledForTesting; }
 #endif
 
-#if ENABLE(VIDEO)
-    void requestBitmapImageForCurrentTime(WebCore::ProcessIdentifier, WebCore::MediaPlayerIdentifier, CompletionHandler<void(std::optional<WebCore::ShareableBitmap::Handle>&&)>&&);
-#endif
-
 #if PLATFORM(COCOA) && ENABLE(REMOTE_INSPECTOR)
     bool hasSentGPUToolsSandboxExtensions() const { return m_hasSentGPUToolsSandboxExtensions; }
     static Vector<SandboxExtensionHandle> createGPUToolsSandboxExtensionHandlesIfNeeded();
@@ -220,7 +216,7 @@ private:
     void didCreateContextForVisibilityPropagation(WebPageProxyIdentifier, WebCore::PageIdentifier, LayerHostingContextID);
 #endif
 
-    void setMediaCodecCapabilities(GPUProcessMediaCodecCapabilities&& mediaCodecCapabilities) { s_gpuProcessMediaCodecCapabilities = WTFMove(mediaCodecCapabilities); }
+    void setMediaCodecCapabilities(GPUProcessMediaCodecCapabilities&& mediaCodecCapabilities) { s_gpuProcessMediaCodecCapabilities = WTF::move(mediaCodecCapabilities); }
 
 #if ENABLE(MEDIA_STREAM)
     void voiceActivityDetected();

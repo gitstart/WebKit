@@ -51,16 +51,14 @@ class AuthenticationChallengeProxy : public API::ObjectImpl<API::Object::Type::A
 public:
     static Ref<AuthenticationChallengeProxy> create(WebCore::AuthenticationChallenge&& authenticationChallenge, AuthenticationChallengeIdentifier challengeID, Ref<IPC::Connection>&& connection, WeakPtrSecKeyProxyStore&& secKeyProxyStore)
     {
-        return adoptRef(*new AuthenticationChallengeProxy(WTFMove(authenticationChallenge), challengeID, WTFMove(connection), WTFMove(secKeyProxyStore)));
+        return adoptRef(*new AuthenticationChallengeProxy(WTF::move(authenticationChallenge), challengeID, WTF::move(connection), WTF::move(secKeyProxyStore)));
     }
 
     virtual ~AuthenticationChallengeProxy();
 
     WebCredential* proposedCredential() const;
-    RefPtr<WebCredential> protectedProposedCredential() const;
 
     WebProtectionSpace* protectionSpace() const;
-    RefPtr<WebProtectionSpace> protectedProtectionSpace() const;
 
     AuthenticationDecisionListener& listener() const { return m_listener.get(); }
     const WebCore::AuthenticationChallenge& core() { return m_coreAuthenticationChallenge; }

@@ -421,12 +421,6 @@
 #define UNUSED_VARIADIC_PARAMS __attribute__((unused))
 #endif
 
-/* WARN_UNUSED_RETURN */
-
-#if !defined(WARN_UNUSED_RETURN)
-#define WARN_UNUSED_RETURN __attribute__((__warn_unused_result__))
-#endif
-
 /* DEBUGGER_ANNOTATION_MARKER */
 
 #if !defined(DEBUGGER_ANNOTATION_MARKER) && COMPILER(GCC)
@@ -510,7 +504,7 @@
 #endif
 #define IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_END }
 
-#if COMPILER(APPLE_CLANG) || defined(CLANG_WEBKIT_BRANCH) || !defined __clang_major__ || __clang_major__ >= 19
+#if COMPILER(APPLE_CLANG) || defined(CLANG_WEBKIT_BRANCH) || (defined(__clang__) && (!defined __clang_major__ || __clang_major__ >= 19))
 #define IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE_ON_MEMBER(...) IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE(__VA_ARGS__)
 #define IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE_ON_CLASS(...) IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE(__VA_ARGS__)
 #define IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE_ON_FUNCTION(...) IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE(__VA_ARGS__)
@@ -562,7 +556,7 @@
 #define SUPPRESS_UNCOUNTED_MEMBER \
     IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE_ON_MEMBER("webkit.NoUncountedMemberChecker")
 
-#if COMPILER(APPLE_CLANG) || defined(CLANG_WEBKIT_BRANCH) || !defined __clang_major__ || __clang_major__ >= 19
+#if COMPILER(APPLE_CLANG) || defined(CLANG_WEBKIT_BRANCH) || (defined(__clang__) && (!defined __clang_major__ || __clang_major__ >= 19))
 #define SUPPRESS_UNCOUNTED_LAMBDA_CAPTURE \
     IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE("webkit.UncountedLambdaCapturesChecker")
 #define SUPPRESS_UNRETAINED_LOCAL \
@@ -573,12 +567,14 @@
     IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE("alpha.webkit.NoUnretainedMemberChecker")
 #define SUPPRESS_RETAINPTR_CTOR_ADOPT \
     IGNORE_CLANG_STATIC_ANALYZER_WARNINGS_ATTRIBUTE("alpha.webkit.RetainPtrCtorAdoptChecker")
+#define CLANG_POINTER_CONVERSION [[clang::annotate_type("webkit.pointerconversion")]]
 #else
 #define SUPPRESS_UNCOUNTED_LAMBDA_CAPTURE
 #define SUPPRESS_UNRETAINED_LOCAL
 #define SUPPRESS_UNRETAINED_ARG
 #define SUPPRESS_UNRETAINED_MEMBER
 #define SUPPRESS_RETAINPTR_CTOR_ADOPT
+#define CLANG_POINTER_CONVERSION
 #endif
 
 // To suppress webkit.RefCntblBaseVirtualDtor, use NoVirtualDestructorBase instead.
@@ -653,7 +649,8 @@
     _Pragma("clang diagnostic push") \
     _Pragma("clang diagnostic ignored \"-Wunknown-warning-option\"") \
     _Pragma("clang diagnostic ignored \"-Wunsafe-buffer-usage\"") \
-    _Pragma("clang diagnostic ignored \"-Wunsafe-buffer-usage-in-libc-call\"")
+    _Pragma("clang diagnostic ignored \"-Wunsafe-buffer-usage-in-libc-call\"") \
+    _Pragma("clang diagnostic ignored \"-Wunsafe-buffer-usage-in-format-attr-call\"")
 
 #define WTF_ALLOW_UNSAFE_BUFFER_USAGE_END \
     _Pragma("clang diagnostic pop")

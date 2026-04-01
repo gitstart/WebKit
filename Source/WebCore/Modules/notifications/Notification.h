@@ -37,6 +37,7 @@
 #include <WebCore/EventTarget.h>
 #include <WebCore/EventTargetInterfaces.h>
 #include <WebCore/NotificationDirection.h>
+#include <WebCore/NotificationOptions.h>
 #include <WebCore/NotificationPayload.h>
 #include <WebCore/NotificationPermission.h>
 #include <WebCore/NotificationResources.h>
@@ -58,25 +59,12 @@ class NotificationResourcesLoader;
 struct NotificationData;
 
 class Notification final : public RefCounted<Notification>, public ActiveDOMObject, public EventTarget {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED_EXPORT(Notification, WEBCORE_EXPORT);
+    WTF_MAKE_TZONE_ALLOCATED_EXPORT(Notification, WEBCORE_EXPORT);
 public:
     using Permission = NotificationPermission;
     using Direction = NotificationDirection;
+    using Options = NotificationOptions;
 
-    struct Options {
-        Direction dir;
-        String lang;
-        String body;
-        String tag;
-        String icon;
-        JSC::JSValue data;
-        RefPtr<SerializedScriptValue> serializedData;
-        RefPtr<JSON::Value> jsonData;
-        std::optional<bool> silent;
-#if ENABLE(DECLARATIVE_WEB_PUSH)
-        String navigate;
-#endif
-    };
     // For JS constructor only.
     static ExceptionOr<Ref<Notification>> create(ScriptExecutionContext&, String&& title, Options&&);
 
@@ -182,5 +170,7 @@ private:
 };
 
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_EVENTTARGET(Notification)
 
 #endif // ENABLE(NOTIFICATIONS)

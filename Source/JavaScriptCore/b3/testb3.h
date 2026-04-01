@@ -562,6 +562,20 @@ inline float modelLoad<float, float>(float value) { return value; }
 template<>
 inline double modelLoad<double, double>(double value) { return value; }
 
+inline std::string toHex(uint32_t number)
+{
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+    static constexpr std::array<char, 16> hexDigits { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
+    std::array<char, 128> buffer;
+    size_t startIndex = buffer.size();
+    do {
+        buffer[--startIndex] = hexDigits[number & 0xF];
+        number >>= 4;
+    } while (number);
+    return std::string(buffer.data() + startIndex, buffer.data() + buffer.size());
+    WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
+}
+
 struct TestConfig {
     enum class Mode {
         ListTests,
@@ -1143,7 +1157,7 @@ void testCallSimpleDouble(double, double);
 void testCallSimpleFloat(float, float);
 void testCallFunctionWithHellaDoubleArguments();
 void testCallFunctionWithHellaFloatArguments();
-void testLinearScanWithCalleeOnStack();
+void testForcedSpillCalleeOnStack();
 void testChillDiv(int num, int den, int res);
 void testChillDivTwice(int num1, int den1, int num2, int den2, int res);
 void testChillDiv64(int64_t num, int64_t den, int64_t res);
@@ -1406,5 +1420,34 @@ void testMemoryFill();
 void testMemoryFillConstant();
 
 void testLoadImmutable();
+
+// ARM64 conditional compare (ccmp) tests
+void testCCmpAnd32(int32_t, int32_t, int32_t, int32_t);
+void testCCmpAnd64(int64_t, int64_t, int64_t, int64_t);
+void testCCmpOr32(int32_t, int32_t, int32_t, int32_t);
+void testCCmpOr64(int64_t, int64_t, int64_t, int64_t);
+// 3-comparison chain tests
+void testCCmpAndAnd32(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+void testCCmpOrOr32(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+void testCCmpAndOr32(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+// Tests for ccmn (negative immediates) and large immediates
+void testCCmnAnd32WithNegativeImm(int32_t, int32_t);
+void testCCmnAnd64WithNegativeImm(int64_t, int64_t);
+void testCCmpWithLargePositiveImm(int32_t, int32_t);
+void testCCmpWithLargeNegativeImm(int32_t, int32_t);
+// Tests for ccmp optimizations
+void testCCmpSmartOperandOrdering32(int32_t, int32_t);
+void testCCmpSmartOperandOrdering64(int64_t, int64_t);
+void testCCmpOperandCommutation32(int32_t, int32_t);
+void testCCmpOperandCommutation64(int64_t, int64_t);
+void testCCmpCombinedOptimizations(int32_t, int32_t);
+void testCCmpZeroRegisterOptimization32(int32_t, int32_t);
+void testCCmpZeroRegisterOptimization64(int64_t, int64_t);
+void testCCmpMixedAndOr32(int32_t, int32_t, int32_t);
+void testCCmpMixedOrAnd32(int32_t, int32_t, int32_t);
+void testCCmpNegatedAnd32(int32_t, int32_t);
+void testCCmpNegatedOr32(int32_t, int32_t);
+void testCCmpMixedWidth32And64(int32_t, int64_t, int32_t);
+void testCCmpMixedWidth64And32(int64_t, int32_t);
 
 #endif // ENABLE(B3_JIT)

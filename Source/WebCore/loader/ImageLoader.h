@@ -68,16 +68,14 @@ public:
 
     void elementDidMoveToNewDocument(Document&);
 
-    Element& element() { return m_element.get(); }
-    const Element& element() const { return m_element.get(); }
-    Ref<Element> protectedElement() const { return m_element.get(); }
+    Element& element() { return m_element; }
+    const Element& element() const { return m_element; }
 
     bool shouldIgnoreCandidateWhenLoadingFromArchive(const ImageCandidate&) const;
 
     bool imageComplete() const { return m_imageComplete; }
 
     CachedImage* image() const { return m_image.get(); }
-    CachedResourceHandle<CachedImage> protectedImage() const;
     void clearImage(); // Cancels pending load events, and doesn't dispatch new ones.
     
     size_t pendingDecodePromisesCountForTesting() const { return m_decodingPromises.size(); }
@@ -99,7 +97,6 @@ public:
     bool isDeferred() const { return m_lazyImageLoadState == LazyImageLoadState::Deferred || m_lazyImageLoadState == LazyImageLoadState::LoadImmediately; }
 
     Document& document() { return m_element->document(); }
-    Ref<Document> protectedDocument() { return m_element->document(); }
 
 protected:
     explicit ImageLoader(Element&);
@@ -140,7 +137,7 @@ private:
     RefPtr<Element> m_protectedElement;
     AtomString m_failedLoadURL;
     AtomString m_pendingURL;
-    Vector<RefPtr<DeferredPromise>> m_decodingPromises;
+    Vector<Ref<DeferredPromise>> m_decodingPromises;
     bool m_hasPendingBeforeLoadEvent : 1;
     bool m_hasPendingLoadEvent : 1;
     bool m_hasPendingErrorEvent : 1;

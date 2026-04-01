@@ -91,8 +91,6 @@
 #include "JSIteratorHelper.h"
 #include "JSLexicalEnvironment.h"
 #include "JSMapIterator.h"
-#include "JSPromiseAllContext.h"
-#include "JSPromiseAllGlobalContext.h"
 #include "JSPromiseReaction.h"
 #include "JSRegExpStringIterator.h"
 #include "JSSetIterator.h"
@@ -160,6 +158,9 @@ JSC_DEFINE_NOEXCEPT_JIT_OPERATION_WITH_ATTRIBUTES(ftlUnreachable, NO_RETURN_DUE_
 
 template<typename OperationResultType>
 concept isB3SupportedExceptionOperationResult = isExceptionOperationResult<OperationResultType> && !std::is_floating_point_v<typename OperationResultType::ResultType>;
+
+template<typename T>
+concept isFunction = std::is_function_v<std::remove_pointer_t<T>>;
 
 class LowerDFGToB3 {
     WTF_MAKE_NONCOPYABLE(LowerDFGToB3);
@@ -363,7 +364,7 @@ public:
                 FixedVector<DFG::FlushFormat> argumentFlushFormats(codeBlock()->numParameters());
                 for (unsigned i = 0; i < codeBlock()->numParameters(); ++i)
                     argumentFlushFormats[i] = m_graph.m_argumentFormats[0][i];
-                jitCode->setArgumentFlushFormats(WTFMove(argumentFlushFormats));
+                jitCode->setArgumentFlushFormats(WTF::move(argumentFlushFormats));
             } else {
                 for (unsigned i = codeBlock()->numParameters(); i--;) {
                     VirtualRegister operand = virtualRegisterForArgumentIncludingThis(i);
@@ -460,6 +461,9 @@ private:
                 case NodeResultJS:
                     type = Int64;
                     break;
+                case NodeResultStorage:
+                    type = pointerType();
+                    break;
                 default:
                     DFG_CRASH(m_graph, node, "Bad Phi node result type");
                     break;
@@ -536,7 +540,7 @@ private:
                     jit.breakpoint();
                 });
             } else
-                m_out.store(m_out.int32Zero, m_out.absolute(&vm().didEnterVM));
+                m_out.store32As8(m_out.int32Zero, m_out.absolute(&vm().didEnterVM));
         }
 
         unsigned codeGeneratedNodes = 0;
@@ -1159,6 +1163,9 @@ private:
         case DefineDataProperty:
             compileDefineDataProperty();
             break;
+        case ObjectDefineProperty:
+            compileObjectDefineProperty();
+            break;
         case DefineAccessorProperty:
             compileDefineAccessorProperty();
             break;
@@ -1219,12 +1226,6 @@ private:
             break;
         case NewObject:
             compileNewObject();
-            break;
-        case NewGenerator:
-            compileNewGenerator();
-            break;
-        case NewAsyncGenerator:
-            compileNewAsyncGenerator();
             break;
         case NewInternalFieldObject:
             compileNewInternalFieldObject();
@@ -1359,6 +1360,9 @@ private:
             break;
         case StringIndexOf:
             compileStringIndexOf();
+            break;
+        case StringStartsWith:
+            compileStringStartsWith();
             break;
         case GetByOffset:
         case GetGetterSetterByOffset:
@@ -1650,6 +1654,9 @@ private:
             break;
         case ExtractValueFromWeakMapGet:
             compileExtractValueFromWeakMapGet();
+            break;
+        case MapOrSetSize:
+            compileMapOrSetSize();
             break;
         case SetAdd:
             compileSetAdd();
@@ -1969,7 +1976,7 @@ private:
                     jit.breakpoint();
                 });
             } else
-                m_out.store(m_out.int32Zero, m_out.absolute(&vm().didEnterVM));
+                m_out.store32As8(m_out.int32Zero, m_out.absolute(&vm().didEnterVM));
         }
 
         if (m_node->isTerminal())
@@ -2018,6 +2025,10 @@ private:
             upsilonValue = lowJSValue(m_node->child1());
             ASSERT(phi->result() == NodeResultJS);
             break;
+        case KnownStorageUse:
+            upsilonValue = lowStorage(m_node->child1());
+            ASSERT(phi->result() == NodeResultStorage);
+            break;
         default:
             DFG_CRASH(m_graph, m_node, "Bad use kind");
             break;
@@ -2032,7 +2043,7 @@ private:
         LValue phi = m_phis.get(m_node);
         m_out.m_block->append(phi);
 
-        switch (m_node->flags() & NodeResultMask) {
+        switch (m_node->result()) {
         case NodeResultDouble:
             setDouble(phi);
             break;
@@ -2047,6 +2058,9 @@ private:
             break;
         case NodeResultJS:
             setJSValue(phi);
+            break;
+        case NodeResultStorage:
+            setStorage(phi);
             break;
         default:
             DFG_CRASH(m_graph, m_node, "Bad result type");
@@ -2703,16 +2717,20 @@ private:
         compileBinaryMathIC<JITSubGenerator>(arithProfile, repatchingFunction, nonRepatchingFunction);
     }
 
-    template <typename Generator, typename = typename std::enable_if<std::is_same<Generator, JITAddGenerator>::value>::type>
+    template<typename Generator>
+        requires std::same_as<Generator, JITAddGenerator>
     static JITAddIC* addMathIC(DFG::CommonData& common, BinaryArithProfile* profile) { return common.addJITAddIC(profile); }
 
-    template <typename Generator, typename = typename std::enable_if<std::is_same<Generator, JITMulGenerator>::value>::type>
+    template<typename Generator>
+        requires std::same_as<Generator, JITMulGenerator>
     static JITMulIC* addMathIC(DFG::CommonData& common, BinaryArithProfile* profile) { return common.addJITMulIC(profile); }
 
-    template <typename Generator, typename = typename std::enable_if<std::is_same<Generator, JITNegGenerator>::value>::type>
+    template<typename Generator>
+        requires std::same_as<Generator, JITNegGenerator>
     static JITNegIC* addMathIC(DFG::CommonData& common, UnaryArithProfile* profile) { return common.addJITNegIC(profile); }
 
-    template <typename Generator, typename = typename std::enable_if<std::is_same<Generator, JITSubGenerator>::value>::type>
+    template<typename Generator>
+        requires std::same_as<Generator, JITSubGenerator>
     static JITSubIC* addMathIC(DFG::CommonData& common, BinaryArithProfile* profile) { return common.addJITSubIC(profile); }
 
     void compileValueMul()
@@ -2757,8 +2775,7 @@ private:
         compileBinaryMathIC<JITMulGenerator>(arithProfile, repatchingFunction, nonRepatchingFunction);
     }
 
-    template <typename Generator, typename Func1, typename Func2,
-        typename = std::enable_if_t<std::is_function<typename std::remove_pointer<Func1>::type>::value && std::is_function<typename std::remove_pointer<Func2>::type>::value>>
+    template<typename Generator, isFunction Func1, isFunction Func2>
     void compileUnaryMathIC(UnaryArithProfile* arithProfile, Func1 repatchingFunction, Func2 nonRepatchingFunction)
     {
         Node* node = m_node;
@@ -2844,8 +2861,7 @@ private:
         setJSValue(patchpoint);
     }
 
-    template <typename Generator, typename Func1, typename Func2,
-        typename = std::enable_if_t<std::is_function<typename std::remove_pointer<Func1>::type>::value && std::is_function<typename std::remove_pointer<Func2>::type>::value>>
+    template<typename Generator, isFunction Func1, isFunction Func2>
     void compileBinaryMathIC(BinaryArithProfile* arithProfile, Func1 repatchingFunction, Func2 nonRepatchingFunction)
     {
         Node* node = m_node;
@@ -5073,7 +5089,7 @@ private:
 
             CCallHelpers::JumpList slow, reallocating;
             std::tie(slow, reallocating) = jit.storeMegamorphicProperty(state->vm(), baseGPR, scratch4GPR, nullptr, valueGPR, scratch1GPR, scratch2GPR, scratch3GPR);
-            slowCases.append(WTFMove(slow));
+            slowCases.append(WTF::move(slow));
             CCallHelpers::Label doneForSlow = jit.label();
 
             params.addLatePath([=](CCallHelpers& jit) {
@@ -5438,6 +5454,15 @@ private:
         default:
             RELEASE_ASSERT_NOT_REACHED();
         }
+    }
+
+    void compileObjectDefineProperty()
+    {
+        JSGlobalObject* globalObject = m_graph.globalObjectFor(m_origin.semantic);
+        LValue target = lowObject(m_node->child1());
+        LValue key = lowJSValue(m_node->child2());
+        LValue descriptor = lowObject(m_node->child3());
+        vmCall(Void, operationObjectDefineProperty, weakPointer(globalObject), target, key, descriptor);
     }
 
     void compileDefineAccessorProperty()
@@ -5945,12 +5970,12 @@ IGNORE_CLANG_WARNINGS_END
 #else
             PatchpointValue* patchpoint = m_out.patchpoint(Int32);
 #endif
-            patchpoint->appendSomeRegister(base);
-            patchpoint->clobber(RegisterSetBuilder::macroClobberedGPRs());
-            patchpoint->numGPScratchRegisters = 2;
-
             if (typedArrayType.has_value() && typedArrayType.value() == TypeDataView) {
-                unsigned osrExitArgumentOffset = patchpoint->numChildren();
+                patchpoint->appendSomeRegister(base);
+                patchpoint->clobber(RegisterSetBuilder::macroClobberedGPRs());
+                patchpoint->numGPScratchRegisters = 3;
+
+                unsigned osrExitArgumentOffset = patchpoint->numChildren() + /* result */ 1;
                 OSRExitDescriptor* exitDescriptor = appendOSRExitDescriptor(jsValueValue(base), m_node);
                 patchpoint->appendColdAnys(buildExitArguments(exitDescriptor, m_origin.forExit, jsValueValue(base)));
 
@@ -5966,19 +5991,24 @@ IGNORE_CLANG_WARNINGS_END
                     GPRReg baseGPR = params[1].gpr();
                     GPRReg scratch1GPR = params.gpScratch(0);
                     GPRReg scratch2GPR = params.gpScratch(1);
+                    GPRReg scratch3GPR = params.gpScratch(2);
 
                     RefPtr<OSRExitHandle> handle = exitDescriptor->emitOSRExitLater(*state, OutOfBounds, origin, params, nodeIndex, osrExitArgumentOffset);
                     RefPtr<FTL::JITCode> jitCode = state->jitCode;
 
-                    auto [outOfBounds, doneCases] = jit.loadDataViewByteLength(baseGPR, resultGPR, scratch1GPR, scratch2GPR, TypeDataView);
+                    auto [outOfBounds, doneCases] = jit.loadDataViewByteLength(baseGPR, scratch1GPR, scratch2GPR, scratch3GPR, TypeDataView);
                     jit.addLinkTask([=, protectedJitCode = jitCode, outOfBoundsJump = outOfBounds](LinkBuffer& linkBuffer) {
                         linkBuffer.link(outOfBoundsJump, linkBuffer.locationOf<NoPtrTag>(handle->label));
                     });
                     doneCases.link(&jit);
+                    jit.move(scratch1GPR, resultGPR);
                 });
                 return patchpoint;
             }
 
+            patchpoint->appendSomeRegister(base);
+            patchpoint->clobber(RegisterSetBuilder::macroClobberedGPRs());
+            patchpoint->numGPScratchRegisters = 2;
             patchpoint->setGenerator([=] (CCallHelpers& jit, const StackmapGenerationParams& params) {
                 JIT_COMMENT(jit, "typedArrayLength");
                 AllowMacroScratchRegisterUsage allowScratch(jit);
@@ -9465,16 +9495,6 @@ IGNORE_CLANG_WARNINGS_END
         setJSValue(m_out.phi(pointerType(), fastResult, slowResult));
     }
 
-    void compileNewGenerator()
-    {
-        compileNewInternalFieldObjectImpl<JSGenerator>(operationNewGenerator);
-    }
-
-    void compileNewAsyncGenerator()
-    {
-        compileNewInternalFieldObjectImpl<JSAsyncGenerator>(operationNewAsyncGenerator);
-    }
-
     void compileNewInternalFieldObject()
     {
         switch (m_node->structure()->typeInfo().type()) {
@@ -9496,14 +9516,14 @@ IGNORE_CLANG_WARNINGS_END
         case JSAsyncFromSyncIteratorType:
             compileNewInternalFieldObjectImpl<JSAsyncFromSyncIterator>(operationNewAsyncFromSyncIterator);
             break;
-        case JSPromiseAllContextType:
-            compileNewInternalFieldObjectImpl<JSPromiseAllContext>(operationNewPromiseAllContext);
-            break;
-        case JSPromiseAllGlobalContextType:
-            compileNewInternalFieldObjectImpl<JSPromiseAllGlobalContext>(operationNewPromiseAllGlobalContext);
-            break;
         case JSRegExpStringIteratorType:
             compileNewInternalFieldObjectImpl<JSRegExpStringIterator>(operationNewRegExpStringIterator);
+            break;
+        case JSGeneratorType:
+            compileNewInternalFieldObjectImpl<JSGenerator>(operationNewGenerator);
+            break;
+        case JSAsyncGeneratorType:
+            compileNewInternalFieldObjectImpl<JSAsyncGenerator>(operationNewAsyncGenerator);
             break;
         case JSPromiseType:
             if (m_node->structure()->classInfoForCells() == JSInternalPromise::info())
@@ -9556,10 +9576,10 @@ IGNORE_CLANG_WARNINGS_END
     {
         JSGlobalObject* globalObject = m_graph.globalObjectFor(m_origin.semantic);
         if (m_node->child1().useKind() == StringUse && m_node->child2().useKind() == StringUse) {
-            setJSValue(vmCall(pointerType(), operationNewRegExpString, weakPointer(globalObject), lowString(m_node->child1()), lowString(m_node->child2())));
+            setJSValue(vmCall(pointerType(), operationNewRegExpString, weakPointer(globalObject), weakStructure(m_node->structure()), lowString(m_node->child1()), lowString(m_node->child2())));
             return;
         }
-        setJSValue(vmCall(pointerType(), operationNewRegExpUntyped, weakPointer(globalObject), lowJSValue(m_node->child1()), lowJSValue(m_node->child2())));
+        setJSValue(vmCall(pointerType(), operationNewRegExpUntyped, weakPointer(globalObject), weakStructure(m_node->structure()), lowJSValue(m_node->child1()), lowJSValue(m_node->child2())));
     }
 
     void compileNewSymbol()
@@ -10166,6 +10186,10 @@ IGNORE_CLANG_WARNINGS_END
 
         if (m_node->child1().useKind() == ArrayUse)
             speculateArray(m_node->child1());
+        else if (m_node->child1().useKind() == SetObjectUse)
+            speculateSetObject(m_node->child1());
+        else if (m_node->child1().useKind() == MapIteratorObjectUse)
+            speculateMapIteratorObject(m_node->child1());
 
         if (m_graph.canDoFastSpread(m_node, m_state.forNode(m_node->child1()))) {
             LBasicBlock copyOnWriteContiguousCheck = m_out.newBlock();
@@ -10258,6 +10282,81 @@ IGNORE_CLANG_WARNINGS_END
             m_out.appendTo(continuation, lastNext);
             result = m_out.phi(pointerType(), sharedResult, fastResult, slowResult);
             mutatorFence();
+        } else if (m_node->child1().useKind() == SetObjectUse) {
+            using Helper = JSSet::Helper;
+
+            LBasicBlock obsoleteCheck = m_out.newBlock();
+            LBasicBlock deletedCheck = m_out.newBlock();
+            LBasicBlock sizeCheck = m_out.newBlock();
+            LBasicBlock allocBlock = m_out.newBlock();
+            LBasicBlock loopStart = m_out.newBlock();
+            LBasicBlock slowPath = m_out.newBlock();
+            LBasicBlock continuation = m_out.newBlock();
+
+            // Load Set storage pointer.
+            LValue storage = m_out.loadPtr(argument, m_heaps.JSSet_storage);
+            m_out.branch(m_out.isNull(storage), rarely(slowPath), usually(obsoleteCheck));
+
+            // Check storage is not obsolete (slot 0 must be Int32).
+            LBasicBlock lastNext = m_out.appendTo(obsoleteCheck, deletedCheck);
+            LValue storageButterfly = toButterfly(storage);
+            LValue aliveEntryCountValue = m_out.load64(m_out.baseIndex(m_heaps.indexedContiguousProperties, storageButterfly, m_out.constIntPtr(Helper::aliveEntryCountIndex())));
+            m_out.branch(isNotInt32(aliveEntryCountValue), rarely(slowPath), usually(deletedCheck));
+
+            // Check deletedEntryCount == 0.
+            m_out.appendTo(deletedCheck, sizeCheck);
+            LValue length = unboxInt32(aliveEntryCountValue);
+            LValue deletedCount = m_out.load32(m_out.baseIndex(m_heaps.indexedContiguousProperties, storageButterfly, m_out.constIntPtr(Helper::deletedEntryCountIndex())));
+            m_out.branch(m_out.isZero32(deletedCount), usually(sizeCheck), rarely(slowPath));
+
+            // Check length <= MAX_STORAGE_VECTOR_LENGTH.
+            m_out.appendTo(sizeCheck, allocBlock);
+            m_out.branch(m_out.above(length, m_out.constInt32(MAX_STORAGE_VECTOR_LENGTH)), rarely(slowPath), usually(allocBlock));
+
+            // Allocate JSCellButterfly.
+            m_out.appendTo(allocBlock, loopStart);
+            static_assert(sizeof(JSValue) == 8 && 1 << 3 == 8, "Assumed in the code below.");
+            LValue size = m_out.add(
+                m_out.shl(m_out.zeroExtPtr(length), m_out.constInt32(3)),
+                m_out.constIntPtr(JSCellButterfly::offsetOfData()));
+            LValue fastAllocation = allocateVariableSizedCell<JSCellButterfly>(size, m_graph.m_vm.cellButterflyStructure(CopyOnWriteArrayWithContiguous), slowPath);
+            LValue fastStorage = toButterfly(fastAllocation);
+            m_out.store32(length, fastStorage, m_heaps.Butterfly_vectorLength);
+            m_out.store32(length, fastStorage, m_heaps.Butterfly_publicLength);
+            ValueFromBlock fastResult = m_out.anchor(fastAllocation);
+
+            // Compute dataTableStartIndex = hashTableStartIndex + capacity.
+            LValue capacity = m_out.load32(m_out.baseIndex(m_heaps.indexedContiguousProperties, storageButterfly, m_out.constIntPtr(Helper::capacityIndex())));
+            LValue dataTableStart = m_out.add(m_out.constInt32(Helper::hashTableStartIndex()), capacity);
+
+            ValueFromBlock startIndex = m_out.anchor(m_out.constIntPtr(0));
+            m_out.branch(m_out.isZero32(length), unsure(continuation), unsure(loopStart));
+
+            // Copy loop: for i = 0..<length, dest[i] = storage[dataTableStart + i * 2].
+            m_out.appendTo(loopStart, slowPath);
+            static_assert(Helper::EntrySize == 2, "Set entries have stride 2 (key + chain).");
+            LValue index = m_out.phi(pointerType(), startIndex);
+            LValue srcIndex = m_out.add(m_out.zeroExtPtr(dataTableStart), m_out.shl(index, m_out.constInt32(1)));
+            LValue key = m_out.load64(m_out.baseIndex(m_heaps.indexedContiguousProperties, storageButterfly, srcIndex));
+            m_out.store64(key, m_out.baseIndex(m_heaps.indexedContiguousProperties, fastStorage, index));
+
+            LValue nextIndex = m_out.add(index, m_out.constIntPtr(1));
+            m_out.addIncomingToPhi(index, m_out.anchor(nextIndex));
+            m_out.branch(m_out.below(nextIndex, m_out.zeroExtPtr(length)),
+                unsure(loopStart), unsure(continuation));
+
+            // Slow path.
+            m_out.appendTo(slowPath, continuation);
+            ValueFromBlock slowResult = m_out.anchor(vmCall(pointerType(), operationSpreadSet, weakPointer(globalObject), argument));
+            m_out.jump(continuation);
+
+            // Continuation.
+            m_out.appendTo(continuation, lastNext);
+            result = m_out.phi(pointerType(), fastResult, slowResult);
+            mutatorFence();
+        } else if (m_node->child1().useKind() == MapIteratorObjectUse) {
+            // MapIterator spread does not use inline fast path; call the C++ operation directly.
+            result = vmCall(pointerType(), operationSpreadMapIterator, weakPointer(globalObject), argument);
         } else
             result = vmCall(pointerType(), operationSpreadGeneric, weakPointer(globalObject), argument);
 
@@ -11521,6 +11620,17 @@ IGNORE_CLANG_WARNINGS_END
             setInt32(vmCall(Int32, operationStringIndexOfWithOneChar, weakPointer(globalObject), base, m_out.constInt32(character.value())));
         else
             setInt32(vmCall(Int32, operationStringIndexOf, weakPointer(globalObject), base, search));
+    }
+
+    void compileStringStartsWith()
+    {
+        LValue base = lowString(m_node->child1());
+        LValue search = lowString(m_node->child2());
+        auto* globalObject = m_graph.globalObjectFor(m_origin.semantic);
+        if (m_node->child3())
+            setBoolean(vmCall(Int32, operationStringStartsWithWithIndex, weakPointer(globalObject), base, search, lowInt32(m_node->child3())));
+        else
+            setBoolean(vmCall(Int32, operationStringStartsWith, weakPointer(globalObject), base, search));
     }
 
     void compileGetByOffset()
@@ -13232,7 +13342,7 @@ IGNORE_CLANG_WARNINGS_END
         CodeOrigin semanticNodeOrigin = node->origin.semantic;
         auto nodeOp = node->op();
         patchpoint->setGenerator(
-            [=, argumentsToEmit = WTFMove(argumentsToEmitFromRightToLeft)] (CCallHelpers& jit, const StackmapGenerationParams& params) {
+            [=, argumentsToEmit = WTF::move(argumentsToEmitFromRightToLeft)] (CCallHelpers& jit, const StackmapGenerationParams& params) {
                 AllowMacroScratchRegisterUsage allowScratch(jit);
                 CallSiteIndex callSiteIndex =
                     state->jitCode->common.codeOrigins->addUniqueCallSiteIndex(codeOrigin);
@@ -13907,14 +14017,14 @@ IGNORE_CLANG_WARNINGS_END
             clobber.add(GPRInfo::wasmBoundsCheckingSizeRegister, IgnoreVectors);
         if (!wasmBaseMemoryPointerConfiguredAsInputContraints)
             clobber.add(GPRInfo::wasmBaseMemoryPointer, IgnoreVectors);
-        patchpoint->clobber(WTFMove(clobber));
+        patchpoint->clobber(WTF::move(clobber));
         auto clobberLate = RegisterSetBuilder::registersToSaveForCCall(RegisterSetBuilder::allScalarRegisters());
         clobberLate.add(GPRInfo::wasmContextInstancePointer, IgnoreVectors); // Because it is already tied to JSWebAssemblyInstance* in patchpoint's input constraint, we should say it is late clobbered.
         if (wasmBoundsCheckingSizeRegisterConfiguredAsInputContraints)
             clobberLate.add(GPRInfo::wasmBoundsCheckingSizeRegister, IgnoreVectors);
         if (wasmBaseMemoryPointerConfiguredAsInputContraints)
             clobberLate.add(GPRInfo::wasmBaseMemoryPointer, IgnoreVectors);
-        patchpoint->clobberLate(WTFMove(clobberLate));
+        patchpoint->clobberLate(WTF::move(clobberLate));
         RefPtr<PatchpointExceptionHandle> exceptionHandle = preparePatchpointForExceptions(patchpoint);
 
         CodeOrigin codeOrigin = codeOriginDescriptionOfCallSite();
@@ -15694,6 +15804,37 @@ IGNORE_CLANG_WARNINGS_END
         setJSValue(m_out.select(m_out.isZero64(value),
             m_out.constInt64(JSValue::encode(jsUndefined())),
             value));
+    }
+
+    void compileMapOrSetSize()
+    {
+        LValue mapOrSet;
+        if (m_node->child1().useKind() == MapObjectUse)
+            mapOrSet = lowMapObject(m_node->child1());
+        else {
+            ASSERT(m_node->child1().useKind() == SetObjectUse);
+            mapOrSet = lowSetObject(m_node->child1());
+        }
+
+        LValue storage = m_out.loadPtr(mapOrSet,
+            m_node->child1().useKind() == MapObjectUse ? m_heaps.JSMap_storage : m_heaps.JSSet_storage);
+
+        LBasicBlock hasStorage = m_out.newBlock();
+        LBasicBlock continuation = m_out.newBlock();
+
+        ValueFromBlock noStorageResult = m_out.anchor(m_out.constInt32(0));
+        m_out.branch(m_out.isNull(storage), unsure(continuation), unsure(hasStorage));
+
+        LBasicBlock lastNext = m_out.appendTo(hasStorage, continuation);
+        LValue butterfly = toButterfly(storage);
+        // aliveEntryCountIndex() is the same for both JSSet::Helper and JSMap::Helper.
+        LValue size = m_out.load32(m_out.baseIndex(m_heaps.indexedContiguousProperties, butterfly,
+            m_out.constIntPtr(JSSet::Helper::aliveEntryCountIndex())));
+        ValueFromBlock hasStorageResult = m_out.anchor(size);
+        m_out.jump(continuation);
+
+        m_out.appendTo(continuation, lastNext);
+        setInt32(m_out.phi(Int32, noStorageResult, hasStorageResult));
     }
 
     void compileSetAdd()
@@ -18019,11 +18160,11 @@ IGNORE_CLANG_WARNINGS_END
         case JSRegExpStringIteratorType:
             compileMaterializeNewInternalFieldObjectImpl<JSRegExpStringIterator>(operationNewRegExpStringIterator);
             break;
-        case JSPromiseAllContextType:
-            compileMaterializeNewInternalFieldObjectImpl<JSPromiseAllContext>(operationNewPromiseAllContext);
+        case JSGeneratorType:
+            compileMaterializeNewInternalFieldObjectImpl<JSGenerator>(operationNewGenerator);
             break;
-        case JSPromiseAllGlobalContextType:
-            compileMaterializeNewInternalFieldObjectImpl<JSPromiseAllGlobalContext>(operationNewPromiseAllGlobalContext);
+        case JSAsyncGeneratorType:
+            compileMaterializeNewInternalFieldObjectImpl<JSAsyncGenerator>(operationNewAsyncGenerator);
             break;
         case JSPromiseType:
             if (m_node->structure()->classInfoForCells() == JSInternalPromise::info())
@@ -19560,7 +19701,7 @@ IGNORE_CLANG_WARNINGS_END
 
                 RefPtr<OSRExitHandle> handle = exitDescriptor->emitOSRExitLater(*state, BadType, origin, params, nodeIndex, osrExitArgumentOffset);
 
-                SnippetParams domJITParams(*state, params, semanticNodeOrigin, nullptr, WTFMove(regs), WTFMove(gpScratch), WTFMove(fpScratch));
+                SnippetParams domJITParams(*state, params, semanticNodeOrigin, nullptr, WTF::move(regs), WTF::move(gpScratch), WTF::move(fpScratch));
                 CCallHelpers::JumpList failureCases = domJIT->generator()->run(jit, domJITParams);
                 CCallHelpers::JumpList notJSCastFailureCases;
                 if (op == CheckNotJSCast) {
@@ -19702,7 +19843,7 @@ IGNORE_CLANG_WARNINGS_END
 
                 Box<CCallHelpers::JumpList> exceptions = exceptionHandle->scheduleExitCreation(params)->jumps(jit);
 
-                SnippetParams domJITParams(*state, params, semanticNodeOrigin, exceptions, WTFMove(regs), WTFMove(gpScratch), WTFMove(fpScratch));
+                SnippetParams domJITParams(*state, params, semanticNodeOrigin, exceptions, WTF::move(regs), WTF::move(gpScratch), WTF::move(fpScratch));
                 domJIT->generator()->run(jit, domJITParams);
             });
         patchpoint->effects = Effects::forCall();
@@ -20851,13 +20992,7 @@ IGNORE_CLANG_WARNINGS_END
 
     LValue encodeStructureID(LValue structure)
     {
-#if ENABLE(STRUCTURE_ID_WITH_SHIFT)
-        return m_out.castToInt32(m_out.lShr(structure, m_out.constInt32(StructureID::encodeShiftAmount)));
-#elif CPU(ADDRESS64)
-        return m_out.castToInt32(m_out.bitAnd(structure, m_out.constInt64(StructureID::structureIDMask)));
-#else
         return m_out.castToInt32(structure);
-#endif
     }
 
     void storeStructure(LValue object, LValue structure)
@@ -22593,7 +22728,7 @@ IGNORE_CLANG_WARNINGS_END
                                         exceptionTarget->label(linkBuffer), usedRegisters,
                                         callSiteIndex, generator);
 
-                                jitCode->lazySlowPaths[index] = WTFMove(lazySlowPath);
+                                jitCode->lazySlowPaths[index] = WTF::move(lazySlowPath);
                             });
                     });
             });
@@ -23053,11 +23188,18 @@ IGNORE_CLANG_WARNINGS_END
 
     LValue lowStorage(Edge edge)
     {
+        // FIXME: We should use KnownStorageUse everywhere and not just for Upsilons.
+        OperandSpeculationMode speculation = AutomaticOperandSpeculation;
+        if (m_node->op() == DFG::Upsilon) {
+            DFG_ASSERT(m_graph, m_node, edge.useKind() == KnownStorageUse);
+            speculation = ManualOperandSpeculation;
+        }
+
         LoweredNodeValue value = m_storageValues.get(edge.node());
         if (isValid(value))
             return value.value();
 
-        LValue result = lowCell(edge);
+        LValue result = lowCell(edge, speculation);
         setStorage(edge.node(), result);
         return result;
     }
@@ -23438,6 +23580,7 @@ IGNORE_CLANG_WARNINGS_END
         case Int52RepUse:
         case KnownCellUse:
         case KnownBooleanUse:
+        case KnownStorageUse:
             ASSERT(!m_interpreter.needsTypeCheck(edge));
             break;
         case Int32Use:
@@ -25286,16 +25429,7 @@ IGNORE_CLANG_WARNINGS_END
 
     LValue decodeNonNullStructure(LValue structureID)
     {
-#if ENABLE(STRUCTURE_ID_WITH_SHIFT)
-        return m_out.shl(m_out.zeroExtPtr(structureID), m_out.constIntPtr(StructureID::encodeShiftAmount));
-#else
-        LValue maskedStructureID = structureID;
-        if constexpr (structureHeapAddressSize < 4 * GB) {
-            static_assert(static_cast<uint32_t>(StructureID::structureIDMask) == StructureID::structureIDMask);
-            maskedStructureID = m_out.bitAnd(structureID, m_out.constInt32(static_cast<uint32_t>(StructureID::structureIDMask)));
-        }
-        return m_out.bitOr(m_out.constIntPtr(startOfStructureHeap()), m_out.zeroExtPtr(maskedStructureID));
-#endif
+        return m_out.bitOr(m_out.constIntPtr(structureIDBase()), m_out.zeroExtPtr(structureID));
     }
 
     LValue loadStructure(LValue value)

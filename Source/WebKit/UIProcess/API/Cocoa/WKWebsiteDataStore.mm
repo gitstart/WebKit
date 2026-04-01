@@ -36,6 +36,7 @@
 #import "RestrictedOpenerType.h"
 #import "ShouldGrandfatherStatistics.h"
 #import "UserNotificationsSPI.h"
+#import "WKAPICast.h"
 #import "WKError.h"
 #import "WKHTTPCookieStoreInternal.h"
 #import "WKNSArray.h"
@@ -126,7 +127,7 @@ private:
             return completionHandler(std::nullopt);
 
         auto checker = WebKit::CompletionHandlerCallChecker::create(m_delegate.get().get(), @selector(webCryptoMasterKey:));
-        [m_delegate.get() webCryptoMasterKey:makeBlockPtr([completionHandler = WTFMove(completionHandler), checker = WTFMove(checker)] (NSData *result) mutable {
+        [m_delegate.get() webCryptoMasterKey:makeBlockPtr([completionHandler = WTF::move(completionHandler), checker = WTF::move(checker)] (NSData *result) mutable {
             if (checker->completionHandlerHasBeenCalled())
                 return;
             checker->didCallCompletionHandler();
@@ -144,7 +145,7 @@ private:
         }
 
         auto checker = WebKit::CompletionHandlerCallChecker::create(m_delegate.get().get(), @selector(requestStorageSpace: frameOrigin: quota: currentSize: spaceRequired: decisionHandler:));
-        auto decisionHandler = makeBlockPtr([completionHandler = WTFMove(completionHandler), checker = WTFMove(checker)](unsigned long long quota) mutable {
+        auto decisionHandler = makeBlockPtr([completionHandler = WTF::move(completionHandler), checker = WTF::move(checker)](unsigned long long quota) mutable {
             if (checker->completionHandlerHasBeenCalled())
                 return;
             checker->didCallCompletionHandler();
@@ -166,7 +167,7 @@ private:
 
         RetainPtr nsURLChallenge = wrapper(challenge);
         auto checker = WebKit::CompletionHandlerCallChecker::create(m_delegate.get().get(), @selector(didReceiveAuthenticationChallenge: completionHandler:));
-        auto completionHandler = makeBlockPtr([challenge = WTFMove(challenge), checker = WTFMove(checker)](NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential) mutable {
+        auto completionHandler = makeBlockPtr([challenge = WTF::move(challenge), checker = WTF::move(checker)](NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential) mutable {
             if (checker->completionHandlerHasBeenCalled())
                 return;
             checker->didCallCompletionHandler();
@@ -184,7 +185,7 @@ private:
         }
 
         auto checker = WebKit::CompletionHandlerCallChecker::create(m_delegate.get().get(), @selector(websiteDataStore:openWindow:fromServiceWorkerOrigin:completionHandler:));
-        auto completionHandler = makeBlockPtr([callback = WTFMove(callback), checker = WTFMove(checker)](WKWebView *newWebView) mutable {
+        auto completionHandler = makeBlockPtr([callback = WTF::move(callback), checker = WTF::move(checker)](WKWebView *newWebView) mutable {
             if (checker->completionHandlerHasBeenCalled())
                 return;
             checker->didCallCompletionHandler();
@@ -247,14 +248,14 @@ private:
         }
 
         auto apiOrigin = API::SecurityOrigin::create(origin);
-        auto delegateCompletionHandler = makeBlockPtr([completionHandler = WTFMove(completionHandler)] (NSArray<NSDictionary *> *notifications) mutable {
+        auto delegateCompletionHandler = makeBlockPtr([completionHandler = WTF::move(completionHandler)] (NSArray<NSDictionary *> *notifications) mutable {
             Vector<WebCore::NotificationData> notificationDatas;
             for (id notificationDictionary in notifications) {
                 auto notification = WebCore::NotificationData::fromDictionary(notificationDictionary);
                 RELEASE_ASSERT_WITH_MESSAGE(notification, "getDisplayedNotificationsForWorkerOrigin: Invalid notification dictionary passed back to WebKit");
                 notificationDatas.append(*notification);
             }
-            completionHandler(WTFMove(notificationDatas));
+            completionHandler(WTF::move(notificationDatas));
         });
 
         [m_delegate.get() websiteDataStore:m_dataStore.get().get() getDisplayedNotificationsForWorkerOrigin:protectedWrapper(apiOrigin.get()).get() completionHandler:delegateCompletionHandler.get()];
@@ -290,7 +291,7 @@ private:
         }
 
         auto checker = WebKit::CompletionHandlerCallChecker::create(m_delegate.get().get(), @selector(requestBackgroundFetchPermission: frameOrigin: decisionHandler:));
-        auto decisionHandler = makeBlockPtr([completionHandler = WTFMove(completionHandler), checker = WTFMove(checker)](bool result) mutable {
+        auto decisionHandler = makeBlockPtr([completionHandler = WTF::move(completionHandler), checker = WTF::move(checker)](bool result) mutable {
             if (checker->completionHandlerHasBeenCalled())
                 return;
             checker->didCallCompletionHandler();
@@ -412,7 +413,7 @@ WK_OBJECT_DISABLE_DISABLE_KVC_IVAR_ACCESS;
 
 + (WKWebsiteDataStore *)defaultDataStore
 {
-    return wrapper(WebKit::WebsiteDataStore::defaultDataStore()).autorelease();
+    return wrapper(WebKit::WebsiteDataStore::defaultDataStore());
 }
 
 + (WKWebsiteDataStore *)nonPersistentDataStore
@@ -587,7 +588,7 @@ static Vector<WebKit::WebsiteDataRecord> toWebsiteDataRecords(NSArray *dataRecor
         configDataVector.append({ makeVector(agentData.get()), uuid.isValid() ? std::optional { uuid } : std::nullopt });
     }
 
-    protectedWebsiteDataStore(self)->setProxyConfigData(WTFMove(configDataVector));
+    protectedWebsiteDataStore(self)->setProxyConfigData(WTF::move(configDataVector));
 }
 
 - (NSArray<nw_proxy_config_t> *)proxyConfigurations
@@ -628,7 +629,7 @@ struct WKWebsiteData {
 
     auto data = Box<WKWebsiteData>::create();
 
-    Ref callbackAggregator = CallbackAggregator::create([completionHandler = makeBlockPtr(completionHandler), dataTypesToEncode = WTFMove(dataTypesToEncode), data] {
+    Ref callbackAggregator = CallbackAggregator::create([completionHandler = makeBlockPtr(completionHandler), dataTypesToEncode = WTF::move(dataTypesToEncode), data] {
         WTF::Persistence::Encoder encoder;
         constexpr unsigned currentWKWebsiteDataSerializationVersion = 1;
         encoder << currentWKWebsiteDataSerializationVersion;
@@ -657,7 +658,7 @@ struct WKWebsiteData {
 
     if ([dataTypes containsObject:WKWebsiteDataTypeLocalStorage]) {
         protectedWebsiteDataStore(self)->fetchLocalStorage([callbackAggregator, data](auto&& localStorage) {
-            data->localStorage = WTFMove(localStorage);
+            data->localStorage = WTF::move(localStorage);
         });
     }
 }
@@ -709,7 +710,7 @@ struct WKWebsiteData {
             }
 
             if (!localStorage->isEmpty()) {
-                protectedWebsiteDataStore(self)->restoreLocalStorage(WTFMove(*localStorage), [callbackAggregator, error](bool restoreSucceeded) {
+                protectedWebsiteDataStore(self)->restoreLocalStorage(WTF::move(*localStorage), [callbackAggregator, error](bool restoreSucceeded) {
                     if (!restoreSucceeded) {
                         NSDictionary *userInfo = @{ NSLocalizedDescriptionKey : @"Unknown error occurred while restoring data.", };
                         *error = adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:userInfo]).get();
@@ -739,7 +740,8 @@ struct WKWebsiteData {
             _WKWebsiteDataTypeCredentials,
             _WKWebsiteDataTypeAdClickAttributions,
             _WKWebsiteDataTypePrivateClickMeasurements,
-            _WKWebsiteDataTypeAlternativeServices
+            _WKWebsiteDataTypeAlternativeServices,
+            _WKWebsiteDataTypeEnhancedSecurityRecord
         ];
 
         return [retainPtr([self allWebsiteDataTypes]) setByAddingObjectsFromArray:privateTypes];
@@ -808,12 +810,12 @@ struct WKWebsiteData {
     if (options & _WKWebsiteDataStoreFetchOptionComputeSizes)
         fetchOptions.add(WebKit::WebsiteDataFetchOption::ComputeSizes);
 
-    protectedWebsiteDataStore(self)->fetchData(WebKit::toWebsiteDataTypes(dataTypes), fetchOptions, [completionHandlerCopy = WTFMove(completionHandlerCopy)](auto websiteDataRecords) {
+    protectedWebsiteDataStore(self)->fetchData(WebKit::toWebsiteDataTypes(dataTypes), fetchOptions, [completionHandlerCopy = WTF::move(completionHandlerCopy)](auto websiteDataRecords) {
         auto elements = WTF::map(websiteDataRecords, [](auto& websiteDataRecord) -> RefPtr<API::Object> {
-            return API::WebsiteDataRecord::create(WTFMove(websiteDataRecord));
+            return API::WebsiteDataRecord::create(WTF::move(websiteDataRecord));
         });
 
-        completionHandlerCopy(wrapper(API::Array::create(WTFMove(elements))).get());
+        completionHandlerCopy(wrapper(API::Array::create(WTF::move(elements))).get());
     });
 }
 
@@ -868,10 +870,10 @@ struct WKWebsiteData {
     for (NSURL *site in persistedSites) {
         URL url { site };
         if (url.isValid())
-            urls.add(WTFMove(url));
+            urls.add(WTF::move(url));
     }
 
-    protectedWebsiteDataStore(self)->setPersistedSiteURLs(WTFMove(urls));
+    protectedWebsiteDataStore(self)->setPersistedSiteURLs(WTF::move(urls));
 }
 
 - (NSUInteger)_perOriginStorageQuota
@@ -951,7 +953,7 @@ struct WKWebsiteData {
         return;
     }
 
-    protectedWebsiteDataStore(self)->grantStorageAccessForTesting(WTFMove(topFrameDomain), makeVector<String>(subFrameDomains), makeBlockPtr(completionHandler));
+    protectedWebsiteDataStore(self)->grantStorageAccessForTesting(WTF::move(topFrameDomain), makeVector<String>(subFrameDomains), makeBlockPtr(completionHandler));
 }
 
 - (void)_setResourceLoadStatisticsTimeAdvanceForTesting:(NSTimeInterval)time completionHandler:(void(^)(void))completionHandler
@@ -981,7 +983,7 @@ struct WKWebsiteData {
         Vector<RefPtr<API::Object>> apiDomains = WTF::map(loadedSubresourceDomains, [](auto& domain) -> RefPtr<API::Object> {
             return API::String::create(String(domain.string()));
         });
-        completionHandler(wrapper(API::Array::create(WTFMove(apiDomains))).get());
+        completionHandler(wrapper(API::Array::create(WTF::move(apiDomains))).get());
     });
 }
 
@@ -1046,8 +1048,8 @@ struct WKWebsiteData {
 - (void)_getResourceLoadStatisticsDataSummary:(void (^)(NSArray<_WKResourceLoadStatisticsThirdParty *> *))completionHandler
 {
     protectedWebsiteDataStore(self)->getResourceLoadStatisticsDataSummary([completionHandler = makeBlockPtr(completionHandler)] (Vector<WebKit::ITPThirdPartyData>&& thirdPartyDomains) {
-        completionHandler(createNSArray(WTFMove(thirdPartyDomains), [] (WebKit::ITPThirdPartyData&& domain) {
-            return wrapper(API::ResourceLoadStatisticsThirdParty::create(WTFMove(domain)));
+        completionHandler(createNSArray(WTF::move(thirdPartyDomains), [] (WebKit::ITPThirdPartyData&& domain) {
+            return wrapper(API::ResourceLoadStatisticsThirdParty::create(WTF::move(domain)));
         }).get());
     });
 }
@@ -1106,7 +1108,7 @@ struct WKWebsiteData {
 
     auto oldOrigin = WebCore::SecurityOriginData::fromURLWithoutStrictOpaqueness(oldName);
     auto newOrigin = WebCore::SecurityOriginData::fromURLWithoutStrictOpaqueness(newName);
-    protectedWebsiteDataStore(self)->renameOriginInWebsiteData(WTFMove(oldOrigin), WTFMove(newOrigin), WebKit::toWebsiteDataTypes(dataTypes), [completionHandler = makeBlockPtr(completionHandler)] {
+    protectedWebsiteDataStore(self)->renameOriginInWebsiteData(WTF::move(oldOrigin), WTF::move(newOrigin), WebKit::toWebsiteDataTypes(dataTypes), [completionHandler = makeBlockPtr(completionHandler)] {
         completionHandler();
     });
 }
@@ -1130,7 +1132,7 @@ struct WKWebsiteData {
 
 - (id <_WKWebsiteDataStoreDelegate>)_delegate
 {
-    return _delegate.get().unsafeGet();
+    return _delegate.getAutoreleased();
 }
 
 - (void)set_delegate:(id <_WKWebsiteDataStoreDelegate>)delegate
@@ -1171,7 +1173,7 @@ struct WKWebsiteData {
         auto apiDomains = WTF::map(domains, [](auto& domain) -> RefPtr<API::Object> {
             return API::String::create(domain.string());
         });
-        completionHandler(wrapper(API::Array::create(WTFMove(apiDomains))).get());
+        completionHandler(wrapper(API::Array::create(WTF::move(apiDomains))).get());
     });
 #else
     completionHandler({ });
@@ -1185,7 +1187,7 @@ struct WKWebsiteData {
         auto apiSchemes = WTF::map(schemes, [](auto& scheme) -> RefPtr<API::Object> {
             return API::String::create(scheme);
         });
-        completionHandler(wrapper(API::Array::create(WTFMove(apiSchemes))).get());
+        completionHandler(wrapper(API::Array::create(WTF::move(apiSchemes))).get());
     });
 #else
     completionHandler({ });
@@ -1217,7 +1219,7 @@ struct WKWebsiteData {
 
 - (void)_synthesizeAppIsBackground:(BOOL)background
 {
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->synthesizeAppIsBackground(background);
+    protect(protectedWebsiteDataStore(self)->networkProcess())->synthesizeAppIsBackground(background);
 }
 
 - (pid_t)_networkProcessIdentifier
@@ -1238,7 +1240,7 @@ struct WKWebsiteData {
 - (void)_forceNetworkProcessToTaskSuspendForTesting
 {
     if (RefPtr networkProcess = _websiteDataStore->networkProcessIfExists())
-        networkProcess->protectedThrottler()->invalidateAllActivitiesAndDropAssertion();
+        protect(networkProcess->throttler())->invalidateAllActivitiesAndDropAssertion();
 }
 
 - (BOOL)_networkProcessExists
@@ -1267,7 +1269,7 @@ struct WKWebsiteData {
 {
     RELEASE_LOG(Push, "Getting pending push message");
 
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->getPendingPushMessage(_websiteDataStore->sessionID(), [completionHandler = makeBlockPtr(completionHandler)] (const auto& message) {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->getPendingPushMessage(_websiteDataStore->sessionID(), [completionHandler = makeBlockPtr(completionHandler)] (const auto& message) {
         RetainPtr<NSDictionary> result;
         if (message)
             result = message->toDictionary();
@@ -1281,7 +1283,7 @@ struct WKWebsiteData {
 {
     RELEASE_LOG(Push, "Getting pending push messages");
 
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->getPendingPushMessages(_websiteDataStore->sessionID(), [completionHandler = makeBlockPtr(completionHandler)] (const Vector<WebKit::WebPushMessage>& messages) {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->getPendingPushMessages(_websiteDataStore->sessionID(), [completionHandler = makeBlockPtr(completionHandler)] (const Vector<WebKit::WebPushMessage>& messages) {
         auto result = adoptNS([[NSMutableArray alloc] initWithCapacity:messages.size()]);
         for (auto& message : messages)
             [result addObject:message.toDictionary().get()];
@@ -1300,7 +1302,7 @@ struct WKWebsiteData {
         return;
     }
 
-    protectedWebsiteDataStore(self)->processPushMessage(WTFMove(*pushMessage), [completionHandler = makeBlockPtr(completionHandler)] (bool wasProcessed) {
+    protectedWebsiteDataStore(self)->processPushMessage(WTF::move(*pushMessage), [completionHandler = makeBlockPtr(completionHandler)] (bool wasProcessed) {
         RELEASE_LOG(Push, "Push message processing complete. Callback result: %d", wasProcessed);
         completionHandler(wasProcessed);
     });
@@ -1323,7 +1325,7 @@ struct WKWebsiteData {
     RELEASE_LOG(Push, "Sending persistent notification click from origin %" SENSITIVE_LOG_STRING " to network process to handle", notificationData.originString.utf8().data());
 
     notificationData.sourceSession = _websiteDataStore->sessionID();
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->processNotificationEvent(notificationData, WebCore::NotificationEventType::Click, [completionHandler = makeBlockPtr(completionHandler)] (bool wasProcessed) {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->processNotificationEvent(notificationData, WebCore::NotificationEventType::Click, [completionHandler = makeBlockPtr(completionHandler)] (bool wasProcessed) {
         RELEASE_LOG(Push, "Notification click event processing complete. Callback result: %d", wasProcessed);
         completionHandler(wasProcessed);
     });
@@ -1338,14 +1340,14 @@ struct WKWebsiteData {
         return;
     }
 
-    [self _processWebCorePersistentNotificationClick:*notificationData completionHandler:WTFMove(completionHandler)];
+    [self _processWebCorePersistentNotificationClick:*notificationData completionHandler:WTF::move(completionHandler)];
 }
 
 -(void)_processWebCorePersistentNotificationClose:(const WebCore::NotificationData&)notificationData completionHandler:(void(^)(bool))completionHandler
 {
     RELEASE_LOG(Push, "Sending persistent notification close from origin %" SENSITIVE_LOG_STRING " to network process to handle", notificationData.originString.utf8().data());
 
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->processNotificationEvent(notificationData, WebCore::NotificationEventType::Close, [completionHandler = makeBlockPtr(completionHandler)] (bool wasProcessed) {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->processNotificationEvent(notificationData, WebCore::NotificationEventType::Close, [completionHandler = makeBlockPtr(completionHandler)] (bool wasProcessed) {
         RELEASE_LOG(Push, "Notification close event processing complete. Callback result: %d", wasProcessed);
         completionHandler(wasProcessed);
     });
@@ -1360,12 +1362,12 @@ struct WKWebsiteData {
         return;
     }
 
-    [self _processWebCorePersistentNotificationClose:*notificationData completionHandler:WTFMove(completionHandler)];
+    [self _processWebCorePersistentNotificationClose:*notificationData completionHandler:WTF::move(completionHandler)];
 }
 
 -(void)_getAllBackgroundFetchIdentifiers:(void(^)(NSArray<NSString *> *identifiers))completionHandler
 {
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->getAllBackgroundFetchIdentifiers(_websiteDataStore->sessionID(), [completionHandler = makeBlockPtr(completionHandler)] (auto identifiers) {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->getAllBackgroundFetchIdentifiers(_websiteDataStore->sessionID(), [completionHandler = makeBlockPtr(completionHandler)] (auto identifiers) {
         auto result = adoptNS([[NSMutableArray alloc] initWithCapacity:identifiers.size()]);
         for (auto identifier : identifiers)
             [result addObject:identifier.createNSString().get()];
@@ -1375,7 +1377,7 @@ struct WKWebsiteData {
 
 -(void)_getBackgroundFetchState:(NSString *) identifier completionHandler:(void(^)(NSDictionary *state))completionHandler
 {
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->getBackgroundFetchState(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] (auto state) {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->getBackgroundFetchState(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] (auto state) {
         completionHandler(state ? state->toDictionary() : nil);
     });
 }
@@ -1385,7 +1387,7 @@ struct WKWebsiteData {
     if (!completionHandler)
         completionHandler = [] { };
 
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->abortBackgroundFetch(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->abortBackgroundFetch(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] {
         completionHandler();
     });
 }
@@ -1394,7 +1396,7 @@ struct WKWebsiteData {
     if (!completionHandler)
         completionHandler = [] { };
 
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->pauseBackgroundFetch(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->pauseBackgroundFetch(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] {
         completionHandler();
     });
 }
@@ -1404,7 +1406,7 @@ struct WKWebsiteData {
     if (!completionHandler)
         completionHandler = [] { };
 
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->resumeBackgroundFetch(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->resumeBackgroundFetch(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] {
         completionHandler();
     });
 }
@@ -1417,7 +1419,7 @@ struct WKWebsiteData {
     if (!completionHandler)
         completionHandler = [] { };
 
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()->clickBackgroundFetch(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] {
+    protect(protectedWebsiteDataStore(self)->networkProcess())->clickBackgroundFetch(_websiteDataStore->sessionID(), identifier, [completionHandler = makeBlockPtr(completionHandler)] {
         completionHandler();
     });
 }
@@ -1437,7 +1439,7 @@ struct WKWebsiteData {
 -(void)_scopeURL:(NSURL *)scopeURL hasPushSubscriptionForTesting:(void(^)(BOOL))completionHandler
 {
     auto completionHandlerCopy = makeBlockPtr(completionHandler);
-    protectedWebsiteDataStore(self)->protectedNetworkProcess()
+    protect(protectedWebsiteDataStore(self)->networkProcess())
         ->hasPushSubscriptionForTesting(_websiteDataStore->sessionID(), scopeURL, [completionHandlerCopy](bool result) {
             completionHandlerCopy(result);
         });
@@ -1450,7 +1452,7 @@ struct WKWebsiteData {
         return completionHandler(nil);
 
     auto completionHandlerCopy = makeBlockPtr(completionHandler);
-    protectedWebsiteDataStore(self)->originDirectoryForTesting(WebCore::ClientOrigin { WebCore::SecurityOriginData::fromURLWithoutStrictOpaqueness(topOrigin), WebCore::SecurityOriginData::fromURLWithoutStrictOpaqueness(origin) }, { *websiteDataType }, [completionHandlerCopy = WTFMove(completionHandlerCopy)](auto result) {
+    protectedWebsiteDataStore(self)->originDirectoryForTesting(WebCore::ClientOrigin { WebCore::SecurityOriginData::fromURLWithoutStrictOpaqueness(topOrigin), WebCore::SecurityOriginData::fromURLWithoutStrictOpaqueness(origin) }, { *websiteDataType }, [completionHandlerCopy = WTF::move(completionHandlerCopy)](auto result) {
         completionHandlerCopy(result.createNSString().get());
     });
 }
@@ -1580,7 +1582,7 @@ struct WKWebsiteData {
 - (void)_runningOrTerminatingServiceWorkerCountForTesting:(void(^)(NSUInteger))completionHandler
 {
     auto completionHandlerCopy = makeBlockPtr(completionHandler);
-    protectedWebsiteDataStore(self)->runningOrTerminatingServiceWorkerCountForTesting([completionHandlerCopy = WTFMove(completionHandlerCopy)](auto result) {
+    protectedWebsiteDataStore(self)->runningOrTerminatingServiceWorkerCountForTesting([completionHandlerCopy = WTF::move(completionHandlerCopy)](auto result) {
         completionHandlerCopy(result);
     });
 }
@@ -1603,9 +1605,31 @@ struct WKWebsiteData {
 - (void)_isStorageSuspendedForTesting:(void(^)(BOOL))completionHandler
 {
     auto completionHandlerCopy = makeBlockPtr(completionHandler);
-    protectedWebsiteDataStore(self)->isStorageSuspendedForTesting([completionHandlerCopy = WTFMove(completionHandlerCopy)](auto result) {
+    protectedWebsiteDataStore(self)->isStorageSuspendedForTesting([completionHandlerCopy = WTF::move(completionHandlerCopy)](auto result) {
         completionHandlerCopy(result);
     });
+}
+
+- (NSString *)_thirdPartyCookieBlockingModeForTesting
+{
+    switch (protectedWebsiteDataStore(self)->thirdPartyCookieBlockingMode()) {
+    case WebCore::ThirdPartyCookieBlockingMode::All:
+        return @"All";
+    case WebCore::ThirdPartyCookieBlockingMode::AllExceptBetweenAppBoundDomains:
+        return @"AllExceptBetweenAppBoundDomains";
+    case WebCore::ThirdPartyCookieBlockingMode::AllExceptManagedDomains:
+        return @"AllExceptManagedDomains";
+#if ENABLE(OPT_IN_PARTITIONED_COOKIES)
+    case WebCore::ThirdPartyCookieBlockingMode::AllExceptPartitioned:
+        return @"AllExceptPartitioned";
+#endif
+    case WebCore::ThirdPartyCookieBlockingMode::AllOnSitesWithoutUserInteraction:
+        return @"AllOnSitesWithoutUserInteraction";
+    case WebCore::ThirdPartyCookieBlockingMode::OnlyAccordingToPerDomainPolicy:
+        return @"OnlyAccordingToPerDomainPolicy";
+    }
+
+    return @"Invalid";
 }
 
 @end

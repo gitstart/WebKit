@@ -47,10 +47,10 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(LegacyRenderSVGImage);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(LegacyRenderSVGImage);
 
 LegacyRenderSVGImage::LegacyRenderSVGImage(SVGImageElement& element, RenderStyle&& style)
-    : LegacyRenderSVGModelObject(Type::LegacySVGImage, element, WTFMove(style), SVGModelObjectFlag::UsesBoundaryCaching)
+    : LegacyRenderSVGModelObject(Type::LegacySVGImage, element, WTF::move(style), SVGModelObjectFlag::UsesBoundaryCaching)
     , m_needsBoundariesUpdate(true)
     , m_needsTransformUpdate(true)
     , m_imageResource(makeUniqueRef<RenderImageResource>())
@@ -207,7 +207,7 @@ void LegacyRenderSVGImage::paint(PaintInfo& paintInfo, const LayoutPoint&)
         }
     }
 
-    if (style().outlineWidth())
+    if (style().usedOutlineWidth())
         paintOutline(childPaintInfo, IntRect(boundingBox));
 }
 
@@ -234,7 +234,7 @@ void LegacyRenderSVGImage::paintForeground(PaintInfo& paintInfo)
 
     auto* cachedImage = imageResource().cachedImage();
     if (cachedImage && !context.paintingDisabled())
-        protectedDocument()->didPaintImage(imageElement(), cachedImage, destRect);
+        protect(document())->didPaintImage(imageElement(), cachedImage, destRect);
 }
 
 void LegacyRenderSVGImage::invalidateBufferedForeground()
@@ -298,7 +298,7 @@ void LegacyRenderSVGImage::imageChanged(WrappedImagePtr, const IntRect*)
 
     if (auto* image = imageResource().cachedImage(); image && image->currentFrameIsComplete(this)) {
         if (auto styleable = Styleable::fromRenderer(*this))
-            protectedDocument()->didLoadImage(styleable->protectedElement().get(), image);
+            protect(document())->didLoadImage(styleable->protectedElement().get(), image);
     }
 }
 

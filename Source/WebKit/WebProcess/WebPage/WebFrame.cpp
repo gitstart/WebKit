@@ -27,6 +27,7 @@
 #include "WebFrame.h"
 
 #include "APIArray.h"
+#include "ContentWorldShared.h"
 #include "DownloadManager.h"
 #include "DrawingArea.h"
 #include "FrameInfoData.h"
@@ -36,6 +37,7 @@
 #include "InjectedBundleNodeHandle.h"
 #include "InjectedBundleRangeHandle.h"
 #include "InjectedBundleScriptWorld.h"
+#include "JSHandleInfo.h"
 #include "Logging.h"
 #include "MessageSenderInlines.h"
 #include "NetworkConnectionToWebProcessMessages.h"
@@ -51,6 +53,7 @@
 #include "WebFrameInspectorTarget.h"
 #include "WebFrameProxyMessages.h"
 #include "WebImage.h"
+#include "WebKeyboardEvent.h"
 #include "WebPage.h"
 #include "WebPageProxyMessages.h"
 #include "WebProcess.h"
@@ -75,6 +78,7 @@
 #include <WebCore/DocumentWindow.h>
 #include <WebCore/Editor.h>
 #include <WebCore/ElementChildIteratorInlines.h>
+#include <WebCore/ElementTargetingController.h>
 #include <WebCore/EventHandler.h>
 #include <WebCore/File.h>
 #include <WebCore/FocusController.h>
@@ -100,6 +104,7 @@
 #include <WebCore/LocalFrameInlines.h>
 #include <WebCore/LocalFrameView.h>
 #include <WebCore/MouseEventTypes.h>
+#include <WebCore/NodeDocument.h>
 #include <WebCore/OriginAccessPatterns.h>
 #include <WebCore/PluginDocument.h>
 #include <WebCore/PointerCaptureController.h>
@@ -116,6 +121,7 @@
 #include <WebCore/ShareableBitmapHandle.h>
 #include <WebCore/SharedMemory.h>
 #include <WebCore/SubresourceLoader.h>
+#include <WebCore/TextExtraction.h>
 #include <WebCore/TextIterator.h>
 #include <WebCore/TextResourceDecoder.h>
 #include <WebCore/WebKitJSHandle.h>
@@ -157,7 +163,7 @@ Ref<WebFrame> WebFrame::createSubframe(WebPage& page, WebFrame& parent, const At
     auto frameID = WebCore::generateFrameIdentifier();
     auto frame = create(page, frameID);
     ASSERT(page.corePage());
-    auto coreFrame = LocalFrame::createSubframe(*page.protectedCorePage(), [frame] (auto& localFrame, auto& frameLoader) {
+    auto coreFrame = LocalFrame::createSubframe(*protect(page.corePage()), [frame] (auto& localFrame, auto& frameLoader) {
         return makeUniqueRefWithoutRefCountedCheck<WebLocalFrameLoaderClient>(localFrame, frameLoader, frame.get(), frame->makeInvalidator());
     }, frameID, effectiveSandboxFlags, effectiveReferrerPolicy, ownerElement, WebCore::FrameTreeSyncData::create());
     frame->m_coreFrame = coreFrame.get();
@@ -187,7 +193,7 @@ Ref<WebFrame> WebFrame::createRemoteSubframe(WebPage& page, WebFrame& parent, We
     RELEASE_ASSERT(parentCoreFrame);
     auto coreFrame = RemoteFrame::createSubframe(*corePage, [frame] (auto&) {
         return makeUniqueRef<WebRemoteFrameClient>(frame.copyRef(), frame->makeInvalidator());
-    }, frameID, *parentCoreFrame, opener.get(), WTFMove(frameTreeSyncData), WebCore::Frame::AddToFrameTree::Yes);
+    }, frameID, *parentCoreFrame, opener.get(), WTF::move(frameTreeSyncData), WebCore::Frame::AddToFrameTree::Yes);
     frame->m_coreFrame = coreFrame.get();
     coreFrame->tree().setSpecifiedName(AtomString(frameName));
     return frame;
@@ -206,11 +212,6 @@ WebLocalFrameLoaderClient* WebFrame::localFrameLoaderClient() const
     if (RefPtr localFrame = dynamicDowncast<LocalFrame>(m_coreFrame.get()))
         return dynamicDowncast<WebLocalFrameLoaderClient>(localFrame->loader().client());
     return nullptr;
-}
-
-RefPtr<WebLocalFrameLoaderClient> WebFrame::protectedLocalFrameLoaderClient() const
-{
-    return localFrameLoaderClient();
 }
 
 WebRemoteFrameClient* WebFrame::remoteFrameClient() const
@@ -245,11 +246,6 @@ WebPage* WebFrame::page() const
     return page ? WebPage::fromCorePage(*page) : nullptr;
 }
 
-RefPtr<WebPage> WebFrame::protectedPage() const
-{
-    return page();
-}
-
 RefPtr<WebFrame> WebFrame::fromCoreFrame(const Frame& frame)
 {
     if (auto* localFrame = dynamicDowncast<LocalFrame>(frame)) {
@@ -270,11 +266,6 @@ WebCore::LocalFrame* WebFrame::coreLocalFrame() const
     return dynamicDowncast<LocalFrame>(m_coreFrame.get());
 }
 
-RefPtr<WebCore::LocalFrame> WebFrame::protectedCoreLocalFrame() const
-{
-    return coreLocalFrame();
-}
-
 WebCore::RemoteFrame* WebFrame::coreRemoteFrame() const
 {
     return dynamicDowncast<RemoteFrame>(m_coreFrame.get());
@@ -283,11 +274,6 @@ WebCore::RemoteFrame* WebFrame::coreRemoteFrame() const
 WebCore::Frame* WebFrame::coreFrame() const
 {
     return m_coreFrame.get();
-}
-
-RefPtr<WebCore::Frame> WebFrame::protectedCoreFrame() const
-{
-    return coreFrame();
 }
 
 Awaitable<std::optional<FrameInfoData>> WebFrame::getFrameInfo()
@@ -329,7 +315,7 @@ FrameInfoData WebFrame::info(WithCertificateInfo withCertificateInfo) const
         getCurrentProcessID(),
         isFocused(),
         coreLocalFrame ? coreLocalFrame->loader().errorOccurredInLoading() : false,
-        WTFMove(metrics)
+        WTF::move(metrics)
     };
 }
 
@@ -379,7 +365,7 @@ uint64_t WebFrame::setUpPolicyListener(WebCore::FramePolicyFunction&& policyFunc
     auto policyListenerID = generateListenerID();
     m_pendingPolicyChecks.add(policyListenerID, PolicyCheck {
         forNavigationAction,
-        WTFMove(policyFunction)
+        WTF::move(policyFunction)
     });
 
     return policyListenerID;
@@ -414,14 +400,16 @@ void WebFrame::loadDidCommitInAnotherProcess(std::optional<WebCore::LayerHosting
 
     if (ownerElement)
         localFrame->disconnectOwnerElement();
-    auto clientCreator = [protectedThis = Ref { *this }, invalidator = WTFMove(invalidator)] (auto&) mutable {
-        return makeUniqueRef<WebRemoteFrameClient>(WTFMove(protectedThis), WTFMove(invalidator));
+    auto clientCreator = [protectedThis = Ref { *this }, invalidator = WTF::move(invalidator)] (auto&) mutable {
+        return makeUniqueRef<WebRemoteFrameClient>(WTF::move(protectedThis), WTF::move(invalidator));
     };
 
     Ref frameTreeSyncData = localFrame->frameTreeSyncData();
     auto newFrame = ownerElement
-        ? WebCore::RemoteFrame::createSubframeWithContentsInAnotherProcess(*corePage, WTFMove(clientCreator), m_frameID, *ownerElement, layerHostingContextIdentifier, WTFMove(frameTreeSyncData))
-        : parent ? WebCore::RemoteFrame::createSubframe(*corePage, WTFMove(clientCreator), m_frameID, *parent, nullptr, WTFMove(frameTreeSyncData), WebCore::Frame::AddToFrameTree::No) : WebCore::RemoteFrame::createMainFrame(*corePage, WTFMove(clientCreator), m_frameID, nullptr, WTFMove(frameTreeSyncData));
+        ? WebCore::RemoteFrame::createSubframeWithContentsInAnotherProcess(*corePage, WTF::move(clientCreator), m_frameID, *ownerElement, layerHostingContextIdentifier, WTF::move(frameTreeSyncData))
+        : parent ? WebCore::RemoteFrame::createSubframe(*corePage, WTF::move(clientCreator), m_frameID, *parent, nullptr, WTF::move(frameTreeSyncData), WebCore::Frame::AddToFrameTree::No) : WebCore::RemoteFrame::createMainFrame(*corePage, WTF::move(clientCreator), m_frameID, nullptr, WTF::move(frameTreeSyncData));
+    m_coreFrame = newFrame.get();
+
     if (parent)
         parent->tree().replaceChild(*localFrame, newFrame);
     else
@@ -431,8 +419,6 @@ void WebFrame::loadDidCommitInAnotherProcess(std::optional<WebCore::LayerHosting
     newFrame->tree().setSpecifiedName(localFrame->tree().specifiedName());
     if (ownerRenderer)
         ownerRenderer->setWidget(newFrame->view());
-
-    m_coreFrame = newFrame.get();
 
     if (corePage->focusController().focusedFrame() == localFrame.get())
         corePage->focusController().setFocusedFrame(newFrame.ptr(), WebCore::BroadcastFocusedFrame::No);
@@ -459,9 +445,9 @@ void WebFrame::createProvisionalFrame(ProvisionalFrameCreationParameters&& param
 
     RefPtr parent = remoteFrame->tree().parent();
     auto clientCreator = [this, protectedThis = Ref { *this }] (auto& localFrame, auto& frameLoader) mutable {
-        return makeUniqueRefWithoutRefCountedCheck<WebLocalFrameLoaderClient>(localFrame, frameLoader, WTFMove(protectedThis), makeInvalidator());
+        return makeUniqueRefWithoutRefCountedCheck<WebLocalFrameLoaderClient>(localFrame, frameLoader, WTF::move(protectedThis), makeInvalidator());
     };
-    auto localFrame = parent ? LocalFrame::createProvisionalSubframe(*corePage, WTFMove(clientCreator), m_frameID, parameters.effectiveSandboxFlags, parameters.effectiveReferrerPolicy, parameters.scrollingMode, *parent, Ref { remoteFrame->frameTreeSyncData() }) : LocalFrame::createMainFrame(*corePage, WTFMove(clientCreator), m_frameID, parameters.effectiveSandboxFlags, parameters.effectiveReferrerPolicy, nullptr, Ref { remoteFrame->frameTreeSyncData() });
+    auto localFrame = parent ? LocalFrame::createProvisionalSubframe(*corePage, WTF::move(clientCreator), m_frameID, parameters.effectiveSandboxFlags, parameters.effectiveReferrerPolicy, parameters.scrollingMode, *parent, Ref { remoteFrame->frameTreeSyncData() }) : LocalFrame::createMainFrame(*corePage, WTF::move(clientCreator), m_frameID, parameters.effectiveSandboxFlags, parameters.effectiveReferrerPolicy, nullptr, Ref { remoteFrame->frameTreeSyncData() });
     ASSERT(!m_provisionalFrame);
     m_provisionalFrame = localFrame.ptr();
     m_frameIDBeforeProvisionalNavigation = parameters.frameIDBeforeProvisionalNavigation;
@@ -470,8 +456,8 @@ void WebFrame::createProvisionalFrame(ProvisionalFrameCreationParameters&& param
 
     if (parameters.layerHostingContextIdentifier)
         setLayerHostingContextIdentifier(*parameters.layerHostingContextIdentifier);
-    if (parameters.initialSize)
-        updateLocalFrameSize(localFrame, *parameters.initialSize);
+    if (parameters.initialRect)
+        updateLocalFrameRect(localFrame, *parameters.initialRect);
 
     if (parameters.commitTiming == CommitTiming::Immediately)
         commitProvisionalFrame();
@@ -601,14 +587,14 @@ void WebFrame::didReceivePolicyDecision(uint64_t listenerID, PolicyDecision&& po
     if (!policyCheck.policyFunction)
         return;
 
-    FramePolicyFunction function = WTFMove(policyCheck.policyFunction);
+    FramePolicyFunction function = WTF::move(policyCheck.policyFunction);
     bool forNavigationAction = policyCheck.forNavigationAction == ForNavigationAction::Yes;
 
     if (forNavigationAction && localFrameLoaderClient() && policyDecision.websitePoliciesData) {
         ASSERT(page());
         if (page())
             page()->setAllowsContentJavaScriptFromMostRecentNavigation(policyDecision.websitePoliciesData->allowsContentJavaScript);
-        protectedLocalFrameLoaderClient()->applyWebsitePolicies(WTFMove(*policyDecision.websitePoliciesData));
+        protect(localFrameLoaderClient())->applyWebsitePolicies(WTF::move(*policyDecision.websitePoliciesData));
     }
 
     m_policyDownloadID = policyDecision.downloadID;
@@ -621,7 +607,7 @@ void WebFrame::didReceivePolicyDecision(uint64_t listenerID, PolicyDecision&& po
     if (policyDecision.policyAction == PolicyAction::Use && policyDecision.sandboxExtensionHandle) {
         if (RefPtr page = this->page()) {
             Ref mainWebFrame = page->mainWebFrame();
-            page->sandboxExtensionTracker().beginLoad(WTFMove(*(policyDecision.sandboxExtensionHandle)));
+            page->sandboxExtensionTracker().beginLoad(WTF::move(*(policyDecision.sandboxExtensionHandle)));
         }
     }
 
@@ -822,7 +808,7 @@ String WebFrame::innerText() const
     if (!localFrame->document()->documentElement())
         return String();
 
-    return localFrame->protectedDocument()->protectedDocumentElement()->innerText();
+    return protect(protect(localFrame->document())->documentElement())->innerText();
 }
 
 RefPtr<WebFrame> WebFrame::parentFrame() const
@@ -858,7 +844,7 @@ Ref<API::Array> WebFrame::childFrames()
         vector.append(webFrame);
     }
 
-    return API::Array::create(WTFMove(vector));
+    return API::Array::create(WTF::move(vector));
 }
 
 String WebFrame::layerTreeAsText() const
@@ -876,7 +862,7 @@ unsigned WebFrame::pendingUnloadCount() const
     if (!localFrame)
         return 0;
 
-    return localFrame->protectedDocument()->protectedWindow()->pendingUnloadEventListeners();
+    return protect(protect(localFrame->document())->window())->pendingUnloadEventListeners();
 }
 
 bool WebFrame::allowsFollowingLink(const URL& url) const
@@ -908,7 +894,7 @@ JSGlobalContextRef WebFrame::jsContextForWorld(DOMWrapperWorld& world)
 
 JSGlobalContextRef WebFrame::jsContextForWorld(InjectedBundleScriptWorld* world)
 {
-    return jsContextForWorld(world->protectedCoreWorld());
+    return jsContextForWorld(protect(world->coreWorld()));
 }
 
 JSGlobalContextRef WebFrame::jsContextForServiceWorkerWorld(DOMWrapperWorld& world)
@@ -916,12 +902,12 @@ JSGlobalContextRef WebFrame::jsContextForServiceWorkerWorld(DOMWrapperWorld& wor
     if (!m_coreFrame || !m_coreFrame->page())
         return nullptr;
 
-    return toGlobalRef(m_coreFrame->protectedPage()->serviceWorkerGlobalObject(world));
+    return toGlobalRef(protect(m_coreFrame->page())->serviceWorkerGlobalObject(world));
 }
 
 JSGlobalContextRef WebFrame::jsContextForServiceWorkerWorld(InjectedBundleScriptWorld* world)
 {
-    return jsContextForServiceWorkerWorld(world->protectedCoreWorld());
+    return jsContextForServiceWorkerWorld(protect(world->coreWorld()));
 }
 
 void WebFrame::setAccessibleName(const AtomString& accessibleName)
@@ -1109,7 +1095,7 @@ JSValueRef WebFrame::jsWrapperForWorld(InjectedBundleCSSStyleDeclarationHandle* 
     if (!localFrame)
         return nullptr;
 
-    auto* globalObject = localFrame->checkedScript()->globalObject(world->protectedCoreWorld());
+    auto* globalObject = localFrame->checkedScript()->globalObject(protect(world->coreWorld()));
 
     JSLockHolder lock(globalObject);
     return toRef(globalObject, toJS(globalObject, globalObject, cssStyleDeclarationHandle->coreCSSStyleDeclaration()));
@@ -1121,10 +1107,11 @@ JSValueRef WebFrame::jsWrapperForWorld(InjectedBundleNodeHandle* nodeHandle, Inj
     if (!localFrame)
         return nullptr;
 
-    auto* globalObject = localFrame->checkedScript()->globalObject(world->protectedCoreWorld());
+    auto* globalObject = localFrame->checkedScript()->globalObject(protect(world->coreWorld()));
 
     JSLockHolder lock(globalObject);
-    return toRef(globalObject, toJS(globalObject, globalObject, RefPtr { nodeHandle->coreNode() }.get()));
+    RefPtr coreNode = nodeHandle->coreNode();
+    return toRef(globalObject, coreNode ? toJS(globalObject, globalObject, coreNode.releaseNonNull()) : JSC::jsNull());
 }
 
 JSValueRef WebFrame::jsWrapperForWorld(InjectedBundleRangeHandle* rangeHandle, InjectedBundleScriptWorld* world)
@@ -1133,7 +1120,7 @@ JSValueRef WebFrame::jsWrapperForWorld(InjectedBundleRangeHandle* rangeHandle, I
     if (!localFrame)
         return nullptr;
 
-    auto* globalObject = localFrame->checkedScript()->globalObject(world->protectedCoreWorld());
+    auto* globalObject = localFrame->checkedScript()->globalObject(protect(world->coreWorld()));
 
     JSLockHolder lock(globalObject);
     return toRef(globalObject, toJS(globalObject, globalObject, Ref { rangeHandle->coreRange() }.get()));
@@ -1205,36 +1192,41 @@ String WebFrame::mimeTypeForResourceWithURL(const URL& url) const
     return String();
 }
 
-void WebFrame::updateRemoteFrameSize(WebCore::IntSize size)
-{
-    send(Messages::WebFrameProxy::UpdateRemoteFrameSize(size));
-}
-
-void WebFrame::updateFrameSize(WebCore::IntSize newSize)
+void WebFrame::updateFrameRectFromRemote(WebCore::IntRect newRect)
 {
     ASSERT(m_page->corePage()->settings().siteIsolationEnabled());
-    RefPtr localFrame = coreLocalFrame();
-    if (!localFrame)
-        return;
-    updateLocalFrameSize(*localFrame, newSize);
+    if (RefPtr localFrame = coreLocalFrame())
+        updateLocalFrameRect(*localFrame, newRect);
+    else {
+        RefPtr remoteFrame = coreRemoteFrame();
+        RefPtr remoteFrameView = remoteFrame->view();
+
+        if (remoteFrameView->frameRect() != newRect)
+            remoteFrameView->setFrameRectWithoutSync(newRect);
+    }
 }
 
-void WebFrame::updateLocalFrameSize(WebCore::LocalFrame& localFrame, WebCore::IntSize newSize)
+void WebFrame::updateLocalFrameRect(WebCore::LocalFrame& localFrame, WebCore::IntRect newRect)
 {
     RefPtr frameView = localFrame.view();
     if (!frameView)
         return;
 
-    if (frameView->size() == newSize)
-        return;
+    auto oldRect = frameView->frameRect();
 
-    frameView->resize(newSize);
+    if (oldRect == newRect)
+        return;
+    frameView->setFrameRect(newRect);
+
 #if PLATFORM(IOS_FAMILY)
-    // FIXME: This ensures cross-site iframe render correctly;
-    // it should be removed after rdar://122429810 is fixed.
-    frameView->setExposedContentRect(frameView->frameRect());
-    frameView->setUnobscuredContentSize(frameView->size());
+    if (oldRect.size() != frameView->size()) {
+        // FIXME: This ensures cross-site iframe render correctly;
+        // it should be removed after rdar://122429810 is fixed.
+        frameView->setExposedContentRect(FloatRect { { }, frameView->size() });
+        frameView->setUnobscuredContentSize(frameView->size());
+    }
 #endif
+
 
     if (RefPtr drawingArea = m_page ? m_page->drawingArea() : nullptr) {
         drawingArea->setNeedsDisplay();
@@ -1266,7 +1258,7 @@ RetainPtr<CFDataRef> WebFrame::webArchiveData(FrameFilterFunction callback, void
         exclusionRules,
         mainResourceFileName
     };
-    auto archive = LegacyWebArchive::create(document, WTFMove(options), [this, callback, context](auto& frame) -> bool {
+    auto archive = LegacyWebArchive::create(document, WTF::move(options), [this, callback, context](auto& frame) -> bool {
         if (!callback)
             return true;
 
@@ -1285,7 +1277,7 @@ RetainPtr<CFDataRef> WebFrame::webArchiveData(FrameFilterFunction callback, void
 
 RefPtr<WebImage> WebFrame::createSelectionSnapshot() const
 {
-    auto snapshot = snapshotSelection(*protectedCoreLocalFrame(), { { WebCore::SnapshotFlags::ForceBlackText, WebCore::SnapshotFlags::Shareable }, PixelFormat::BGRA8, DestinationColorSpace::SRGB() });
+    auto snapshot = snapshotSelection(*protect(coreLocalFrame()), { { WebCore::SnapshotFlags::ForceBlackText, WebCore::SnapshotFlags::Shareable }, PixelFormat::BGRA8, DestinationColorSpace::SRGB() });
     if (!snapshot)
         return nullptr;
 
@@ -1338,14 +1330,14 @@ inline DocumentLoader* WebFrame::policySourceDocumentLoader() const
         return nullptr;
     }
 
-    RefPtr policySourceDocumentLoader = mainFrameDocument->loader();
-    if (!policySourceDocumentLoader)
+    WeakPtr mainFrameDocumentLoader = mainFrameDocument->loader();
+    if (!mainFrameDocumentLoader)
         return nullptr;
 
-    if (!policySourceDocumentLoader->request().url().hasSpecialScheme() && document->url().protocolIsInHTTPFamily())
-        policySourceDocumentLoader = document->loader();
+    if (Ref { *mainFrameDocumentLoader }->request().url().hasSpecialScheme() && document->url().protocolIsInHTTPFamily())
+        return document->loader();
 
-    return policySourceDocumentLoader.unsafeGet();
+    return mainFrameDocumentLoader.get();
 }
 
 OptionSet<WebCore::AdvancedPrivacyProtections> WebFrame::advancedPrivacyProtections() const
@@ -1391,8 +1383,8 @@ bool WebFrame::handleContextMenuEvent(const PlatformMouseEvent& platformMouseEve
 
     bool handled = frame->eventHandler().sendContextMenuEvent(platformMouseEvent);
 #if ENABLE(CONTEXT_MENUS)
-    if (handled && protectedPage()->protectedContextMenu()->show())
-        protectedPage()->corePage()->pointerCaptureController().clearUnmatchedMouseDown(platformMouseEvent.pointerId());
+    if (handled && protect(protect(page())->contextMenu())->show())
+        protect(page())->corePage()->pointerCaptureController().clearUnmatchedMouseDown(platformMouseEvent.pointerId());
 
 #endif
     return handled;
@@ -1511,6 +1503,24 @@ String WebFrame::frameTextForTesting(bool includeSubframes)
     return builder.toString();
 }
 
+static Ref<WebKitJSHandle> createJSHandle(Node& node)
+{
+    Ref document = node.document();
+    auto* lexicalGlobalObject = document->globalObject();
+    RELEASE_ASSERT(lexicalGlobalObject->template inherits<JSDOMGlobalObject>());
+    auto* domGlobalObject = jsCast<JSDOMGlobalObject*>(lexicalGlobalObject);
+    JSLockHolder locker { lexicalGlobalObject };
+    return WebKitJSHandle::create(toJS(lexicalGlobalObject, domGlobalObject, node).toObject(lexicalGlobalObject));
+}
+
+std::pair<Ref<WebKitJSHandle>, JSHandleInfo> WebFrame::createAndPrepareToSendJSHandle(Node& node) const
+{
+    Ref handle = createJSHandle(node);
+    WebKitJSHandle::jsHandleSentToAnotherProcess(handle->identifier());
+    JSHandleInfo handleInfo { handle->identifier(), pageContentWorldIdentifier(), info(), handle->windowFrameIdentifier() };
+    return { WTF::move(handle), WTF::move(handleInfo) };
+}
+
 WebFrame* WebFrame::webFrame(std::optional<WebCore::FrameIdentifier> frameID)
 {
     return WebProcess::singleton().webFrame(frameID);
@@ -1551,14 +1561,14 @@ std::optional<ResourceResponse> WebFrame::resourceResponseForURL(const URL& url)
     return std::nullopt;
 }
 
-void WebFrame::findFocusableElementDescendingIntoRemoteFrame(WebCore::FocusDirection direction, const WebCore::FocusEventData& focusEventData, CompletionHandler<void(WebCore::FoundElementInRemoteFrame)>&& completionHandler)
+void WebFrame::findFocusableElementDescendingIntoRemoteFrame(WebCore::FocusDirection direction, const WebCore::FocusEventData& focusEventData, WebCore::ShouldFocusElement shouldFocusElement, CompletionHandler<void(WebCore::FoundElementInRemoteFrame)>&& completionHandler)
 {
     auto foundElementInRemoteFrame = WebCore::FoundElementInRemoteFrame::No;
 
     if (m_coreFrame) {
         if (RefPtr localFrame = dynamicDowncast<LocalFrame>(m_coreFrame.get())) {
             if (RefPtr page = localFrame->page()) {
-                auto result = page->focusController().findAndFocusElementStartingWithLocalFrame(direction, focusEventData, *localFrame);
+                auto result = page->focusController().findFocusableElementStartingWithLocalFrame(direction, focusEventData, *localFrame, shouldFocusElement);
                 if (result.element)
                     foundElementInRemoteFrame = WebCore::FoundElementInRemoteFrame::Yes;
             }
@@ -1568,21 +1578,26 @@ void WebFrame::findFocusableElementDescendingIntoRemoteFrame(WebCore::FocusDirec
     completionHandler(foundElementInRemoteFrame);
 }
 
+static RefPtr<Node> nodeFromJSHandleIdentifier(JSHandleIdentifier identifier)
+{
+    auto* object = WebKitJSHandle::objectForIdentifier(identifier);
+    if (!object)
+        return { };
+
+    auto* jsNode = jsDynamicCast<JSNode*>(object);
+    if (!jsNode)
+        return { };
+
+    return jsNode->wrapped();
+}
+
 void WebFrame::takeSnapshotOfNode(JSHandleIdentifier identifier, CompletionHandler<void(std::optional<ShareableBitmapHandle>&&)>&& completion)
 {
     RefPtr page = m_page.get();
     if (!page)
         return completion({ });
 
-    auto* object = WebKitJSHandle::objectForIdentifier(identifier);
-    if (!object)
-        return completion({ });
-
-    auto* jsNode = jsDynamicCast<JSNode*>(object);
-    if (!jsNode)
-        return completion({ });
-
-    RefPtr node = jsNode->wrapped();
+    RefPtr node = nodeFromJSHandleIdentifier(identifier);
     if (!node)
         return completion({ });
 
@@ -1593,7 +1608,7 @@ void WebFrame::takeSnapshotOfNode(JSHandleIdentifier identifier, CompletionHandl
     completion(bitmap->createHandle(SharedMemory::Protection::ReadOnly));
 }
 
-WebFrameInspectorTarget& WebFrame::ensureInspectorTarget()
+CheckedRef<WebFrameInspectorTarget> WebFrame::ensureInspectorTarget()
 {
     if (!m_inspectorTarget)
         m_inspectorTarget = makeUnique<WebFrameInspectorTarget>(*this);
@@ -1602,17 +1617,112 @@ WebFrameInspectorTarget& WebFrame::ensureInspectorTarget()
 
 void WebFrame::connectInspector(Inspector::FrontendChannel::ConnectionType connectionType)
 {
-    ensureInspectorTarget().connect(connectionType);
+    ensureInspectorTarget()->connect(connectionType);
 }
 
 void WebFrame::disconnectInspector()
 {
-    ensureInspectorTarget().disconnect();
+    ensureInspectorTarget()->disconnect();
 }
 
 void WebFrame::sendMessageToInspectorTarget(const String& message)
 {
-    ensureInspectorTarget().sendMessageToTargetBackend(message);
+    ensureInspectorTarget()->sendMessageToTargetBackend(message);
+}
+
+void WebFrame::requestTextExtraction(TextExtraction::Request&& request, CompletionHandler<void(TextExtraction::Item&&)>&& completion)
+{
+    RefPtr frame = coreLocalFrame();
+    if (!frame)
+        return completion({ });
+
+    completion(TextExtraction::extractItem(WTF::move(request), *frame));
+}
+
+void WebFrame::takeSnapshotOfExtractedText(TextExtraction::ExtractedText&& extractedText, CompletionHandler<void(RefPtr<TextIndicator>&&)>&& completion)
+{
+    RefPtr frame = coreLocalFrame();
+    if (!frame)
+        return completion({ });
+
+    auto range = TextExtraction::rangeForExtractedText(*frame, WTF::move(extractedText));
+    if (!range)
+        return completion({ });
+
+    using enum WebCore::TextIndicatorOption;
+    constexpr OptionSet options {
+        RespectTextColor,
+        PaintBackgrounds,
+        PaintAllContent,
+        TightlyFitContent,
+        UseBoundingRectAndPaintAllContentForComplexRanges,
+        DoNotClipToVisibleRect
+    };
+
+    completion(TextIndicator::createWithRange(*range, options, TextIndicatorPresentationTransition::None));
+}
+
+void WebFrame::describeTextExtractionInteraction(TextExtraction::Interaction&& interaction, CompletionHandler<void(TextExtraction::InteractionDescription&&)>&& completion)
+{
+    RefPtr frame = coreLocalFrame();
+    if (!frame)
+        return completion({ });
+
+    completion(TextExtraction::interactionDescription(interaction, *frame));
+}
+
+void WebFrame::handleTextExtractionInteraction(TextExtraction::Interaction&& interaction, CompletionHandler<void(bool, String&&)>&& completion)
+{
+    RefPtr frame = coreLocalFrame();
+    if (!frame)
+        return completion(false, "Browsing context is unavailable"_s);
+
+    TextExtraction::handleInteraction(WTF::move(interaction), *frame, WTF::move(completion));
+}
+
+void WebFrame::requestJSHandleForExtractedText(TextExtraction::ExtractedText&& extractedText, CompletionHandler<void(std::optional<JSHandleInfo>&&)>&& completion)
+{
+    RefPtr frame = coreLocalFrame();
+    if (!frame)
+        return completion({ });
+
+    RefPtr element = TextExtraction::elementForExtractedText(*frame, WTF::move(extractedText));
+    if (!element)
+        return completion({ });
+
+    auto [handle, info] = createAndPrepareToSendJSHandle(*element);
+    completion({ WTF::move(info) });
+}
+
+void WebFrame::getSelectorPathsForNode(JSHandleInfo&& handle, CompletionHandler<void(Vector<HashSet<String>>&&)>&& completion)
+{
+    RefPtr node = nodeFromJSHandleIdentifier(handle.identifier);
+    if (!node)
+        return completion({ });
+
+    RefPtr element = dynamicDowncast<Element>(*node) ?: node->parentElementInComposedTree();
+    if (!element)
+        return completion({ });
+
+    completion(ElementTargetingController::selectorsForElement(*element));
+}
+
+void WebFrame::getNodeForSelectorPaths(Vector<HashSet<String>>&& selectors, CompletionHandler<void(std::optional<JSHandleInfo>&&)>&& completion)
+{
+    RefPtr frame = coreLocalFrame();
+    if (!frame)
+        return completion({ });
+
+    RefPtr document = frame->document();
+    if (!document)
+        return completion({ });
+
+    RefPtr element = ElementTargetingController::elementFromSelectors(*document, selectors);
+    if (!element)
+        return completion({ });
+
+    auto [handle, info] = createAndPrepareToSendJSHandle(*element);
+    completion({ WTF::move(info) });
 }
 
 } // namespace WebKit

@@ -42,7 +42,7 @@ Ref<ResizeObservation> ResizeObservation::create(Element& target, ResizeObserver
     return adoptRef(*new ResizeObservation(target, observedBox));
 }
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(ResizeObservation);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(ResizeObservation);
 
 ResizeObservation::ResizeObservation(Element& element, ResizeObserverBoxOptions observedBox)
     : m_target { element }
@@ -65,7 +65,7 @@ void ResizeObservation::resetObservationSize()
 
 auto ResizeObservation::computeObservedSizes() const -> std::optional<BoxSizes>
 {
-    if (auto* svg = dynamicDowncast<SVGElement>(target())) {
+    if (RefPtr svg = dynamicDowncast<SVGElement>(target())) {
         if (svg->hasAssociatedSVGLayoutBox()) {
             LayoutSize size;
             if (auto svgRect = svg->getBoundingBox()) {
@@ -156,8 +156,8 @@ std::optional<ResizeObservation::BoxSizes> ResizeObservation::elementSizeChanged
 size_t ResizeObservation::targetElementDepth() const
 {
     unsigned depth = 0;
-    for (Element* ownerElement = m_target.get(); ownerElement; ownerElement = ownerElement->document().ownerElement()) {
-        for (Element* parent = ownerElement; parent; parent = parent->parentElementInComposedTree())
+    for (RefPtr ownerElement = m_target.get(); ownerElement; ownerElement = ownerElement->document().ownerElement()) {
+        for (RefPtr parent = ownerElement; parent; parent = parent->parentElementInComposedTree())
             ++depth;
     }
 

@@ -49,7 +49,7 @@ namespace WebCore {
 class RTCPeerConnection;
 
 class RTCIceTransport : public RefCounted<RTCIceTransport>, public ActiveDOMObject, public EventTarget, public RTCIceTransportBackendClient {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(RTCIceTransport);
+    WTF_MAKE_TZONE_ALLOCATED(RTCIceTransport);
 public:
     static Ref<RTCIceTransport> create(ScriptExecutionContext&, UniqueRef<RTCIceTransportBackend>&&, RTCPeerConnection&);
     ~RTCIceTransport();
@@ -63,7 +63,7 @@ public:
     RTCIceGatheringState gatheringState() const { return m_gatheringState; }
 
     const RTCIceTransportBackend& backend() const { return m_backend.get(); }
-    RefPtr<RTCPeerConnection> connection() const { return m_connection.get(); }
+    RefPtr<RTCPeerConnection> connection() const { return m_connection; }
 
     struct CandidatePair {
         RefPtr<RTCIceCandidate> local;
@@ -98,5 +98,7 @@ private:
 };
 
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_EVENTTARGET(RTCIceTransport)
 
 #endif // ENABLE(WEB_RTC)

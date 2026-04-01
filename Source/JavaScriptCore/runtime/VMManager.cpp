@@ -27,8 +27,10 @@
 #include "VMManager.h"
 
 #include "JSCConfig.h"
+#include "JSLock.h"
 #include "VM.h"
 #include "VMThreadContext.h"
+#include <wtf/RunLoop.h>
 
 namespace JSC {
 
@@ -140,12 +142,18 @@ auto VMManager::info() -> Info
     info.numberOfActiveVMs = manager.m_numberOfActiveVMs;
     info.numberOfStoppedVMs = manager.m_numberOfStoppedVMs.loadRelaxed();
     info.worldMode = manager.m_worldMode;
+    info.targetVM = manager.m_targetVM;
     return info;
 }
 
-void VMManager::setWasmDebuggerCallback(StopTheWorldCallback callback)
+void VMManager::setWasmDebuggerOnStop(StopTheWorldCallback callback)
 {
-    g_jscConfig.wasmDebuggerStopTheWorld = callback;
+    g_jscConfig.wasmDebuggerOnStop = callback;
+}
+
+void VMManager::setWasmDebuggerOnResume(PostResumeCallback callback)
+{
+    g_jscConfig.wasmDebuggerOnResume = callback;
 }
 
 void VMManager::setMemoryDebuggerCallback(StopTheWorldCallback callback)
@@ -169,9 +177,10 @@ void VMManager::decrementActiveVMs(VM& vm) WTF_REQUIRES_LOCK(m_worldLock)
     // it to a token value of invalidNumberOfActiveVMs (to aid debugging).
     if (m_worldMode == Mode::RunAll)
         ASSERT(m_numberOfActiveVMs == invalidNumberOfActiveVMs);
-    else
+    else if (vm.traps().m_hasBeenCountedAsActive) {
         m_numberOfActiveVMs--;
-    vm.traps().m_hasBeenCountedAsActive = false;
+        vm.traps().m_hasBeenCountedAsActive = false;
+    }
 
     auto shouldResumeAll = [&] {
         if (m_worldMode != Mode::RunAll && !m_numberOfActiveVMs)
@@ -229,11 +238,17 @@ CONCURRENT_SAFE void VMManager::requestStopAllInternal(StopReason reason)
 
         m_worldMode = Mode::Stopping;
 
+        bool enableWasmDebugger = reason == StopReason::WasmDebugger;
+
         // Have to use iterateVMs() instead of forEachVM() because we're already
         // holding the m_worldLock.
         iterateVMs(scopedLambda<IteratorCallback>([&] (VM& vm) {
             vm.requestStop();
             WTF::storeLoadFence();
+
+            if (enableWasmDebugger) [[unlikely]]
+                dispatchStopHandler(vm);
+
             if (vm.isEntered()) {
                 // incrementActiveVMs() relies on m_worldLock being held, which it
                 // obviously is above. However, Clang is not smart enough to see this.
@@ -249,6 +264,48 @@ CONCURRENT_SAFE void VMManager::requestStopAllInternal(StopReason reason)
             }
             return IterationStatus::Continue;
         }));
+    }
+}
+
+// Dispatch a callback to VM's RunLoop to handle Stop-The-World for idle VMs.
+// Idle VMs (not executing code) never check traps, so they can't respond to requestStop().
+// Dispatching to RunLoop ensures the callback executes when VM processes events, allowing
+// idle VMs to call notifyVMStop(). Currently only used for WasmDebugger interrupts.
+void VMManager::dispatchStopHandler(VM& vm)
+{
+    // Use JSLock coordination pattern (like JSRunLoopTimer) to safely detect VM destruction.
+    Ref<JSLock> apiLock = vm.apiLock();
+    vm.runLoop().dispatch([apiLock = WTF::move(apiLock)]() {
+        Locker locker { apiLock.get() };
+
+        RefPtr<VM> vm = apiLock->vm();
+        if (!vm)
+            return;
+
+        VMManager::singleton().handleStopViaDispatch(*vm);
+    });
+}
+
+void VMManager::handleStopViaDispatch(VM& vm)
+{
+    RELEASE_ASSERT(vm.currentThreadIsHoldingAPILock());
+
+    // Test-and-clear to ensure exactly one notifyVMStop() call.
+    // If trap already cleared (by handleTraps or resumeTheWorld), skip.
+    if (!vm.traps().clearTrap(VMTraps::NeedStopTheWorld))
+        return;
+
+    {
+        Locker lock { m_worldLock };
+        // Count VM as active so notifyVMStop's accounting is correct.
+        incrementActiveVMs(vm);
+    }
+
+    notifyVMStop(vm, StopTheWorldEvent::VMStopped);
+
+    {
+        Locker lock { m_worldLock };
+        decrementActiveVMs(vm);
     }
 }
 
@@ -383,7 +440,7 @@ void VMManager::notifyVMStop(VM& vm, StopTheWorldEvent event)
         case StopReason::GC:
             RELEASE_ASSERT_NOT_REACHED();
         case StopReason::WasmDebugger:
-            status = g_jscConfig.wasmDebuggerStopTheWorld(vm, event);
+            status = g_jscConfig.wasmDebuggerOnStop(vm, event);
             break;
         case StopReason::MemoryDebugger:
             status = g_jscConfig.memoryDebuggerStopTheWorld(vm, event);
@@ -401,6 +458,8 @@ void VMManager::notifyVMStop(VM& vm, StopTheWorldEvent event)
             // Same reason for why it's safe to set m_useRunOneMode here.
             auto requestBits = static_cast<StopRequestBits>(m_currentStopReason);
             m_pendingStopRequestBits.exchangeAnd(~requestBits);
+            if (m_currentStopReason == StopReason::WasmDebugger)
+                m_needsWasmDebuggerOnResume.store(true);
             m_currentStopReason = StopReason::None;
 
             // targetVM not being specified means that we should not change m_useRunOneMode.
@@ -417,10 +476,14 @@ void VMManager::notifyVMStop(VM& vm, StopTheWorldEvent event)
         }
     }
 
-    m_numberOfStoppedVMs.exchangeSub(1);
+    auto previousCount = m_numberOfStoppedVMs.exchangeSub(1);
 
     // If we get here, we're either transitioning to RunOne or Running mode.
     RELEASE_ASSERT(!m_targetVM || m_targetVM == &vm);
+
+    // Call post-resume callback once when last VM exits and all VMs are running.
+    if (previousCount == 1 && m_needsWasmDebuggerOnResume.exchange(false))
+        g_jscConfig.wasmDebuggerOnResume();
 }
 
 void VMManager::notifyVMConstruction(VM& vm)

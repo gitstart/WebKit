@@ -38,7 +38,7 @@ namespace JSC { namespace DFG {
 JITData::JITData(unsigned stubInfoSize, unsigned poolSize, const JITCode& jitCode, ExitVector&& exits)
     : Base(stubInfoSize, poolSize)
     , m_callLinkInfos(jitCode.m_unlinkedCallLinkInfos.size())
-    , m_exits(WTFMove(exits))
+    , m_exits(WTF::move(exits))
 {
     unsigned numberOfWatchpoints = 0;
     for (unsigned i = 0; i < jitCode.m_linkerIR.size(); ++i) {
@@ -48,6 +48,8 @@ JITData::JITData(unsigned stubInfoSize, unsigned poolSize, const JITCode& jitCod
         case LinkerIR::Type::MasqueradesAsUndefinedWatchpointSet:
         case LinkerIR::Type::ArrayBufferDetachWatchpointSet:
         case LinkerIR::Type::ArrayIteratorProtocolWatchpointSet:
+        case LinkerIR::Type::SetIteratorProtocolWatchpointSet:
+        case LinkerIR::Type::MapIteratorProtocolWatchpointSet:
         case LinkerIR::Type::NumberToStringWatchpointSet:
         case LinkerIR::Type::StructureCacheClearedWatchpointSet:
         case LinkerIR::Type::StringToStringWatchpointSet:
@@ -145,6 +147,16 @@ bool JITData::tryInitialize(VM& vm, CodeBlock* codeBlock, const JITCode& jitCode
         case LinkerIR::Type::ArrayIteratorProtocolWatchpointSet: {
             auto& watchpoint = m_watchpoints[indexOfWatchpoints++];
             success &= attemptToWatch(codeBlock, m_globalObject->arrayIteratorProtocolWatchpointSet(), watchpoint);
+            break;
+        }
+        case LinkerIR::Type::SetIteratorProtocolWatchpointSet: {
+            auto& watchpoint = m_watchpoints[indexOfWatchpoints++];
+            success &= attemptToWatch(codeBlock, m_globalObject->setIteratorProtocolWatchpointSet(), watchpoint);
+            break;
+        }
+        case LinkerIR::Type::MapIteratorProtocolWatchpointSet: {
+            auto& watchpoint = m_watchpoints[indexOfWatchpoints++];
+            success &= attemptToWatch(codeBlock, m_globalObject->mapIteratorProtocolWatchpointSet(), watchpoint);
             break;
         }
         case LinkerIR::Type::NumberToStringWatchpointSet: {
@@ -432,7 +444,7 @@ void JITCode::finalizeOSREntrypoints(Vector<OSREntryData>&& osrEntry)
     };
     verifyIsSorted(osrEntry);
 #endif
-    m_osrEntry = WTFMove(osrEntry);
+    m_osrEntry = WTF::move(osrEntry);
 }
 
 } } // namespace JSC::DFG

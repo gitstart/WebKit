@@ -52,7 +52,7 @@ class UnderlyingSourcePullCallback;
 class UnderlyingSourceStartCallback;
 
 class ReadableByteStreamController : public CanMakeWeakPtr<ReadableByteStreamController> {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(ReadableByteStreamController);
+    WTF_MAKE_TZONE_ALLOCATED(ReadableByteStreamController);
 public:
     ~ReadableByteStreamController();
 
@@ -69,7 +69,7 @@ public:
     ReadableStream& stream();
     Ref<ReadableStream> protectedStream();
 
-    void pullInto(JSDOMGlobalObject&, JSC::ArrayBufferView&, size_t, Ref<ReadableStreamReadIntoRequest>&&);
+    void pullInto(JSDOMGlobalObject&, JSC::ArrayBufferView&, uint64_t, Ref<ReadableStreamReadIntoRequest>&&);
 
     void runCancelSteps(JSDOMGlobalObject&, JSC::JSValue, Function<void(std::optional<JSC::JSValue>&&)>&&);
     void runPullSteps(JSDOMGlobalObject&, Ref<ReadableStreamReadRequest>&&);
@@ -90,7 +90,9 @@ public:
 
     void error(JSDOMGlobalObject&, const Exception&);
     void error(JSDOMGlobalObject&, JSC::JSValue);
-    void close(JSDOMGlobalObject&);
+
+    enum class ShouldThrowOnError : bool { No, Yes };
+    bool close(JSDOMGlobalObject&, ShouldThrowOnError = ShouldThrowOnError::Yes);
     void closeAndRespondToPendingPullIntos(JSDOMGlobalObject&);
     size_t pullFromBytes(JSDOMGlobalObject&, JSC::ArrayBuffer&, size_t offset);
     ExceptionOr<void> enqueue(JSDOMGlobalObject&, JSC::ArrayBufferView&);

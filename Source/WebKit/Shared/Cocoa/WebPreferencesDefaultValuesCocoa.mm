@@ -40,13 +40,42 @@
 #if USE(APPLE_INTERNAL_SDK) && __has_include(<WebKitAdditions/WebPreferencesDefaultValuesCocoaAdditions.mm>)
 #import <WebKitAdditions/WebPreferencesDefaultValuesCocoaAdditions.mm>
 #else
+
 #if HAVE(LIQUID_GLASS)
 static bool platformIsLiquidGlassEnabled()
 {
     return true;
 }
 #endif
+
+namespace WebKit {
+
+#if ENABLE(VIDEO)
+
+bool defaultCaptionDisplaySettingsEnabled()
+{
+    return false;
+}
+
 #endif
+
+#if PLATFORM(MAC)
+
+bool defaultUseAppKitGestures()
+{
+    return false;
+}
+
+bool defaultTextInputClientSelectionUpdatesEnabled()
+{
+    return false;
+}
+
+#endif // PLATFORM(MAC)
+
+}
+
+#endif // namespace WebKit
 
 namespace WebKit {
 
@@ -77,6 +106,11 @@ bool defaultScrollAnimatorEnabled()
     return [[NSUserDefaults standardUserDefaults] boolForKey:@"NSScrollAnimationEnabled"];
 }
 #endif
+
+bool defaultExtendedProofreadingEnabled()
+{
+    return os_feature_enabled(TextComposer, PostEditingProofreadingReview);
+}
 
 #if ENABLE(IMAGE_ANALYSIS)
 

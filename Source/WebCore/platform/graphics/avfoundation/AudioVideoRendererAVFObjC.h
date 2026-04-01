@@ -134,6 +134,7 @@ public:
     RefPtr<VideoFrame> currentVideoFrame() const final;
     void paintCurrentVideoFrameInContext(GraphicsContext&, const FloatRect&) final;
     RefPtr<NativeImage> currentNativeImage() const final;
+    Ref<BitmapImagePromise> currentBitmapImage() const final;
     std::optional<VideoPlaybackQualityMetrics> videoPlaybackQualityMetrics() final;
     PlatformLayer* platformVideoLayer() const final;
     void setVideoLayerSizeFenced(const FloatSize&, WTF::MachSendRightAnnotated&&) final;
@@ -223,6 +224,7 @@ private:
     void notifyRequiresFlushToResume();
 
     void cancelSeekingPromiseIfNeeded();
+    void cancelPerformTaskAtTimeObserverIfNeeded();
 
     RefPtr<VideoMediaSampleRenderer> protectedVideoRenderer() const;
     bool canUseDecompressionSession() const;

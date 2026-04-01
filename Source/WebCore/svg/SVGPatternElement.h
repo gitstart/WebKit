@@ -34,7 +34,7 @@ namespace WebCore {
 struct PatternAttributes;
  
 class SVGPatternElement final : public SVGElement, public SVGFitToViewBox, public SVGTests, public SVGURIReference {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(SVGPatternElement);
+    WTF_MAKE_TZONE_ALLOCATED(SVGPatternElement);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(SVGPatternElement);
 public:
     static Ref<SVGPatternElement> create(const QualifiedName&, Document&);
@@ -50,7 +50,6 @@ public:
     SVGUnitTypes::SVGUnitType patternUnits() const { return m_patternUnits->currentValue<SVGUnitTypes::SVGUnitType>(); }
     SVGUnitTypes::SVGUnitType patternContentUnits() const { return m_patternContentUnits->currentValue<SVGUnitTypes::SVGUnitType>(); }
     const SVGTransformList& patternTransform() const { return m_patternTransform->currentValue(); }
-    Ref<const SVGTransformList> protectedPatternTransform() const;
 
     SVGAnimatedLength& xAnimated() { return m_x; }
     SVGAnimatedLength& yAnimated() { return m_y; }

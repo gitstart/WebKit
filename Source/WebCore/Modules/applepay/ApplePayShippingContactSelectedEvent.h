@@ -35,7 +35,7 @@ namespace WebCore {
 class PaymentContact;
 
 class ApplePayShippingContactSelectedEvent final : public Event {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(ApplePayShippingContactSelectedEvent);
+    WTF_MAKE_TZONE_ALLOCATED(ApplePayShippingContactSelectedEvent);
 public:
     static Ref<ApplePayShippingContactSelectedEvent> create(const AtomString& type, unsigned version, const PaymentContact& shippingContact)
     {
@@ -49,7 +49,7 @@ public:
 private:
     ApplePayShippingContactSelectedEvent(const AtomString& type, unsigned version, const PaymentContact&);
 
-    const ApplePayPaymentContact m_shippingContact;
+    const LocalizedApplePayPaymentContact m_shippingContact;
 };
 
 }

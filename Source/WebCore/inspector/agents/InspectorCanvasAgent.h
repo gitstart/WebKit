@@ -35,6 +35,7 @@
 #include <JavaScriptCore/InspectorFrontendDispatchers.h>
 #include <initializer_list>
 #include <wtf/CheckedPtr.h>
+#include <wtf/CheckedRef.h>
 #include <wtf/Forward.h>
 #include <wtf/RobinHoodHashMap.h>
 #include <wtf/RobinHoodHashSet.h>
@@ -69,6 +70,9 @@ public:
     void willDestroyFrontendAndBackend(Inspector::DisconnectReason);
     void discardAgent();
     virtual bool enabled() const;
+
+    // CanvasObserver.
+    OVERRIDE_ABSTRACT_CAN_MAKE_CHECKEDPTR(CanMakeCheckedPtr);
 
     // CanvasBackendDispatcherHandler
     Inspector::Protocol::ErrorStringOr<void> enable();
@@ -123,7 +127,7 @@ protected:
 
     const UniqueRef<Inspector::CanvasFrontendDispatcher> m_frontendDispatcher;
 
-    MemoryCompactRobinHoodHashMap<String, RefPtr<InspectorCanvas>> m_identifierToInspectorCanvas;
+    MemoryCompactRobinHoodHashMap<String, Ref<InspectorCanvas>> m_identifierToInspectorCanvas;
 
 private:
     struct RecordingOptions {
@@ -148,13 +152,13 @@ private:
 
     const Ref<Inspector::CanvasBackendDispatcher> m_backendDispatcher;
 
-    Inspector::InjectedScriptManager& m_injectedScriptManager;
+    const CheckedRef<Inspector::InjectedScriptManager> m_injectedScriptManager;
 
     Vector<String> m_removedCanvasIdentifiers;
     Timer m_canvasDestroyedTimer;
 
 #if ENABLE(WEBGL)
-    MemoryCompactRobinHoodHashMap<String, RefPtr<InspectorShaderProgram>> m_identifierToInspectorProgram;
+    MemoryCompactRobinHoodHashMap<String, Ref<InspectorShaderProgram>> m_identifierToInspectorProgram;
     Vector<String> m_removedProgramIdentifiers;
     Timer m_programDestroyedTimer;
 #endif // ENABLE(WEBGL)

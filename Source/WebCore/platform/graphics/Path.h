@@ -32,9 +32,9 @@
 #include <WebCore/PathSegment.h>
 #include <WebCore/PlatformPath.h>
 #include <WebCore/WindRule.h>
-#include <variant>
 #include <wtf/DataRef.h>
 #include <wtf/TZoneMalloc.h>
+#include <wtf/Variant.h>
 
 namespace WebCore {
 
@@ -49,7 +49,7 @@ public:
     Path(PathSegment&&);
     WEBCORE_EXPORT Path(Vector<PathSegment>&&);
     explicit Path(const Vector<FloatPoint>& points);
-    Path(Ref<PathImpl>&&);
+    WEBCORE_EXPORT Path(Ref<PathImpl>&&);
 
     Path(const Path&) = default;
     Path(Path&&) = default;
@@ -114,9 +114,13 @@ public:
     FloatRect strokeBoundingRect(NOESCAPE const Function<void(GraphicsContext&)>& strokeStyleApplier = { }) const;
 
     WEBCORE_EXPORT void ensureImplForTesting();
+    WEBCORE_EXPORT const PathImpl* asImpl() const;
+
+    void setNotTransient();
 
 private:
     PlatformPathImpl& ensurePlatformPathImpl();
+    Ref<PlatformPathImpl> ensureProtectedPlatformPathImpl();
     PathImpl& setImpl(Ref<PathImpl>&&);
     WEBCORE_EXPORT PathImpl& ensureImpl();
     WEBCORE_EXPORT Ref<PathImpl> ensureProtectedImpl();
@@ -124,8 +128,9 @@ private:
     PathSegment* asSingle() { return std::get_if<PathSegment>(&m_data); }
     const PathSegment* asSingle() const { return std::get_if<PathSegment>(&m_data); }
 
-    RefPtr<PathImpl> asImpl();
-    RefPtr<const PathImpl> asImpl() const;
+    PathImpl* asImpl();
+    RefPtr<PathImpl> asProtectedImpl();
+    RefPtr<const PathImpl> asProtectedImpl() const;
 
     std::optional<FloatPoint> initialMoveToPoint() const;
 
@@ -135,7 +140,7 @@ private:
 WEBCORE_EXPORT WTF::TextStream& operator<<(WTF::TextStream&, const Path&);
 
 inline Path::Path(PathSegment&& segment)
-    : m_data(WTFMove(segment))
+    : m_data(WTF::move(segment))
 {
 }
 
@@ -249,7 +254,7 @@ inline FloatPoint Path::currentPoint() const
         FloatPoint lastMoveToPoint;
         return segment->calculateEndPoint({ }, lastMoveToPoint);
     }
-    return asImpl()->currentPoint();
+    return asProtectedImpl()->currentPoint();
 }
 
 inline std::optional<FloatPoint> Path::initialMoveToPoint() const

@@ -51,10 +51,10 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(CSSStyleProperties);
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(PropertySetCSSStyleProperties);
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(StyleRuleCSSStyleProperties);
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(InlineCSSStyleProperties);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(CSSStyleProperties);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(PropertySetCSSStyleProperties);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(StyleRuleCSSStyleProperties);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(InlineCSSStyleProperties);
 
 namespace {
 
@@ -532,7 +532,7 @@ RefPtr<DeprecatedCSSOMValue> PropertySetCSSStyleProperties::wrapForDeprecatedCSS
 
 StyleSheetContents* PropertySetCSSStyleProperties::contextStyleSheet() const
 {
-    CSSStyleSheet* cssStyleSheet = parentStyleSheet();
+    RefPtr cssStyleSheet = parentStyleSheet();
     return cssStyleSheet ? &cssStyleSheet->contents() : nullptr;
 }
 
@@ -593,7 +593,7 @@ CSSRule* StyleRuleCSSStyleProperties::parentRule() const
 
 OptionalOrReference<CSSParserContext> StyleRuleCSSStyleProperties::cssParserContext() const
 {
-    auto* styleSheet = contextStyleSheet();
+    RefPtr styleSheet = contextStyleSheet();
     if (!styleSheet)
         return PropertySetCSSStyleProperties::cssParserContext();
 

@@ -56,7 +56,7 @@ struct CookieChangeSubscription;
 
 class ServiceWorkerContainer final : public EventTarget, public ActiveDOMObject, public ServiceWorkerJobClient {
     WTF_MAKE_NONCOPYABLE(ServiceWorkerContainer);
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(ServiceWorkerContainer);
+    WTF_MAKE_TZONE_ALLOCATED(ServiceWorkerContainer);
 public:
     static UniqueRef<ServiceWorkerContainer> create(ScriptExecutionContext*, NavigatorBase&);
 
@@ -75,7 +75,7 @@ public:
     using RegistrationOptions = ServiceWorkerRegistrationOptions;
     void addRegistration(Variant<RefPtr<TrustedScriptURL>, String>&&, const RegistrationOptions&, Ref<DeferredPromise>&&);
     void unregisterRegistration(ServiceWorkerRegistrationIdentifier, DOMPromiseDeferred<IDLBoolean>&&);
-    void updateRegistration(const URL& scopeURL, const URL& scriptURL, WorkerType, RefPtr<DeferredPromise>&&);
+    void updateRegistration(const URL& scopeURL, const URL& scriptURL, WorkerType, Ref<DeferredPromise>&&);
 
     void getRegistration(const String& clientURL, Ref<DeferredPromise>&&);
     void updateRegistrationState(ServiceWorkerRegistrationIdentifier, ServiceWorkerRegistrationState, const std::optional<ServiceWorkerData>&);
@@ -83,7 +83,7 @@ public:
     void queueTaskToFireUpdateFoundEvent(ServiceWorkerRegistrationIdentifier);
     void queueTaskToDispatchControllerChangeEvent();
 
-    void postMessage(MessageWithMessagePorts&&, ServiceWorkerData&& sourceData, String&& sourceOrigin);
+    void postMessage(MessageWithMessagePorts&&, ServiceWorkerData&& sourceData, Ref<SecurityOrigin>&& sourceOrigin);
 
     void getRegistrations(Ref<DeferredPromise>&&);
 
@@ -124,7 +124,8 @@ public:
 private:
     ServiceWorkerContainer(ScriptExecutionContext*, NavigatorBase&);
 
-    bool addEventListener(const AtomString& eventType, Ref<EventListener>&&, const AddEventListenerOptions& = { }) final;
+    bool addEventListener(const AtomString& eventType, Ref<EventListener>&&, const AddEventListenerOptions&) final;
+    using EventTarget::addEventListener;
 
     void scheduleJob(Ref<ServiceWorkerJob>&&);
 
@@ -183,3 +184,5 @@ private:
 };
 
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_EVENTTARGET(ServiceWorkerContainer)

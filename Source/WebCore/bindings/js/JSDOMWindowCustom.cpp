@@ -97,7 +97,8 @@ JSC_DEFINE_CUSTOM_GETTER(jsDOMWindow_webkit, (JSGlobalObject* lexicalGlobalObjec
     RefPtr localDOMWindow = dynamicDowncast<LocalDOMWindow>(castedThis->wrapped());
     if (!localDOMWindow)
         return JSValue::encode(jsUndefined());
-    return JSValue::encode(toJS(lexicalGlobalObject, castedThis->globalObject(), localDOMWindow->webkitNamespace()));
+    RefPtr webkitNamespace = localDOMWindow->webkitNamespace();
+    return JSValue::encode(webkitNamespace ? toJS(lexicalGlobalObject, castedThis->globalObject(), webkitNamespace.releaseNonNull()) : jsNull());
 }
 #endif
 
@@ -242,7 +243,7 @@ bool JSDOMWindow::getOwnPropertySlotByIndex(JSObject* object, JSGlobalObject* le
         // FIXME: scopedChild/scopedChildCount and RemoteFrame need to work together well. We're using using child/childCount until then.
         if (is<LocalFrame>(frame)) {
             if (index < frame->tree().scopedChildCount()) {
-                if (auto* scopedChild = frame->tree().scopedChild(index)) {
+                if (RefPtr scopedChild = frame->tree().scopedChild(index)) {
                     slot.setValue(thisObject, enumToUnderlyingType(JSC::PropertyAttribute::ReadOnly), toJS(lexicalGlobalObject, scopedChild->window()));
                     return true;
                 }
@@ -399,7 +400,7 @@ static void addScopedChildrenIndexes(JSGlobalObject& lexicalGlobalObject, DOMWin
     if (!localDOMWindow)
         return;
 
-    auto* document = localDOMWindow->document();
+    CheckedPtr document = localDOMWindow->document();
     if (!document)
         return;
 
@@ -469,7 +470,7 @@ JSValue JSDOMWindow::event(JSGlobalObject& lexicalGlobalObject) const
     Event* event = currentEvent();
     if (!event)
         return jsUndefined();
-    return toJS(&lexicalGlobalObject, const_cast<JSDOMWindow*>(this), event);
+    return toJS(&lexicalGlobalObject, const_cast<JSDOMWindow*>(this), *event);
 }
 
 // Custom functions
@@ -603,7 +604,7 @@ JSValue JSDOMWindow::queueMicrotask(JSGlobalObject& lexicalGlobalObject, CallFra
     auto* globalObject = asObject(functionValue)->globalObject();
 
     scope.release();
-    globalObjectMethodTable()->queueMicrotaskToEventLoop(*this, JSC::QueuedTask { nullptr, JSC::InternalMicrotask::InvokeFunctionJob, globalObject, functionValue });
+    globalObjectMethodTable()->queueMicrotaskToEventLoop(*this, JSC::QueuedTask { nullptr, JSC::InternalMicrotask::InvokeFunctionJob, 0, globalObject, functionValue });
     return jsUndefined();
 }
 

@@ -68,6 +68,11 @@
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/text/MakeString.h>
 
+
+#if ENABLE(IPC_TESTING_SWIFT)
+#include "WebKit-Swift.h"
+#endif
+
 namespace WebKit::IPCTestingAPI {
 
 class JSIPC;
@@ -88,7 +93,7 @@ class JSIPCSemaphore : public RefCounted<JSIPCSemaphore> {
 public:
     static Ref<JSIPCSemaphore> create(IPC::Semaphore&& semaphore = { })
     {
-        return adoptRef(*new JSIPCSemaphore(WTFMove(semaphore)));
+        return adoptRef(*new JSIPCSemaphore(WTF::move(semaphore)));
     }
 
     JSObjectRef createJSWrapper(JSContextRef);
@@ -97,12 +102,12 @@ public:
     void encode(IPC::Encoder& encoder) const { encoder << m_semaphore; }
     IPC::Semaphore exchange(IPC::Semaphore&& semaphore = { })
     {
-        return std::exchange(m_semaphore, WTFMove(semaphore));
+        return std::exchange(m_semaphore, WTF::move(semaphore));
     }
 
 private:
     JSIPCSemaphore(IPC::Semaphore&& semaphore)
-        : m_semaphore(WTFMove(semaphore))
+        : m_semaphore(WTF::move(semaphore))
     { }
 
     static JSClassRef wrapperClass();
@@ -122,17 +127,17 @@ class JSIPCConnectionHandle : public RefCounted<JSIPCConnectionHandle> {
 public:
     static Ref<JSIPCConnectionHandle> create(IPC::Connection::Handle&& handle)
     {
-        return adoptRef(*new JSIPCConnectionHandle(WTFMove(handle)));
+        return adoptRef(*new JSIPCConnectionHandle(WTF::move(handle)));
     }
 
     JSObjectRef createJSWrapper(JSContextRef);
     static JSIPCConnectionHandle* toWrapped(JSContextRef, JSValueRef);
 
-    void encode(IPC::Encoder& encoder) { encoder << WTFMove(m_handle); }
+    void encode(IPC::Encoder& encoder) { encoder << WTF::move(m_handle); }
 
 private:
     JSIPCConnectionHandle(IPC::Connection::Handle&& handle)
-        : m_handle(WTFMove(handle))
+        : m_handle(WTF::move(handle))
     { }
 
     static JSClassRef wrapperClass();
@@ -151,12 +156,12 @@ class JSIPCConnection : public RefCounted<JSIPCConnection>, private IPC::Connect
 public:
     static Ref<JSIPCConnection> create(IPC::Connection::Identifier&& testedConnectionIdentifier)
     {
-        return adoptRef(*new JSIPCConnection(IPC::Connection::createServerConnection(WTFMove(testedConnectionIdentifier))));
+        return adoptRef(*new JSIPCConnection(IPC::Connection::createServerConnection(WTF::move(testedConnectionIdentifier))));
     }
 
     static Ref<JSIPCConnection> create(Ref<IPC::Connection> connection)
     {
-        return adoptRef(*new JSIPCConnection(WTFMove(connection)));
+        return adoptRef(*new JSIPCConnection(WTF::move(connection)));
     }
 
     void ref() const final { RefCounted::ref(); }
@@ -168,7 +173,7 @@ public:
     IPC::Connection& connection() const { return m_testedConnection; }
 private:
     JSIPCConnection(Ref<IPC::Connection> connection)
-        : m_testedConnection { WTFMove(connection) }
+        : m_testedConnection { WTF::move(connection) }
     {
     }
 
@@ -200,7 +205,7 @@ class JSIPCStreamClientConnection : public RefCountedAndCanMakeWeakPtr<JSIPCStre
 public:
     static Ref<JSIPCStreamClientConnection> create(JSIPC& jsIPC, RefPtr<IPC::StreamClientConnection> connection)
     {
-        return adoptRef(*new JSIPCStreamClientConnection(jsIPC, WTFMove(connection)));
+        return adoptRef(*new JSIPCStreamClientConnection(jsIPC, WTF::move(connection)));
     }
 
     JSObjectRef createJSWrapper(JSContextRef);
@@ -213,7 +218,7 @@ private:
 
     JSIPCStreamClientConnection(JSIPC& jsIPC, RefPtr<IPC::StreamClientConnection> connection)
         : m_jsIPC(jsIPC)
-        , m_streamConnection { WTFMove(connection) }
+        , m_streamConnection { WTF::move(connection) }
         , m_dummyMessageReceiver { makeUniqueRefWithoutRefCountedCheck<MessageReceiver>(*this) }
     {
     }
@@ -272,14 +277,14 @@ class JSIPCStreamServerConnectionHandle : public RefCounted<JSIPCStreamServerCon
 public:
     static Ref<JSIPCStreamServerConnectionHandle> create(IPC::StreamServerConnection::Handle&& handle)
     {
-        return adoptRef(*new JSIPCStreamServerConnectionHandle(WTFMove(handle)));
+        return adoptRef(*new JSIPCStreamServerConnectionHandle(WTF::move(handle)));
     }
     JSObjectRef createJSWrapper(JSContextRef);
     static JSIPCStreamServerConnectionHandle* toWrapped(JSContextRef, JSValueRef);
-    void encode(IPC::Encoder& encoder) { encoder << WTFMove(m_handle); }
+    void encode(IPC::Encoder& encoder) { encoder << WTF::move(m_handle); }
 private:
     JSIPCStreamServerConnectionHandle(IPC::StreamServerConnection::Handle&& handle)
-        : m_handle { WTFMove(handle) }
+        : m_handle { WTF::move(handle) }
     {
     }
     static JSClassRef wrapperClass();
@@ -335,7 +340,7 @@ public:
 
     static Ref<JSSharedMemory> create(Ref<SharedMemory>&& sharedMemory)
     {
-        return adoptRef(*new JSSharedMemory(WTFMove(sharedMemory)));
+        return adoptRef(*new JSSharedMemory(WTF::move(sharedMemory)));
     }
 
     size_t size() const { return m_sharedMemory->size(); }
@@ -350,7 +355,7 @@ private:
     { }
 
     JSSharedMemory(Ref<SharedMemory>&& sharedMemory)
-        : m_sharedMemory(WTFMove(sharedMemory))
+        : m_sharedMemory(WTF::move(sharedMemory))
     {
     }
 
@@ -408,7 +413,11 @@ private:
     JSIPC(WebPage& webPage, WebFrame& webFrame)
         : m_webPage(webPage)
         , m_webFrame(webFrame)
+#if ENABLE(IPC_TESTING_SWIFT)
+        , m_testerProxy(IPCTesterReceiver::init())
+#else
         , m_testerProxy(IPCTesterReceiver::create())
+#endif
     { }
 
     static JSIPC* unwrap(JSObjectRef);
@@ -454,7 +463,11 @@ private:
     WeakPtr<WebPage> m_webPage;
     WeakPtr<WebFrame> m_webFrame;
     Vector<Ref<JSMessageListener>> m_messageListeners;
+#if ENABLE(IPC_TESTING_SWIFT)
+    IPCTesterReceiver m_testerProxy;
+#else
     const Ref<IPCTesterReceiver> m_testerProxy;
+#endif
     RefPtr<JSIPCConnection> m_uiConnection;
     RefPtr<JSIPCConnection> m_networkConnection;
     RefPtr<JSIPCConnection> m_gpuConnection;
@@ -539,7 +552,7 @@ static JSValueRef jsSend(IPC::Connection& connection, uint64_t destinationID, IP
     auto encoder = makeUniqueRef<IPC::Encoder>(messageName, destinationID);
     if (messageArguments && !encodeArgument(encoder.get(), context, messageArguments, exception))
         return JSValueMakeUndefined(context);
-    connection.sendMessage(WTFMove(encoder), IPC::SendOption::IPCTestingMessage);
+    connection.sendMessage(WTF::move(encoder), IPC::SendOption::IPCTestingMessage);
     return JSValueMakeUndefined(context);
 }
 
@@ -555,7 +568,7 @@ static JSValueRef jsSendWithAsyncReply(IPC::Connection& connection, uint64_t des
             auto* globalObject = toJS(context);
             auto& vm = globalObject->vm();
             JSC::JSLockHolder lock(vm);
-            auto scope = DECLARE_CATCH_SCOPE(vm);
+            auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
             auto cleanup = makeScopeExit([context, callback] {
                 JSValueUnprotect(context, callback);
                 JSGlobalContextRelease(JSContextGetGlobalContext(context));
@@ -574,7 +587,7 @@ static JSValueRef jsSendWithAsyncReply(IPC::Connection& connection, uint64_t des
         IPC::Connection::AsyncReplyID::generate()
     };
     auto asyncReplyID = *handler.replyID;
-    auto result = connection.sendMessageWithAsyncReply(WTFMove(encoder), WTFMove(handler), IPC::SendOption::IPCTestingMessage);
+    auto result = connection.sendMessageWithAsyncReply(WTF::move(encoder), WTF::move(handler), IPC::SendOption::IPCTestingMessage);
     if (result != IPC::Error::NoError) {
         *exception = createErrorFromIPCError(context, result);
         return JSValueMakeUndefined(context);
@@ -587,11 +600,11 @@ static JSValueRef jsSendSync(IPC::Connection& connection, uint64_t destinationID
     auto [encoder, syncRequestID] = connection.createSyncMessageEncoder(messageName, destinationID);
     if (messageArguments && !encodeArgument(encoder.get(), context, messageArguments, exception))
         return JSValueMakeUndefined(context);
-    auto replyDecoderOrError = connection.sendSyncMessage(syncRequestID, WTFMove(encoder), timeout, { });
+    auto replyDecoderOrError = connection.sendSyncMessage(syncRequestID, WTF::move(encoder), timeout, { });
     if (replyDecoderOrError.has_value()) {
         auto* globalObject = toJS(context);
         JSC::JSLockHolder lock(globalObject->vm());
-        auto scope = DECLARE_CATCH_SCOPE(globalObject->vm());
+        auto scope = DECLARE_TOP_EXCEPTION_SCOPE(globalObject->vm());
         auto* jsResult = jsResultFromReplyDecoder(globalObject, messageName, replyDecoderOrError.value().get());
         if (scope.exception()) {
             *exception = toRef(globalObject, scope.exception());
@@ -609,7 +622,7 @@ static JSValueRef jsWaitForMessage(IPC::Connection& connection, uint64_t destina
     JSC::JSLockHolder lock(globalObject->vm());
     auto decoderOrError = connection.waitForMessageForTesting(messageName, destinationID, timeout, { });
     if (decoderOrError.has_value()) {
-        auto scope = DECLARE_CATCH_SCOPE(globalObject->vm());
+        auto scope = DECLARE_TOP_EXCEPTION_SCOPE(globalObject->vm());
         auto jsResult = jsValueForArguments(globalObject, messageName, decoderOrError.value().get());
         if (scope.exception()) {
             *exception = toRef(globalObject, scope.exception());
@@ -643,7 +656,7 @@ JSObjectRef JSIPCSemaphore::createJSWrapper(JSContextRef context)
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSObjectRef wrapperObject = JSObjectMake(toGlobalRef(globalObject), wrapperClass(), this);
     scope.clearException();
     return wrapperObject;
@@ -703,7 +716,7 @@ JSObjectRef JSIPCConnectionHandle::createJSWrapper(JSContextRef context)
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSObjectRef wrapperObject = JSObjectMake(toGlobalRef(globalObject), wrapperClass(), this);
     scope.clearException();
     return wrapperObject;
@@ -760,7 +773,7 @@ JSObjectRef JSIPCConnection::createJSWrapper(JSContextRef context)
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSObjectRef wrapperObject = JSObjectMake(toGlobalRef(globalObject), wrapperClass(), this);
     scope.clearException();
     return wrapperObject;
@@ -990,7 +1003,7 @@ JSObjectRef JSIPCStreamClientConnection::createJSWrapper(JSContextRef context)
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSObjectRef wrapperObject = JSObjectMake(toGlobalRef(globalObject), wrapperClass(), this);
     scope.clearException();
     return wrapperObject;
@@ -1159,7 +1172,7 @@ bool JSIPCStreamClientConnection::prepareToSendOutOfStreamMessage(uint64_t desti
     auto span = m_streamConnection->bufferForTesting().tryAcquire(timeout);
     if (!span)
         return false;
-    m_streamConnection->sendProcessOutOfStreamMessage(WTFMove(*span));
+    m_streamConnection->sendProcessOutOfStreamMessage(WTF::move(*span));
     return true;
 }
 
@@ -1336,7 +1349,7 @@ JSObjectRef JSIPCStreamConnectionBuffer::createJSWrapper(JSContextRef context)
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSObjectRef wrapperObject = JSObjectMake(toGlobalRef(globalObject), wrapperClass(), this);
     scope.clearException();
     return wrapperObject;
@@ -1397,7 +1410,7 @@ JSObjectRef JSIPCStreamServerConnectionHandle::createJSWrapper(JSContextRef cont
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSObjectRef wrapperObject = JSObjectMake(toGlobalRef(globalObject), wrapperClass(), this);
     scope.clearException();
     return wrapperObject;
@@ -1507,7 +1520,7 @@ JSObjectRef JSSharedMemory::createJSWrapper(JSContextRef context)
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSObjectRef wrapperObject = JSObjectMake(toGlobalRef(globalObject), wrapperClass(), this);
     scope.clearException();
     return wrapperObject;
@@ -1603,7 +1616,7 @@ JSValueRef JSSharedMemory::readBytes(JSContextRef context, JSObjectRef, JSObject
     auto arrayBuffer = JSC::ArrayBuffer::create(jsSharedMemory->m_sharedMemory->span().subspan(offset, length));
     JSC::JSArrayBuffer* jsArrayBuffer = nullptr;
     if (auto* structure = globalObject->arrayBufferStructure(arrayBuffer->sharingMode()))
-        jsArrayBuffer = JSC::JSArrayBuffer::create(vm, structure, WTFMove(arrayBuffer));
+        jsArrayBuffer = JSC::JSArrayBuffer::create(vm, structure, WTF::move(arrayBuffer));
     if (!jsArrayBuffer) {
         *exception = createTypeError(context, "Failed to create the array buffer for the read bytes"_s);
         return JSValueMakeUndefined(context);
@@ -1770,7 +1783,7 @@ JSValueRef JSIPCStreamConnectionBuffer::readBytes(JSContextRef context, JSObject
     auto arrayBuffer = JSC::ArrayBuffer::create(span.subspan(offset, length));
     JSC::JSArrayBuffer* jsArrayBuffer = nullptr;
     if (auto* structure = globalObject->arrayBufferStructure(arrayBuffer->sharingMode()))
-        jsArrayBuffer = JSC::JSArrayBuffer::create(vm, structure, WTFMove(arrayBuffer));
+        jsArrayBuffer = JSC::JSArrayBuffer::create(vm, structure, WTF::move(arrayBuffer));
     if (!jsArrayBuffer) {
         *exception = createTypeError(context, "Failed to create the array buffer for the read bytes"_s);
         return JSValueMakeUndefined(context);
@@ -1952,7 +1965,7 @@ const JSStaticValue* JSIPC::staticValues()
 
 RefPtr<JSIPCConnection> JSIPC::processTargetFromArgument(JSC::JSGlobalObject* globalObject, JSValueRef valueRef, JSValueRef* exception)
 {
-    auto scope = DECLARE_CATCH_SCOPE(globalObject->vm());
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(globalObject->vm());
     auto name = toJS(globalObject, valueRef).toWTFString(globalObject);
     if (scope.exception())
         return nullptr;
@@ -2061,7 +2074,7 @@ static bool encodeTypedArray(IPC::Encoder& encoder, JSContextRef context, JSValu
     return true;
 }
 
-template<typename PointType> bool encodePointType(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, JSC::CatchScope& scope)
+template<typename PointType> bool encodePointType(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, JSC::TopExceptionScope& scope)
 {
     auto& vm = globalObject->vm();
     auto jsX = jsObject->get(globalObject, JSC::Identifier::fromString(vm, "x"_s));
@@ -2074,7 +2087,7 @@ template<typename PointType> bool encodePointType(IPC::Encoder& encoder, JSC::JS
     return true;
 }
 
-template<typename RectType> bool encodeRectType(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, JSC::CatchScope& scope)
+template<typename RectType> bool encodeRectType(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, JSC::TopExceptionScope& scope)
 {
     auto& vm = globalObject->vm();
     auto jsX = jsObject->get(globalObject, JSC::Identifier::fromString(vm, "x"_s));
@@ -2110,7 +2123,7 @@ template<typename IntegralType> bool encodeNumericType(IPC::Encoder& encoder, JS
 
 #if ENABLE(GPU_PROCESS)
 template <typename T>
-std::optional<T> getObjectIdentifierFromProperty(JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, ASCIILiteral propertyName, JSC::CatchScope& scope)
+std::optional<T> getObjectIdentifierFromProperty(JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, ASCIILiteral propertyName, JSC::TopExceptionScope& scope)
 {
     auto jsPropertyValue = jsObject->get(globalObject, JSC::Identifier::fromString(globalObject->vm(), propertyName));
     if (scope.exception())
@@ -2123,7 +2136,7 @@ std::optional<T> getObjectIdentifierFromProperty(JSC::JSGlobalObject* globalObje
 
 #endif
 
-static bool encodeSharedMemory(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, JSC::CatchScope& scope)
+static bool encodeSharedMemory(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, JSC::TopExceptionScope& scope)
 {
     auto jsSharedMemoryValue = jsObject->get(globalObject, JSC::Identifier::fromString(globalObject->vm(), "value"_s));
     if (scope.exception())
@@ -2148,11 +2161,11 @@ static bool encodeSharedMemory(IPC::Encoder& encoder, JSC::JSGlobalObject* globa
     auto handle = jsSharedMemory->createHandle(protection);
     if (!handle)
         return false;
-    encoder << WTFMove(*handle);
+    encoder << WTF::move(*handle);
     return true;
 }
 
-static bool encodeFrameInfoData(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, JSC::CatchScope& scope)
+static bool encodeFrameInfoData(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSObject* jsObject, JSC::TopExceptionScope& scope)
 {
     auto jsIPCValue = jsObject->get(globalObject, JSC::Identifier::fromString(globalObject->vm(), "value"_s));
     if (scope.exception())
@@ -2167,7 +2180,7 @@ static bool encodeFrameInfoData(IPC::Encoder& encoder, JSC::JSGlobalObject* glob
     return true;
 }
 
-static bool encodeStreamConnectionBuffer(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSValue jsValue, JSC::CatchScope& scope)
+static bool encodeStreamConnectionBuffer(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSValue jsValue, JSC::TopExceptionScope& scope)
 {
     RefPtr jsIPCStreamConnectionBuffer = JSIPCStreamConnectionBuffer::toWrapped(toRef(globalObject), toRef(globalObject, jsValue));
     if (!jsIPCStreamConnectionBuffer)
@@ -2177,7 +2190,7 @@ static bool encodeStreamConnectionBuffer(IPC::Encoder& encoder, JSC::JSGlobalObj
     return true;
 }
 
-static bool encodeStreamServerConnectionHandle(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSValue jsValue, JSC::CatchScope& scope)
+static bool encodeStreamServerConnectionHandle(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSValue jsValue, JSC::TopExceptionScope& scope)
 {
     RefPtr JSIPCStreamServerConnectionHandle = JSIPCStreamServerConnectionHandle::toWrapped(toRef(globalObject), toRef(globalObject, jsValue));
     if (!JSIPCStreamServerConnectionHandle)
@@ -2187,7 +2200,7 @@ static bool encodeStreamServerConnectionHandle(IPC::Encoder& encoder, JSC::JSGlo
     return true;
 }
 
-static bool encodeSemaphore(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSValue jsValue, JSC::CatchScope& scope)
+static bool encodeSemaphore(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSValue jsValue, JSC::TopExceptionScope& scope)
 {
     RefPtr jsIPCSemaphore = JSIPCSemaphore::toWrapped(toRef(globalObject), toRef(globalObject, jsValue));
     if (!jsIPCSemaphore)
@@ -2197,7 +2210,7 @@ static bool encodeSemaphore(IPC::Encoder& encoder, JSC::JSGlobalObject* globalOb
     return true;
 }
 
-static bool encodeConnectionHandle(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSValue jsValue, JSC::CatchScope& scope)
+static bool encodeConnectionHandle(IPC::Encoder& encoder, JSC::JSGlobalObject* globalObject, JSC::JSValue jsValue, JSC::TopExceptionScope& scope)
 {
     RefPtr JSIPCConnectionHandle = JSIPCConnectionHandle::toWrapped(toRef(globalObject), toRef(globalObject, jsValue));
     if (!JSIPCConnectionHandle)
@@ -2245,7 +2258,7 @@ static bool encodeArrayArgument(IPC::Encoder& encoder, ArrayMode arrayMode, JSCo
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(globalObject->vm());
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(globalObject->vm());
     auto* jsObject = toJS(objectRef);
 
     auto jsLength = jsObject->get(globalObject, JSC::Identifier::fromString(vm, "length"_s));
@@ -2288,7 +2301,7 @@ static bool encodeArgument(IPC::Encoder& encoder, JSContextRef context, JSValueR
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(globalObject->vm());
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(globalObject->vm());
     auto* jsObject = toJS(globalObject, objectRef).getObject();
     ASSERT(jsObject);
     auto jsType = jsObject->get(globalObject, JSC::Identifier::fromString(vm, "type"_s));
@@ -2492,7 +2505,7 @@ static JSC::JSObject* jsResultFromReplyDecoder(JSC::JSGlobalObject* globalObject
     auto arrayBuffer = JSC::ArrayBuffer::create(decoder.span());
     JSC::JSArrayBuffer* jsArrayBuffer = nullptr;
     if (auto* structure = globalObject->arrayBufferStructure(arrayBuffer->sharingMode()))
-        jsArrayBuffer = JSC::JSArrayBuffer::create(vm, structure, WTFMove(arrayBuffer));
+        jsArrayBuffer = JSC::JSArrayBuffer::create(vm, structure, WTF::move(arrayBuffer));
     if (!jsArrayBuffer) {
         throwException(globalObject, scope, JSC::createTypeError(globalObject, "Failed to create the array buffer for the reply"_s));
         return nullptr;
@@ -2509,7 +2522,7 @@ static JSC::JSObject* jsResultFromReplyDecoder(JSC::JSGlobalObject* globalObject
         return nullptr;
     }
 
-    auto catchScope = DECLARE_CATCH_SCOPE(vm);
+    auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSC::JSObject* jsResult = constructEmptyObject(globalObject, globalObject->objectPrototype());
     RETURN_IF_EXCEPTION(catchScope, nullptr);
 
@@ -2633,14 +2646,14 @@ JSValueRef JSIPC::createConnectionPair(JSContextRef context, JSObjectRef, JSObje
     auto* globalObject = toJS(context);
     JSC::JSLockHolder lock(globalObject->vm());
     auto& vm = globalObject->vm();
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSC::JSObject* connectionPairObject = JSC::constructEmptyArray(globalObject, nullptr);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
     int index = 0;
-    auto jsValue = toJS(globalObject, JSIPCConnection::create(WTFMove(connectionIdentifiers->server))->createJSWrapper(context));
+    auto jsValue = toJS(globalObject, JSIPCConnection::create(WTF::move(connectionIdentifiers->server))->createJSWrapper(context));
     connectionPairObject->putDirectIndex(globalObject, index++, jsValue);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
-    jsValue = toJS(globalObject, JSIPCConnectionHandle::create(WTFMove(connectionIdentifiers->client))->createJSWrapper(context));
+    jsValue = toJS(globalObject, JSIPCConnectionHandle::create(WTF::move(connectionIdentifiers->client))->createJSWrapper(context));
     connectionPairObject->putDirectIndex(globalObject, index++, jsValue);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
     return toRef(vm, connectionPairObject);
@@ -2680,14 +2693,14 @@ JSValueRef JSIPC::createStreamClientConnection(JSContextRef context, JSObjectRef
         return JSValueMakeUndefined(context);
     }
     auto& vm = globalObject->vm();
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSC::JSObject* connectionPairObject = JSC::constructEmptyArray(globalObject, nullptr);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
     int index = 0;
-    auto jsValue = toJS(globalObject, JSIPCStreamClientConnection::create(*jsIPC, WTFMove(connectionPair->streamConnection))->createJSWrapper(context));
+    auto jsValue = toJS(globalObject, JSIPCStreamClientConnection::create(*jsIPC, WTF::move(connectionPair->streamConnection))->createJSWrapper(context));
     connectionPairObject->putDirectIndex(globalObject, index++, jsValue);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
-    jsValue = toJS(globalObject, JSIPCStreamServerConnectionHandle::create(WTFMove(connectionPair->connectionHandle))->createJSWrapper(context));
+    jsValue = toJS(globalObject, JSIPCStreamServerConnectionHandle::create(WTF::move(connectionPair->connectionHandle))->createJSWrapper(context));
     connectionPairObject->putDirectIndex(globalObject, index++, jsValue);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
     return toRef(vm, connectionPairObject);
@@ -2730,7 +2743,11 @@ JSValueRef JSIPC::addTesterReceiver(JSContextRef context, JSObjectRef, JSObjectR
         return JSValueMakeUndefined(context);
     }
     // Currently supports only UI process, as there's no uniform way to add message receivers.
+#if ENABLE(IPC_TESTING_SWIFT)
+    WebProcess::singleton().addMessageReceiver(Messages::IPCTesterReceiver::messageReceiverName(), jsIPC->m_testerProxy.getMessageReceiver());
+#else
     WebProcess::singleton().addMessageReceiver(Messages::IPCTesterReceiver::messageReceiverName(), jsIPC->m_testerProxy.get());
+#endif
     return JSValueMakeUndefined(context);
 }
 
@@ -2755,7 +2772,7 @@ JSValueRef JSIPC::serializedTypeInfo(JSContextRef context, JSObjectRef thisObjec
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
     JSC::JSObject* object = constructEmptyObject(globalObject, globalObject->objectPrototype());
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
@@ -2790,7 +2807,7 @@ JSValueRef JSIPC::serializedEnumInfo(JSContextRef context, JSObjectRef thisObjec
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
     JSC::JSObject* object = constructEmptyObject(globalObject, globalObject->objectPrototype());
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
@@ -2803,14 +2820,41 @@ JSValueRef JSIPC::serializedEnumInfo(JSContextRef context, JSObjectRef thisObjec
         if (*exception)
             return JSValueMakeUndefined(context);
 
-        auto validValuesArray = WTF::map(enumeration.validValues, [&](auto& validValue) -> JSValueRef {
-            return JSValueMakeNumber(context, validValue);
+        // Create validValues array for backward compatibility
+        auto validValuesArray = WTF::map(enumeration.valueMap, [&](auto& valueInfo) -> JSValueRef {
+            return JSValueMakeNumber(context, valueInfo.value);
         });
-        JSObjectRef jsValidValues = JSObjectMakeArray(context, enumeration.validValues.size(), validValuesArray.span().data(), exception);
+        JSObjectRef jsValidValues = JSObjectMakeArray(context, enumeration.valueMap.size(), validValuesArray.span().data(), exception);
         if (*exception)
             return JSValueMakeUndefined(context);
 
         JSObjectSetProperty(context, jsEnumObject, adopt(JSStringCreateWithUTF8CString("validValues")).get(), jsValidValues, kJSPropertyAttributeNone, exception);
+        if (*exception)
+            return JSValueMakeUndefined(context);
+
+        // Create valueMap array with both values and names
+        auto valueMapArray = WTF::map(enumeration.valueMap, [&](auto& valueInfo) -> JSValueRef {
+            auto* globalObject = toJS(context);
+            auto& vm = globalObject->vm();
+            JSC::JSLockHolder lock(vm);
+            auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
+
+            JSC::JSObject* valueObject = constructEmptyObject(globalObject, globalObject->objectPrototype());
+            RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
+
+            valueObject->putDirect(vm, JSC::Identifier::fromString(vm, "value"_s), JSC::JSValue(valueInfo.value));
+            RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
+
+            valueObject->putDirect(vm, JSC::Identifier::fromString(vm, "name"_s), JSC::jsString(vm, String(valueInfo.name)));
+            RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
+
+            return toRef(globalObject, valueObject);
+        });
+        JSObjectRef jsValueMap = JSObjectMakeArray(context, enumeration.valueMap.size(), valueMapArray.span().data(), exception);
+        if (*exception)
+            return JSValueMakeUndefined(context);
+
+        JSObjectSetProperty(context, jsEnumObject, adopt(JSStringCreateWithUTF8CString("valueMap")).get(), jsValueMap, kJSPropertyAttributeNone, exception);
         if (*exception)
             return JSValueMakeUndefined(context);
 
@@ -2834,7 +2878,7 @@ JSValueRef JSIPC::objectIdentifiers(JSContextRef context, JSObjectRef thisObject
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
     JSC::JSObject* array = JSC::constructEmptyArray(globalObject, nullptr);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
@@ -2871,7 +2915,7 @@ JSValueRef JSIPC::frameID(JSContextRef context, JSObjectRef thisObject, JSString
     auto* globalObject = toJS(context);
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
     JSC::JSObject* array = JSC::constructEmptyArray(globalObject, nullptr);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
@@ -2931,7 +2975,7 @@ static JSC::JSValue createJSArrayForArgumentDescriptions(JSC::JSGlobalObject* gl
         return JSC::jsNull();
 
     auto& vm = globalObject->vm();
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSC::JSObject* argumentsArray = JSC::constructEmptyArray(globalObject, nullptr);
     RETURN_IF_EXCEPTION(scope, JSC::jsTDZValue());
 
@@ -2964,7 +3008,7 @@ JSValueRef JSIPC::messages(JSContextRef context, JSObjectRef thisObject, JSStrin
         return JSValueMakeUndefined(context);
     }
 
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSC::JSObject* messagesObject = constructEmptyObject(globalObject, globalObject->objectPrototype());
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
 
@@ -3025,7 +3069,7 @@ JSValueRef JSIPC::processTargets(JSContextRef context, JSObjectRef thisObject, J
         *exception = toRef(JSC::createTypeError(toJS(context), "Wrong type"_s));
         return JSValueMakeUndefined(context);
     }
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSC::JSObject* processTargetsObject = JSC::constructEmptyArray(globalObject, nullptr);
     RETURN_IF_EXCEPTION(scope, JSValueMakeUndefined(context));
     int index = 0;
@@ -3051,7 +3095,7 @@ JSMessageListener::JSMessageListener(JSIPC& jsIPC, Type type, JSC::JSGlobalObjec
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
 
-    auto catchScope = DECLARE_CATCH_SCOPE(vm);
+    auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
     // We can't retain the global context here as that would cause a leak
     // since this object is supposed to live as long as the global object is alive.
@@ -3091,7 +3135,7 @@ void JSMessageListener::willSendMessage(const IPC::Encoder& encoder, OptionSet<I
     Ref protectOwnerOfThis = *m_jsIPC;
 
     auto decoder = IPC::Decoder::create(encoder.span(), { });
-    RunLoop::mainSingleton().dispatch([this, protectOwnerOfThis = WTFMove(protectOwnerOfThis), decoder = WTFMove(decoder)] {
+    RunLoop::mainSingleton().dispatch([this, protectOwnerOfThis = WTF::move(protectOwnerOfThis), decoder = WTF::move(decoder)] {
         auto* globalObject = m_globalObject.get();
         if (!globalObject)
             return;
@@ -3109,7 +3153,7 @@ void JSMessageListener::willSendMessage(const IPC::Encoder& encoder, OptionSet<I
 JSC::JSObject* JSMessageListener::jsDescriptionFromDecoder(JSC::JSGlobalObject* globalObject, IPC::Decoder& decoder)
 {
     auto& vm = globalObject->vm();
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
     auto* jsResult = constructEmptyObject(globalObject, globalObject->objectPrototype());
     RETURN_IF_EXCEPTION(scope, nullptr);
@@ -3129,7 +3173,7 @@ JSC::JSObject* JSMessageListener::jsDescriptionFromDecoder(JSC::JSGlobalObject* 
     }
     auto arrayBuffer = JSC::ArrayBuffer::create(decoder.span());
     if (auto* structure = globalObject->arrayBufferStructure(arrayBuffer->sharingMode())) {
-        if (auto* jsArrayBuffer = JSC::JSArrayBuffer::create(vm, structure, WTFMove(arrayBuffer))) {
+        if (auto* jsArrayBuffer = JSC::JSArrayBuffer::create(vm, structure, WTF::move(arrayBuffer))) {
             jsResult->putDirect(vm, JSC::Identifier::fromString(vm, "buffer"_s), jsArrayBuffer);
             RETURN_IF_EXCEPTION(scope, nullptr);
         }
@@ -3156,7 +3200,7 @@ void inject(WebPage& webPage, WebFrame& webFrame, WebCore::DOMWrapperWorld& worl
 
     auto& vm = globalObject->vm();
     JSC::JSLockHolder lock(vm);
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     auto wrapped = JSIPC::create(webPage, webFrame);
     JSObjectRef wrapperObject = JSObjectMake(toGlobalRef(globalObject), JSIPC::wrapperClass(), wrapped.ptr());
     globalObject->putDirect(vm, JSC::Identifier::fromString(vm, "IPC"_s), toJS(globalObject, wrapperObject));
@@ -3177,7 +3221,7 @@ JSC::JSValue jsValueForDecodedArgumentValue(JSC::JSGlobalObject* globalObject, I
     RETURN_IF_EXCEPTION(scope, JSC::JSValue());
     object->putDirect(vm, JSC::Identifier::fromString(vm, "type"_s), JSC::jsNontrivialString(vm, "Semaphore"_s));
     RETURN_IF_EXCEPTION(scope, JSC::JSValue());
-    auto jsValue = toJS(globalObject, WebKit::IPCTestingAPI::JSIPCSemaphore::create(WTFMove(value))->createJSWrapper(toRef(globalObject)));
+    auto jsValue = toJS(globalObject, WebKit::IPCTestingAPI::JSIPCSemaphore::create(WTF::move(value))->createJSWrapper(toRef(globalObject)));
     object->putDirect(vm, JSC::Identifier::fromString(vm, "value"_s), jsValue);
     RETURN_IF_EXCEPTION(scope, JSC::JSValue());
     return object;
@@ -3190,10 +3234,10 @@ template<> JSC::JSValue jsValueForDecodedArgumentValue(JSC::JSGlobalObject* glob
 
     auto dataSize = value.size();
     auto protection = Protection::ReadWrite;
-    auto sharedMemory = SharedMemory::map(WTFMove(value), protection);
+    auto sharedMemory = SharedMemory::map(WTF::move(value), protection);
     if (!sharedMemory) {
         protection = Protection::ReadOnly;
-        sharedMemory = SharedMemory::map(WTFMove(value), protection);
+        sharedMemory = SharedMemory::map(WTF::move(value), protection);
         if (!sharedMemory)
             return JSC::JSValue();
     }

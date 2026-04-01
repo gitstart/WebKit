@@ -34,8 +34,9 @@
 #include "LayoutBox.h"
 #include "LayoutBoxGeometry.h"
 #include "LayoutShape.h"
-#include "RenderStyleInlines.h"
+#include "RenderStyle+GettersInlines.h"
 #include "RubyFormattingContext.h"
+#include "StyleComputedStyle+InitialInlines.h"
 #include "StyleWebKitLineBoxContain.h"
 #include "TextUtil.h"
 #include "UnicodeBidi.h"
@@ -84,7 +85,7 @@ static inline StringBuilder toString(const Line::RunList& runs)
         if (!run.isText())
             continue;
         auto& textContent = run.textContent();
-        lineContentBuilder.append(StringView(downcast<InlineTextBox>(run.layoutBox()).content()).substring(textContent->start, textContent->length));
+        lineContentBuilder.append(StringView(downcast<InlineTextBox>(run.layoutBox()).content()).substring(textContent.start, textContent.length));
     }
     return lineContentBuilder;
 }
@@ -306,7 +307,7 @@ inline void LineCandidate::reset()
 LineBuilder::LineBuilder(InlineFormattingContext& inlineFormattingContext, HorizontalConstraints rootHorizontalConstraints, const InlineItemList& inlineItemList, TextSpacingContext textSpacingContext)
     : AbstractLineBuilder(inlineFormattingContext, inlineFormattingContext.root(), rootHorizontalConstraints, inlineItemList)
     , m_floatingContext(inlineFormattingContext.floatingContext())
-    , m_textSpacingContext(WTFMove(textSpacingContext))
+    , m_textSpacingContext(WTF::move(textSpacingContext))
 {
 }
 
@@ -319,8 +320,8 @@ LineLayoutResult LineBuilder::layoutInlineContent(const LineInput& lineInput, co
 
     if (isInIntrinsicWidthMode()) {
         return { lineContent->range
-            , WTFMove(result.runs)
-            , { WTFMove(m_placedFloats), WTFMove(m_suspendedFloats), { } }
+            , WTF::move(result.runs)
+            , { WTF::move(m_placedFloats), WTF::move(m_suspendedFloats), { } }
             , { { }, result.contentLogicalWidth, { }, lineContent->overflowLogicalWidth }
             , { m_lineLogicalRect.topLeft() }
             , { }
@@ -349,14 +350,14 @@ LineLayoutResult LineBuilder::layoutInlineContent(const LineInput& lineInput, co
         computedVisualOrder(result.runs, visualOrderList);
 
     return { lineContent->range
-        , WTFMove(result.runs)
-        , { WTFMove(m_placedFloats), WTFMove(m_suspendedFloats), m_lineIsConstrainedByFloat }
+        , WTF::move(result.runs)
+        , { WTF::move(m_placedFloats), WTF::move(m_suspendedFloats), m_lineIsConstrainedByFloat }
         , { contentLogicalLeft, result.contentLogicalWidth, contentLogicalLeft + result.contentLogicalRight, lineContent->overflowLogicalWidth }
         , { m_lineLogicalRect.topLeft(), m_lineLogicalRect.width(), m_lineInitialLogicalRect.left(), m_initialIntrusiveFloatsWidth, m_initialLetterClearGap }
         , { !result.isHangingTrailingContentWhitespace, result.hangingTrailingContentWidth, result.hangablePunctuationStartWidth }
-        , { WTFMove(visualOrderList), inlineBaseDirection }
+        , { WTF::move(visualOrderList), inlineBaseDirection }
         , { isFirstFormattedLineCandidate && inlineContentEnding.has_value() ? IsFirstFormattedLine::Yes : IsFirstFormattedLine::No, isLastInlineContent }
-        , { WTFMove(lineContent->rubyBaseAlignmentOffsetList), lineContent->rubyAnnotationOffset }
+        , { WTF::move(lineContent->rubyBaseAlignmentOffsetList), lineContent->rubyAnnotationOffset }
         , inlineContentEnding
         , result.nonSpanningInlineLevelBoxCount
         , { }
@@ -647,7 +648,7 @@ UniqueRef<LineContent> LineBuilder::placeInlineAndFloatContent(const InlineItemR
                     return;
 
                 auto spaceToDistribute = horizontalAvailableSpace - m_line.contentLogicalWidth() + (m_line.isHangingTrailingContentWhitespace() ? m_line.hangingTrailingContentWidth() : 0.f);
-                if (root().isRubyAnnotationBox() && rootStyle.textAlign() == RenderStyle::initialTextAlign()) {
+                if (root().isRubyAnnotationBox() && rootStyle.textAlign() == Style::ComputedStyle::initialTextAlign()) {
                     lineContent->rubyAnnotationOffset = RubyFormattingContext::applyRubyAlignOnAnnotationBox(m_line, spaceToDistribute, formattingContext());
                     m_line.inflateContentLogicalWidth(spaceToDistribute);
                     m_line.adjustContentRightWithRubyAlign(2 * lineContent->rubyAnnotationOffset);
@@ -1369,15 +1370,77 @@ void LineBuilder::handleBlockContent(const InlineItem& blockItem)
     ASSERT(blockItem.isBlock());
     // Blocks are always the only content on the line.
     ASSERT(!m_line.hasContentOrListMarker());
-    if (!isInIntrinsicWidthMode())
-        formattingContext().integrationUtils().layoutWithFormattingContextForBlockInInline(downcast<ElementBox>(blockItem.layoutBox()), LayoutPoint { m_lineLogicalRect.topLeft() }, layoutState());
-    auto marginBoxLogicalWidth = formattingContext().formattingUtils().inlineItemWidth(blockItem, { }, false);
-    m_line.appendBlock(blockItem, marginBoxLogicalWidth);
+    if (isInIntrinsicWidthMode())
+        return m_line.appendBlock(blockItem, formattingContext().formattingUtils().inlineItemWidth(blockItem, { }, false));
+
     if (rootStyle().writingMode().isBidiRTL())
         m_line.setContentNeedsBidiReordering();
+
+    formattingContext().integrationUtils().layoutWithFormattingContextForBlockInInline(downcast<ElementBox>(blockItem.layoutBox()), LayoutPoint { m_lineLogicalRect.topLeft() }, layoutState());
+    auto contentWidth = InlineLayoutUnit { };
+    if (formattingContext().geometryForBox(blockItem.layoutBox()).borderBoxHeight())
+        contentWidth = formattingContext().formattingUtils().inlineItemWidth(blockItem, { }, false);
+    m_line.appendBlock(blockItem, contentWidth);
 }
 
 LineBuilder::Result LineBuilder::handleInlineContent(const InlineItemRange& layoutRange, LineCandidate& lineCandidate)
+{
+    auto result = tryPlacingCandidateInlineContentOnLine(layoutRange, lineCandidate);
+    if (!m_line.hasContentOrListMarker())
+        return result;
+
+    auto applyMarginInBlockDirection = [&]() -> LayoutUnit {
+        // We don't know if margin coming from previous content should be applied or not
+        // until after we managed to put some inline content on the line.
+        // e.g.
+        // <span>text<div style="margin-bottom: 100px;"></div>more text</span> v.s
+        // <span>text<div style="margin-bottom: 100px;"></div> <div></div></span>
+        // where in the first example, the 100px gap is between the block container's edge and "more text"
+        // while in the second case, it is somewhere after the second block container (can't tell).
+        auto& marginState = blockLayoutState().marginState();
+        auto marginValue = marginState.margin();
+        marginState.resetMarginValues();
+
+        if (marginState.atBeforeSideOfBlock) {
+            marginState.resetBeforeSideOfBlock();
+            return { };
+        }
+        return marginValue;
+    };
+    auto lineOffset = applyMarginInBlockDirection();
+    if (!lineOffset)
+        return result;
+
+    // This is similar to what we do in block layout when the estimated top position turns out to be incorrect
+    // and now we have to relayout the content with the adjusted vertical position to make sure we avoid floats properly.
+    m_lineLogicalRect = { m_lineLogicalRect.top() + lineOffset, m_lineInitialLogicalRect.left(), m_lineInitialLogicalRect.width(), m_lineInitialLogicalRect.height() };
+    if (floatingContext().isEmpty())
+        return result;
+
+    m_line.initialize(m_lineSpanningInlineBoxes, isFirstFormattedLineCandidate());
+
+    auto commitPrecedingNonContentfulContent = [&] {
+        LineCandidate precedingNonContentfulContent;
+        auto& firstContentfulInlineItem = lineCandidate.inlineContent.continuousContent().runs().first().inlineItem;
+        // We should not find any inline content here, only non-contentful items like <span> or </span> or trimmed whitespace or out-of-flow content.
+        for (size_t index = layoutRange.startIndex(); index < layoutRange.endIndex(); ++index) {
+            auto& inlineItem = m_inlineItemList[index];
+            if (&inlineItem == &firstContentfulInlineItem)
+                break;
+
+            if (!inlineItem.isFloat()) {
+                auto& styleToUse = isFirstFormattedLineCandidate() ? inlineItem.firstLineStyle() : inlineItem.style();
+                precedingNonContentfulContent.inlineContent.appendInlineItem(inlineItem, styleToUse, { });
+            }
+        }
+        if (!precedingNonContentfulContent.inlineContent.isEmpty())
+            commitCandidateContent(precedingNonContentfulContent, { });
+    };
+    commitPrecedingNonContentfulContent();
+    return tryPlacingCandidateInlineContentOnLine(layoutRange, lineCandidate);
+}
+
+LineBuilder::Result LineBuilder::tryPlacingCandidateInlineContentOnLine(const InlineItemRange& layoutRange, LineCandidate& lineCandidate)
 {
     auto result = LineBuilder::Result { };
     auto& inlineContent = lineCandidate.inlineContent;
@@ -1594,7 +1657,7 @@ void LineBuilder::commitCandidateContent(LineCandidate& lineCandidate, std::opti
                 }
 
                 if (shapingBoundaryStart)
-                    return { Line::ShapingBoundary::Middle };
+                    return { Line::ShapingBoundary::Inside };
 
                 return { };
             };
@@ -1762,6 +1825,13 @@ size_t LineBuilder::rebuildLineWithInlineContent(const InlineItemRange& layoutRa
 {
     ASSERT(!m_wrapOpportunityList.isEmpty());
     m_line.initialize(m_lineSpanningInlineBoxes, isFirstFormattedLineCandidate());
+
+    if (m_partialLeadingTextItem && &*m_partialLeadingTextItem == &lastInlineItemToAdd) {
+        LineCandidate lineCandidate;
+        lineCandidate.inlineContent.appendInlineItem(*m_partialLeadingTextItem, m_partialLeadingTextItem->style(), formattingContext().formattingUtils().inlineItemWidth(*m_partialLeadingTextItem, { }, false));
+        commitCandidateContent(lineCandidate, { });
+        return 1;
+    }
 
     size_t numberOfFloatsInRange = 0;
     auto endOfCandidateContent = layoutRange.startIndex();

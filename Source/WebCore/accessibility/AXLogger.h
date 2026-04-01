@@ -46,7 +46,7 @@ enum class AXStreamOptions : uint16_t {
     OuterHTML = 1 << 4,
     DisplayContents = 1 << 5,
     Address = 1 << 6,
-#if ENABLE(AX_THREAD_TEXT_APIS)
+#if ENABLE(ACCESSIBILITY_ISOLATED_TREE)
     TextRuns = 1 << 7,
 #endif
     RendererOrNode = 1 << 8,
@@ -64,7 +64,7 @@ public:
     void log(const AXCoreObject&);
     void log(RefPtr<AXCoreObject>);
     void log(const Vector<Ref<AXCoreObject>>&);
-    void log(const std::pair<Ref<AccessibilityObject>, AXNotification>&);
+    void log(const std::pair<Ref<AccessibilityObject>, AXNotificationWithData>&);
     void log(const std::pair<RefPtr<AXCoreObject>, AXNotification>&);
     void log(const AccessibilitySearchCriteria&);
     void log(AccessibilityObjectInclusion);

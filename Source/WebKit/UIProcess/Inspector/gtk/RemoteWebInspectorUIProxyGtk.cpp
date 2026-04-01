@@ -149,7 +149,7 @@ void RemoteWebInspectorUIProxy::platformSave(Vector<InspectorFrontendClient::Sav
         if (!decodedData)
             return;
         decodedData->shrinkToFit();
-        dataVector = WTFMove(*decodedData);
+        dataVector = WTF::move(*decodedData);
     } else
         dataString = saveDatas[0].content.utf8();
 
@@ -158,7 +158,7 @@ void RemoteWebInspectorUIProxy::platformSave(Vector<InspectorFrontendClient::Sav
     GRefPtr<GFile> file = adoptGRef(gtk_file_chooser_get_file(chooser));
     GUniquePtr<char> path(g_file_get_path(file.get()));
     g_file_replace_contents_async(file.get(), data, dataLength, nullptr, false,
-        G_FILE_CREATE_REPLACE_DESTINATION, nullptr, remoteFileReplaceContentsCallback, protectedInspectorPage().get());
+        G_FILE_CREATE_REPLACE_DESTINATION, nullptr, remoteFileReplaceContentsCallback, protect(m_inspectorPage).get());
 }
 
 void RemoteWebInspectorUIProxy::platformLoad(const String&, CompletionHandler<void(const String&)>&& completionHandler)

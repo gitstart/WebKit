@@ -93,14 +93,13 @@ struct ShareDataWithParsedURL;
 struct ViewportArguments;
 struct WindowFeatures;
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 class SecurityOriginData;
 
 struct DigitalCredentialsRequestData;
 struct DigitalCredentialsResponseData;
 struct ExceptionData;
 struct MobileDocumentRequest;
-struct OpenID4VPRequest;
 #endif
 
 class Chrome : public HostWindow {
@@ -178,10 +177,7 @@ public:
     bool canRunModal() const;
     void runModal();
 
-    bool toolbarsVisible() const;
-    bool statusbarVisible() const;
-    bool scrollbarsVisible() const;
-    bool menubarVisible() const;
+    bool isPopup() const;
 
     void setResizable(bool);
 
@@ -213,7 +209,7 @@ public:
     void showShareSheet(ShareDataWithParsedURL&&, CompletionHandler<void(bool)>&&);
     void showContactPicker(ContactsRequestData&&, CompletionHandler<void(std::optional<Vector<ContactInfo>>&&)>&&);
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
     void showDigitalCredentialsPicker(const DigitalCredentialsRequestData&, WTF::CompletionHandler<void(Expected<WebCore::DigitalCredentialsResponseData, WebCore::ExceptionData>&&)>&&);
     void dismissDigitalCredentialsPicker(CompletionHandler<void(bool)>&&);
 #endif
@@ -229,8 +225,6 @@ public:
     WEBCORE_EXPORT void focusNSView(NSView*);
 #endif
 
-    bool selectItemWritingDirectionIsNatural();
-    bool selectItemAlignmentFollowsMenuWritingDirection();
     RefPtr<PopupMenu> createPopupMenu(PopupMenuClient&) const;
     RefPtr<SearchPopupMenu> createSearchPopupMenu(PopupMenuClient&) const;
 

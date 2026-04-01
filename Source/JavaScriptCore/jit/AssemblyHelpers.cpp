@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2023 Apple Inc. All rights reserved.
+ * Copyright (C) 2011-2025 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -119,6 +119,7 @@ void AssemblyHelpers::jitAssertIsInt32(GPRReg gpr)
     if (!Options::useJITAsserts())
         return;
 #if CPU(X86_64) || CPU(ARM64)
+    JIT_COMMENT(*this, "ASSERT is unboxed int32");
     Jump checkInt32 = branch64(BelowOrEqual, gpr, TrustedImm64(static_cast<uintptr_t>(0xFFFFFFFFu)));
     abortWithReason(AHIsNotInt32);
     checkInt32.link(this);
@@ -131,6 +132,7 @@ void AssemblyHelpers::jitAssertIsJSInt32(GPRReg gpr)
 {
     if (!Options::useJITAsserts())
         return;
+    JIT_COMMENT(*this, "ASSERT is JS boxed int32");
     Jump checkJSInt32 = branch64(AboveOrEqual, gpr, GPRInfo::numberTagRegister);
     abortWithReason(AHIsNotJSInt32);
     checkJSInt32.link(this);
@@ -140,6 +142,7 @@ void AssemblyHelpers::jitAssertIsJSNumber(GPRReg gpr)
 {
     if (!Options::useJITAsserts())
         return;
+    JIT_COMMENT(*this, "ASSERT is JS boxed number");
     Jump checkJSNumber = branchTest64(MacroAssembler::NonZero, gpr, GPRInfo::numberTagRegister);
     abortWithReason(AHIsNotJSNumber);
     checkJSNumber.link(this);
@@ -149,6 +152,7 @@ void AssemblyHelpers::jitAssertIsJSDouble(GPRReg gpr)
 {
     if (!Options::useJITAsserts())
         return;
+    JIT_COMMENT(*this, "ASSERT is JS boxed double (non-int32 number)");
     Jump checkJSInt32 = branch64(AboveOrEqual, gpr, GPRInfo::numberTagRegister);
     Jump checkJSNumber = branchTest64(MacroAssembler::NonZero, gpr, GPRInfo::numberTagRegister);
     checkJSInt32.link(this);
@@ -160,6 +164,7 @@ void AssemblyHelpers::jitAssertIsCell(GPRReg gpr)
 {
     if (!Options::useJITAsserts())
         return;
+    JIT_COMMENT(*this, "ASSERT is JSCell");
     Jump checkCell = branchTest64(MacroAssembler::Zero, gpr, GPRInfo::notCellMaskRegister);
     abortWithReason(AHIsNotCell);
     checkCell.link(this);
@@ -768,18 +773,9 @@ AssemblyHelpers::JumpList AssemblyHelpers::hasMegamorphicProperty(VM& vm, GPRReg
 
 void AssemblyHelpers::emitNonNullDecodeZeroExtendedStructureID(RegisterID source, RegisterID dest)
 {
-#if ENABLE(STRUCTURE_ID_WITH_SHIFT)
-    lshift64(source, TrustedImm32(StructureID::encodeShiftAmount), dest);
-#elif CPU(ADDRESS64)
+#if CPU(ADDRESS64)
     // This could use BFI on arm64 but that only helps if the start of structure heap is encodable as a mov and not as an immediate in the add so it's probably not super important.
-    if constexpr (structureHeapAddressSize >= 4 * GB) {
-        ASSERT(structureHeapAddressSize == 4 * GB);
-        move(source, dest);
-    } else {
-        static_assert(static_cast<uint32_t>(StructureID::structureIDMask) == StructureID::structureIDMask);
-        and32(TrustedImm32(static_cast<uint32_t>(StructureID::structureIDMask)), source, dest);
-    }
-    or64(TrustedImm64(startOfStructureHeap()), dest);
+    or64(TrustedImm64(structureIDBase()), source, dest);
 #else // not CPU(ADDRESS64)
     move(source, dest);
 #endif
@@ -798,18 +794,8 @@ void AssemblyHelpers::emitLoadStructure(VM&, RegisterID source, RegisterID dest)
 
 void AssemblyHelpers::emitEncodeStructureID(RegisterID source, RegisterID dest)
 {
-#if ENABLE(STRUCTURE_ID_WITH_SHIFT)
-    urshift64(source, TrustedImm32(StructureID::encodeShiftAmount), dest);
-#elif CPU(ADDRESS64)
-    static_assert(StructureID::structureIDMask <= UINT32_MAX);
-    // We don't guarantee the upper bits are cleared, since generally only
-    // the bottom 32 bits of the register are observed as the structure ID.
-    // So, we don't want to bother masking the register unless it's
-    // observable within those 32 bits.
-    if (StructureID::structureIDMask < UINT32_MAX)
-        and64(TrustedImm32(static_cast<uint32_t>(StructureID::structureIDMask)), source, dest);
-    else
-        move(source, dest);
+#if CPU(ADDRESS64)
+    and64(TrustedImm32(static_cast<uint32_t>(StructureID::structureIDMask)), source, dest);
 #else
     move(source, dest);
 #endif

@@ -41,12 +41,12 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(ProvisionalFrameProxy);
 
 ProvisionalFrameProxy::ProvisionalFrameProxy(WebFrameProxy& frame, Ref<FrameProcess>&& frameProcess, CommitTiming commitTiming)
     : m_frame(frame)
-    , m_frameProcess(WTFMove(frameProcess))
+    , m_frameProcess(WTF::move(frameProcess))
     , m_visitedLinkStore(frame.page()->visitedLinkStore())
 {
     Ref process = this->process();
     process->markProcessAsRecentlyUsed();
-    auto parameters = frame.provisionalFrameCreationParameters(std::nullopt, commitTiming);
+    auto parameters = frame.provisionalFrameCreationParameters(std::nullopt, frame.layerHostingContextIdentifier(), commitTiming);
     process->send(Messages::WebFrame::CreateProvisionalFrame(parameters), frame.frameID());
 }
 
@@ -66,20 +66,10 @@ RefPtr<FrameProcess> ProvisionalFrameProxy::takeFrameProcess()
     return std::exchange(m_frameProcess, nullptr).releaseNonNull();
 }
 
-Ref<WebFrameProxy> ProvisionalFrameProxy::protectedFrame() const
-{
-    return m_frame.get();
-}
-
 WebProcessProxy& ProvisionalFrameProxy::process() const
 {
     ASSERT(m_frameProcess);
     return m_frameProcess->process();
-}
-
-Ref<WebProcessProxy> ProvisionalFrameProxy::protectedProcess() const
-{
-    return process();
 }
 
 } // namespace WebKit

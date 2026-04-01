@@ -21,12 +21,11 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 // THE POSSIBILITY OF SUCH DAMAGE.
 
-#if swift(>=5.9)
-
 import CryptoKit
 import Foundation
-import PALSwift
-import PALSwift.CryptoDigestHashFunction
+
+public import pal.Core.PALSwift
+public import pal.Core.crypto.CryptoDigestHashFunction
 
 // FIXME: PALSwift should have no public symbols.
 // swift-format-ignore: AllPublicDeclarationsHaveDocumentation
@@ -46,10 +45,6 @@ public typealias SpanConstUInt8 = Cpp.SpanConstUInt8
 
 private enum LocalErrors: Error {
     case invalidArgument
-}
-
-private class Utils {
-    static let zeroArray = [UInt8](repeating: 0, count: 0)
 }
 
 // FIXME: PALSwift should have no public symbols.
@@ -929,5 +924,3 @@ public class HKDF {
         return returnValue
     }
 }
-
-#endif

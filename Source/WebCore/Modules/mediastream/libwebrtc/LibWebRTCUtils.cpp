@@ -40,8 +40,8 @@ IGNORE_CLANG_WARNINGS_BEGIN("nullability-completeness")
 
 #include <webrtc/api/rtp_parameters.h>
 #include <webrtc/api/rtp_transceiver_interface.h>
+#include <webrtc/api/webrtc_sdp.h>
 #include <webrtc/p2p/base/p2p_constants.h>
-#include <webrtc/pc/webrtc_sdp.h>
 
 IGNORE_CLANG_WARNINGS_END
 WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
@@ -227,7 +227,7 @@ RTCRtpParameters toRTCRtpParameters(const webrtc::RtpParameters& rtcParameters)
 
 RTCRtpSendParameters toRTCRtpSendParameters(const webrtc::RtpParameters& rtcParameters)
 {
-    RTCRtpSendParameters parameters { toRTCRtpParameters(rtcParameters) };
+    RTCRtpSendParameters parameters { toRTCRtpParameters(rtcParameters), nullString(), { }, { } };
     parameters.rtcp.cname = fromStdString(rtcParameters.rtcp.cname);
 
     parameters.transactionId = fromStdString(rtcParameters.transaction_id);

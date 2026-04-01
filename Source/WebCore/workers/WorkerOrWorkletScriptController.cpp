@@ -77,7 +77,7 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(WorkerOrWorkletScriptController);
 using namespace JSC;
 
 WorkerOrWorkletScriptController::WorkerOrWorkletScriptController(WorkerThreadType type, Ref<VM>&& vm, WorkerOrWorkletGlobalScope* globalScope)
-    : m_vm(WTFMove(vm))
+    : m_vm(WTF::move(vm))
     , m_globalScope(globalScope)
     , m_globalScopeWrapper(*m_vm)
 {
@@ -348,7 +348,7 @@ bool WorkerOrWorkletScriptController::loadModuleSynchronously(WorkerScriptFetche
             VM& vm = globalObject->vm();
             JSLockHolder lock { vm };
             JSValue errorValue = callFrame->argument(0);
-            auto scope = DECLARE_CATCH_SCOPE(vm);
+            auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
             if (errorValue.isObject()) {
                 auto* object = JSC::asObject(errorValue);
                 if (JSValue failureKindValue = object->getDirect(vm, vm.propertyNames->builtinNames().moduleFetchFailureKindPrivateName())) {
@@ -458,7 +458,7 @@ void WorkerOrWorkletScriptController::linkAndEvaluateModule(WorkerScriptFetcher&
     }
 
     if (returnedException) {
-        if (protectedGlobalScope()->canIncludeErrorDetails(sourceCode.cachedScript(), sourceCode.url().string())) {
+        if (protect(globalScope())->canIncludeErrorDetails(sourceCode.cachedScript(), sourceCode.url().string())) {
             // FIXME: It's not great that this can run arbitrary code to string-ify the value of the exception.
             // Do we need to do anything to handle that properly, if it, say, raises another exception?
             if (returnedExceptionMessage)
@@ -472,11 +472,6 @@ void WorkerOrWorkletScriptController::linkAndEvaluateModule(WorkerScriptFetcher&
         JSLockHolder lock(vm);
         reportException(m_globalScopeWrapper.get(), returnedException);
     }
-}
-
-RefPtr<WorkerOrWorkletGlobalScope> WorkerOrWorkletScriptController::protectedGlobalScope() const
-{
-    return m_globalScope.get();
 }
 
 void WorkerOrWorkletScriptController::loadAndEvaluateModule(const URL& moduleURL, FetchOptions::Credentials credentials, CompletionHandler<void(std::optional<Exception>&&)>&& completionHandler)
@@ -494,12 +489,12 @@ void WorkerOrWorkletScriptController::loadAndEvaluateModule(const URL& moduleURL
 
     auto parameters = ModuleFetchParameters::create(JSC::ScriptFetchParameters::Type::JavaScript, emptyString(), /* isTopLevelModule */ true);
     RefPtr globalScope = m_globalScope.get();
-    auto scriptFetcher = WorkerScriptFetcher::create(WTFMove(parameters), credentials, globalScope->destination(), globalScope->referrerPolicy());
+    auto scriptFetcher = WorkerScriptFetcher::create(WTF::move(parameters), credentials, globalScope->destination(), globalScope->referrerPolicy());
 
     auto* promise = JSExecState::loadModule(globalObject, moduleURL, JSC::JSScriptFetchParameters::create(vm, scriptFetcher->parameters()), JSC::JSScriptFetcher::create(vm, { scriptFetcher.ptr() }));
     if (promise) [[likely]] {
-        auto task = createSharedTask<void(std::optional<Exception>&&)>([completionHandler = WTFMove(completionHandler)](std::optional<Exception>&& exception) mutable {
-            completionHandler(WTFMove(exception));
+        auto task = createSharedTask<void(std::optional<Exception>&&)>([completionHandler = WTF::move(completionHandler)](std::optional<Exception>&& exception) mutable {
+            completionHandler(WTF::move(exception));
         });
 
         auto& fulfillHandler = *JSNativeStdFunction::create(vm, &globalObject, 1, String(), [task, scriptFetcher](JSGlobalObject* globalObject, CallFrame* callFrame) -> JSC::EncodedJSValue {
@@ -549,7 +544,7 @@ void WorkerOrWorkletScriptController::loadAndEvaluateModule(const URL& moduleURL
             if (errorValue.isObject()) {
                 auto* object = JSC::asObject(errorValue);
                 if (JSValue failureKindValue = object->getDirect(vm, vm.propertyNames->builtinNames().moduleFetchFailureKindPrivateName())) {
-                    auto catchScope = DECLARE_CATCH_SCOPE(vm);
+                    auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
                     String message = retrieveErrorMessageWithoutName(*globalObject, vm, object, catchScope);
                     switch (static_cast<ModuleFetchFailureKind>(failureKindValue.asInt32())) {
                     case ModuleFetchFailureKind::WasFetchError:
@@ -567,13 +562,13 @@ void WorkerOrWorkletScriptController::loadAndEvaluateModule(const URL& moduleURL
                     auto* error = jsCast<ErrorInstance*>(object);
                     switch (error->errorType()) {
                     case ErrorType::TypeError: {
-                        auto catchScope = DECLARE_CATCH_SCOPE(vm);
+                        auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
                         String message = retrieveErrorMessageWithoutName(*globalObject, vm, error, catchScope);
                         task->run(Exception { ExceptionCode::TypeError, message });
                         return JSValue::encode(jsUndefined());
                     }
                     case ErrorType::SyntaxError: {
-                        auto catchScope = DECLARE_CATCH_SCOPE(vm);
+                        auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
                         String message = retrieveErrorMessageWithoutName(*globalObject, vm, error, catchScope);
                         task->run(Exception { ExceptionCode::JSSyntaxError, message });
                         return JSValue::encode(jsUndefined());
@@ -584,7 +579,7 @@ void WorkerOrWorkletScriptController::loadAndEvaluateModule(const URL& moduleURL
                 }
             }
 
-            auto catchScope = DECLARE_CATCH_SCOPE(vm);
+            auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
             String message = retrieveErrorMessageWithoutName(*globalObject, vm, errorValue, catchScope);
             task->run(Exception { ExceptionCode::AbortError, message });
             return JSValue::encode(jsUndefined());
@@ -625,7 +620,7 @@ void WorkerOrWorkletScriptController::initScriptWithSubclass()
     ASSERT(m_globalScopeWrapper->globalObject() == m_globalScopeWrapper);
     ASSERT(asObject(m_globalScopeWrapper->getPrototypeDirect())->globalObject() == m_globalScopeWrapper);
 
-    m_consoleClient = makeUnique<WorkerConsoleClient>(*protectedGlobalScope());
+    m_consoleClient = makeUnique<WorkerConsoleClient>(*protect(globalScope()));
     m_globalScopeWrapper->setConsoleClient(*m_consoleClient);
 }
 

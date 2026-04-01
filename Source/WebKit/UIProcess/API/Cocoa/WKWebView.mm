@@ -63,13 +63,17 @@
 #import "RemoteObjectRegistryMessages.h"
 #import "ResourceLoadDelegate.h"
 #import "RunJavaScriptParameters.h"
+#import "SafeBrowsingUtilities.h"
 #import "SessionStateCoding.h"
+#import "TextExtractionAssertionScope.h"
 #import "TextExtractionFilter.h"
 #import "TextExtractionToStringConversion.h"
+#import "TextExtractionURLCache.h"
 #import "UIDelegate.h"
 #import "UIKitUtilities.h"
 #import "VideoPresentationManagerProxy.h"
 #import "ViewGestureController.h"
+#import "WKAPICast.h"
 #import "WKBackForwardListInternal.h"
 #import "WKBackForwardListItemInternal.h"
 #import "WKBrowsingContextController.h"
@@ -165,7 +169,9 @@
 #import <WebCore/ColorSerialization.h>
 #import <WebCore/ContentExtensionsBackend.h>
 #import <WebCore/DOMException.h>
+#import <WebCore/DataDetectorType.h>
 #import <WebCore/ElementContext.h>
+#import <WebCore/ElementTargetingTypes.h>
 #import <WebCore/ExceptionCode.h>
 #import <WebCore/ImageUtilities.h>
 #import <WebCore/JSDOMBinding.h>
@@ -226,7 +232,7 @@
 #import "DataDetectionResult.h"
 #endif
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 #import <WebKit/WKDigitalCredentialsPicker.h>
 #import <WebCore/DigitalCredentialsRequestData.h>
 #import <WebCore/DigitalCredentialsResponseData.h>
@@ -288,6 +294,11 @@ static void *screenTimeWebpageControllerBlockedKVOContext = &screenTimeWebpageCo
 #define THROW_IF_SUSPENDED if (_page && _page->isSuspended()) [[unlikely]] \
     [NSException raise:NSInternalInconsistencyException format:@"The WKWebView is suspended"]
 
+static RetainPtr<NSError> unknownError()
+{
+    return adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:nil]);
+}
+
 RetainPtr<NSError> nsErrorFromExceptionDetails(const std::optional<WebCore::ExceptionDetails>& details)
 {
     if (!details)
@@ -328,18 +339,11 @@ RetainPtr<NSError> nsErrorFromExceptionDetails(const std::optional<WebCore::Exce
 
 #endif
 
-@interface WKWebView (WKTextExtraction)
-- (void)_requestTextExtractionInternal:(_WKTextExtractionConfiguration *)configuration completion:(CompletionHandler<void(std::optional<WebCore::TextExtraction::Item>&&)>&&)completion;
-#if ENABLE(TEXT_EXTRACTION_FILTER)
-- (void)_validateText:(const String&)text inNode:(std::optional<WebCore::NodeIdentifier>&&)nodeIdentifier completionHandler:(CompletionHandler<void(const String&)>&&)completionHandler;
-#endif
-@end
-
 @implementation WKWebView
 
 WK_OBJECT_DISABLE_DISABLE_KVC_IVAR_ACCESS;
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 - (void)_showDigitalCredentialsPicker:(const WebCore::DigitalCredentialsRequestData&)requestData completionHandler:(WTF::CompletionHandler<void(Expected<WebCore::DigitalCredentialsResponseData, WebCore::ExceptionData>&&)>&&)completionHandler
 {
     LOG(DigitalCredentials, "Did not show digital credentials picker because it is not implemented.");
@@ -351,7 +355,7 @@ WK_OBJECT_DISABLE_DISABLE_KVC_IVAR_ACCESS;
     LOG(DigitalCredentials, "Did not dismiss digital credentials picker because it is not implemented.");
     completionHandler(false);
 }
-#endif // HAVE(DIGITAL_CREDENTIALS_UI)
+#endif // ENABLE(WEB_AUTHN)
 
 - (instancetype)initWithFrame:(CGRect)frame
 {
@@ -630,7 +634,7 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
     ALLOW_DEPRECATED_DECLARATIONS_END
 
     // FIXME: This copy is probably not necessary.
-    Ref pageConfiguration = Ref { *_configuration->_pageConfiguration }->copy();
+    Ref pageConfiguration = protect(*_configuration->_pageConfiguration)->copy();
     [self _setupPageConfiguration:pageConfiguration withPool:processPool.get()];
 
     _usePlatformFindUI = YES;
@@ -654,7 +658,7 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
     _dragInteractionPolicy = _WKDragInteractionPolicyDefault;
 
     _contentView = adoptNS([[WKContentView alloc] initWithFrame:self.bounds processPool:processPool.get() configuration:pageConfiguration.copyRef() webView:self]);
-    lazyInitialize(_page, Ref { *[_contentView page] });
+    lazyInitialize(_page, protect(*[_contentView page]));
 
     [self _setupScrollAndContentViews];
     if (!self.opaque || !pageConfiguration->drawsBackground())
@@ -674,7 +678,7 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
 
 #if PLATFORM(MAC)
     lazyInitialize(_impl, makeUnique<WebKit::WebViewImpl>(self, processPool.get(), pageConfiguration.copyRef()));
-    lazyInitialize(_page, Ref { _impl->page() });
+    lazyInitialize(_page, protect(_impl->page()));
 
     _impl->setAutomaticallyAdjustsContentInsets(true);
 
@@ -700,7 +704,7 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
 
     for (auto& pair : pageConfiguration->urlSchemeHandlers())
         _page->setURLSchemeHandlerForScheme(pair.value.get(), pair.key);
-    _page->setURLSchemeHandlerForScheme(_page->protectedAboutSchemeHandler(), WebKit::AboutSchemeHandler::scheme);
+    _page->setURLSchemeHandlerForScheme(protect(_page->aboutSchemeHandler()), WebKit::AboutSchemeHandler::scheme);
 
     _page->setCocoaView(self);
 
@@ -748,7 +752,7 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
         pageConfiguration->setWebExtensionController(&controller.get()._webExtensionController);
 
     if (RetainPtr<WKWebExtensionController> controller = _configuration.get()._weakWebExtensionController)
-        pageConfiguration->setWeakWebExtensionController(Ref { controller.get()._webExtensionController }.ptr());
+        pageConfiguration->setWeakWebExtensionController(protect(controller.get()._webExtensionController).ptr());
 #endif
 
     RetainPtr groupIdentifier = [_configuration _groupIdentifier];
@@ -972,6 +976,11 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
     [self _invalidateResizeAssertions];
 #endif
 
+#if ENABLE(SYSTEM_TEXT_EXTRACTION)
+    if (_textExtractionIdentifier)
+        [self _removeTextExtractionAnnotation];
+#endif
+
     [super dealloc];
 }
 
@@ -1001,7 +1010,7 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
 - (WKBackForwardList *)backForwardList
 {
     [self _didAccessBackForwardList];
-    return wrapper(_page->backForwardList());
+    return wrapper(_page->backForwardListWrapper());
 }
 
 - (id <WKNavigationDelegate>)navigationDelegate
@@ -1070,6 +1079,11 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
     return wrapper(_page->loadRequest(request)).autorelease();
 }
 
+- (WKNavigation *)loadURL:(NSURL *)url
+{
+    return [self loadRequest:[NSURLRequest requestWithURL:url]];
+}
+
 - (WKNavigation *)loadFileURL:(NSURL *)URL allowingReadAccessToURL:(NSURL *)readAccessURL
 {
     THROW_IF_SUSPENDED;
@@ -1136,17 +1150,17 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
 - (WKNavigation *)goToBackForwardListItem:(WKBackForwardListItem *)item
 {
     THROW_IF_SUSPENDED;
-    return wrapper(_page->goToBackForwardItem(Ref { item._item })).autorelease();
+    return wrapper(_page->goToBackForwardItem(protect(item._item))).autorelease();
 }
 
 - (NSString *)title
 {
-    return _page->protectedPageLoadState()->title().createNSString().autorelease();
+    return protect(_page->pageLoadState())->title().createNSString().autorelease();
 }
 
 - (NSURL *)URL
 {
-    return [NSURL _web_URLWithWTFString:_page->protectedPageLoadState()->activeURL()];
+    return [NSURL _web_URLWithWTFString:protect(_page->pageLoadState())->activeURL()];
 }
 
 - (NSURL *)_resourceDirectoryURL
@@ -1156,17 +1170,17 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
 
 - (BOOL)isLoading
 {
-    return _page->protectedPageLoadState()->isLoading();
+    return protect(_page->pageLoadState())->isLoading();
 }
 
 - (double)estimatedProgress
 {
-    return _page->protectedPageLoadState()->estimatedProgress();
+    return protect(_page->pageLoadState())->estimatedProgress();
 }
 
 - (BOOL)hasOnlySecureContent
 {
-    return _page->protectedPageLoadState()->hasOnlySecureContent();
+    return protect(_page->pageLoadState())->hasOnlySecureContent();
 }
 
 - (SecTrustRef)serverTrust
@@ -1190,13 +1204,13 @@ static void addBrowsingContextControllerMethodStubsIfNeeded()
 - (BOOL)canGoBack
 {
     [self _didAccessBackForwardList];
-    return _page->protectedPageLoadState()->canGoBack();
+    return protect(_page->pageLoadState())->canGoBack();
 }
 
 - (BOOL)canGoForward
 {
     [self _didAccessBackForwardList];
-    return _page->protectedPageLoadState()->canGoForward();
+    return protect(_page->pageLoadState())->canGoForward();
 }
 
 - (WKNavigation *)goBack
@@ -1480,21 +1494,21 @@ static WKMediaPlaybackState toWKMediaPlaybackState(WebKit::MediaPlaybackState me
             break;
         }
 
-        argumentsMap->append({ keyString.get(), WTFMove(*serializedValue) });
+        argumentsMap->append({ keyString.get(), WTF::move(*serializedValue) });
     }
 
-    if (errorMessage && handler) {
-        RetainPtr<NSMutableDictionary> userInfo = adoptNS([[NSMutableDictionary alloc] init]);
+    if (errorMessage) {
+        if (handler) {
+            RetainPtr<NSMutableDictionary> userInfo = adoptNS([[NSMutableDictionary alloc] init]);
+            [userInfo setObject:localizedDescriptionForErrorCode(WKErrorJavaScriptExceptionOccurred).get() forKey:NSLocalizedDescriptionKey];
+            [userInfo setObject:errorMessage forKey:_WKJavaScriptExceptionMessageErrorKey];
 
-        [userInfo setObject:localizedDescriptionForErrorCode(WKErrorJavaScriptExceptionOccurred).get() forKey:NSLocalizedDescriptionKey];
-        [userInfo setObject:errorMessage forKey:_WKJavaScriptExceptionMessageErrorKey];
-
-        auto error = adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorJavaScriptExceptionOccurred userInfo:userInfo.get()]);
-        RunLoop::mainSingleton().dispatch([handler, error] {
-            auto rawHandler = (void (^)(id, NSError *))handler.get();
-            rawHandler(nil, error.get());
-        });
-
+            auto error = adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorJavaScriptExceptionOccurred userInfo:userInfo.get()]);
+            RunLoop::mainSingleton().dispatch([handler, error] {
+                auto rawHandler = (void (^)(id, NSError *))handler.get();
+                rawHandler(nil, error.get());
+            });
+        }
         return;
     }
     
@@ -1503,15 +1517,32 @@ static WKMediaPlaybackState toWKMediaPlaybackState(WebKit::MediaPlaybackState me
         frameID = frame._handle->_frameHandle->frameID();
 
     auto removeTransientActivation = !_dontResetTransientActivationAfterRunJavaScript && WebKit::shouldEvaluateJavaScriptWithoutTransientActivation() ? WebCore::RemoveTransientActivation::Yes : WebCore::RemoveTransientActivation::No;
+
+    std::optional<IPC::TransferString> scriptString;
+    if (world->_contentWorld->allowAutofill())
+        scriptString = IPC::TransferString::createCached(javaScriptString);
+    else
+        scriptString = IPC::TransferString::create(javaScriptString);
+
+    if (!scriptString) {
+        if (handler) {
+            RunLoop::mainSingleton().dispatch([handler = WTF::move(handler)] {
+                auto rawHandler = (void (^)(id, NSError *))handler.get();
+                rawHandler(nil, unknownError().get());
+            });
+        }
+        return;
+    }
+
     _page->runJavaScriptInFrameInScriptWorld(WebKit::RunJavaScriptParameters {
-        javaScriptString,
+        WTF::move(*scriptString),
         JSC::SourceTaintedOrigin::Untainted,
         sourceURL,
         asAsyncFunction ? WebCore::RunAsAsyncFunction::Yes : WebCore::RunAsAsyncFunction::No,
-        WTFMove(argumentsMap),
+        WTF::move(argumentsMap),
         forceUserGesture ? WebCore::ForceUserGesture::Yes : WebCore::ForceUserGesture::No,
         removeTransientActivation
-    }, frameID, Ref { *world->_contentWorld }, !!handler, [handler] (auto&& result) {
+    }, frameID, protect(*world->_contentWorld), !!handler, [handler] (auto&& result) {
         if (!handler)
             return;
 
@@ -1538,7 +1569,7 @@ static WKMediaPlaybackState toWKMediaPlaybackState(WebKit::MediaPlaybackState me
     auto handler = makeBlockPtr(completionHandler);
 
     if (CGRectIsEmpty(rectInViewCoordinates) || !snapshotWidth) {
-        RunLoop::mainSingleton().dispatch([handler = WTFMove(handler)] {
+        RunLoop::mainSingleton().dispatch([handler = WTF::move(handler)] {
 #if USE(APPKIT)
             auto image = adoptNS([[NSImage alloc] initWithSize:NSMakeSize(0, 0)]);
 #else
@@ -1618,7 +1649,7 @@ static WKMediaPlaybackState toWKMediaPlaybackState(WebKit::MediaPlaybackState me
         return;
     }
 
-    _page->callAfterNextPresentationUpdate([callSnapshotRect = WTFMove(callSnapshotRect), handler, page = Ref { *_page }] () mutable {
+    _page->callAfterNextPresentationUpdate([callSnapshotRect = WTF::move(callSnapshotRect), handler, page = protect(*_page)] () mutable {
 
         if (!page->hasRunningProcess()) {
             tracePoint(TakeSnapshotEnd, snapshotFailedTraceValue);
@@ -1630,11 +1661,11 @@ static WKMediaPlaybackState toWKMediaPlaybackState(WebKit::MediaPlaybackState me
         [CATransaction activate];
 
         // Wait for the next flush to ensure the latest IOSurfaces are pushed to backboardd before taking the snapshot.
-        [CATransaction addCommitHandler:[callSnapshotRect = WTFMove(callSnapshotRect)]() mutable {
+        [CATransaction addCommitHandler:[callSnapshotRect = WTF::move(callSnapshotRect)]() mutable {
             // callSnapshotRect() calls the client callback which may call directly or indirectly addCommitHandler.
             // It is prohibited by CA to add a commit handler while processing a registered commit handler.
             // So postpone calling callSnapshotRect() till CATransaction processes its commit handlers.
-            dispatch_async(mainDispatchQueueSingleton(), [callSnapshotRect = WTFMove(callSnapshotRect)] {
+            dispatch_async(mainDispatchQueueSingleton(), [callSnapshotRect = WTF::move(callSnapshotRect)] {
                 callSnapshotRect();
             });
         } forPhase:kCATransactionPhasePostCommit];
@@ -1913,7 +1944,7 @@ inline OptionSet<WebKit::FindOptions> toFindOptions(WKFindConfiguration *configu
 
 - (void)_showWarningView:(const WebKit::BrowsingWarning&)warning completionHandler:(CompletionHandler<void(Variant<WebKit::ContinueUnsafeLoad, URL>&&)>&&)completionHandler
 {
-    _warningView = adoptNS([[_WKWarningView alloc] initWithFrame:self.bounds browsingWarning:warning completionHandler:[weakSelf = WeakObjCPtr<WKWebView>(self), completionHandler = WTFMove(completionHandler)] (auto&& result) mutable {
+    _warningView = adoptNS([[_WKWarningView alloc] initWithFrame:self.bounds browsingWarning:warning completionHandler:[weakSelf = WeakObjCPtr<WKWebView>(self), completionHandler = WTF::move(completionHandler)] (auto&& result) mutable {
         completionHandler(std::forward<decltype(result)>(result));
         auto strongSelf = weakSelf.get();
         if (!strongSelf)
@@ -1938,7 +1969,7 @@ inline OptionSet<WebKit::FindOptions> toFindOptions(WKFindConfiguration *configu
 
 - (void)_showBrowsingWarning:(const WebKit::BrowsingWarning&)warning completionHandler:(CompletionHandler<void(Variant<WebKit::ContinueUnsafeLoad, URL>&&)>&&)completionHandler
 {
-    [self _showWarningView:warning completionHandler:WTFMove(completionHandler)];
+    [self _showWarningView:warning completionHandler:WTF::move(completionHandler)];
 }
 
 - (void)_clearWarningView
@@ -2094,24 +2125,8 @@ inline OptionSet<WebKit::FindOptions> toFindOptions(WKFindConfiguration *configu
 }
 #endif
 
-- (id<_WKImmersiveEnvironmentDelegate>)_immersiveEnvironmentDelegate
-{
 #if ENABLE(MODEL_ELEMENT_IMMERSIVE)
-    return _immersiveEnvironmentDelegate.getAutoreleased();
-#else
-    return nil;
-#endif
-}
-
-- (void)_setImmersiveEnvironmentDelegate:(id<_WKImmersiveEnvironmentDelegate>)delegate
-{
-#if ENABLE(MODEL_ELEMENT_IMMERSIVE)
-    _immersiveEnvironmentDelegate = delegate;
-#endif
-}
-
-#if ENABLE(MODEL_ELEMENT_IMMERSIVE)
-- (void)_canEnterImmersiveElementFromURL:(const URL&)url completion:(CompletionHandler<void(bool)>&&)completion
+- (void)_allowImmersiveElementFromURL:(const URL&)url completion:(CompletionHandler<void(bool)>&&)completion
 {
     id<_WKImmersiveEnvironmentDelegate> immersiveEnvironmentDelegate = self._immersiveEnvironmentDelegate;
     if (!immersiveEnvironmentDelegate) {
@@ -2119,12 +2134,44 @@ inline OptionSet<WebKit::FindOptions> toFindOptions(WKFindConfiguration *configu
         return;
     }
 
-    auto completionBlock = makeBlockPtr(WTFMove(completion));
     auto nsURL = url.createNSURL();
+    [immersiveEnvironmentDelegate webView:self allowImmersiveEnvironmentFromURL:nsURL.get() completion:makeBlockPtr([completion = WTF::move(completion)](bool allow) mutable {
+        completion(allow);
+    }).get()];
+}
 
-    [immersiveEnvironmentDelegate webView:self canPresentImmersiveEnvironmentFromURL:nsURL.get() completion:^(bool canPresentImmersive) {
-        completionBlock(canPresentImmersive);
-    }];
+- (void)_presentImmersiveElement:(const WebCore::LayerHostingContextIdentifier)contextID completion:(CompletionHandler<void(bool)>&&)completion
+{
+    id<_WKImmersiveEnvironmentDelegate> immersiveEnvironmentDelegate = self._immersiveEnvironmentDelegate;
+    if (!immersiveEnvironmentDelegate) {
+        completion(false);
+        return;
+    }
+
+    RetainPtr environmentView = adoptNS([[UIView alloc] initWithFrame:CGRectZero]);
+    RetainPtr remoteModelView = adoptNS([[_UIRemoteView alloc] initWithFrame:CGRectZero pid:[self _webProcessIdentifier] contextID:contextID.toUInt64()]);
+    [environmentView addSubview:remoteModelView.get()];
+    // To match the assumptions made in ModelProcessModelPlayerProxy.mm, the frame of the model view must stay zero, and be centered inside its container.
+    // This ensures that the model is correctly placed at the world's origin when the client puts the view inside their Immersive Space.
+    [remoteModelView setFrame:CGRectZero];
+    [remoteModelView setAutoresizingMask:(UIViewAutoresizingNone | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleBottomMargin)];
+
+    [immersiveEnvironmentDelegate webView:self presentImmersiveEnvironment:environmentView.autorelease() completion:makeBlockPtr([completion = WTF::move(completion)](NSError *error) mutable {
+        completion(!error);
+    }).get()];
+}
+
+- (void)_dismissImmersiveElement:(CompletionHandler<void()>&&)completion
+{
+    id<_WKImmersiveEnvironmentDelegate> immersiveEnvironmentDelegate = self._immersiveEnvironmentDelegate;
+    if (!immersiveEnvironmentDelegate) {
+        completion();
+        return;
+    }
+
+    [immersiveEnvironmentDelegate webView:self dismissImmersiveEnvironment:makeBlockPtr([completion = WTF::move(completion)]() mutable {
+        completion();
+    }).get()];
 }
 #endif
 
@@ -2184,7 +2231,7 @@ inline OptionSet<WebKit::FindOptions> toFindOptions(WKFindConfiguration *configu
     if (highlight.text)
         text = highlight.text.value().createNSString();
 
-    RetainPtr wkHighlight = adoptNS([[_WKAppHighlight alloc] initWithHighlight:Ref { highlight.highlight }->makeContiguous()->createNSData().get() text:text.get() image:nil]);
+    RetainPtr wkHighlight = adoptNS([[_WKAppHighlight alloc] initWithHighlight:protect(highlight.highlight)->makeContiguous()->createNSData().get() text:text.get() image:nil]);
 
     if ([delegate respondsToSelector:@selector(_webView:storeAppHighlight:inNewGroup:requestOriginatedInApp:)])
         [delegate _webView:self storeAppHighlight:wkHighlight.get() inNewGroup:highlight.isNewGroup == WebCore::CreateNewGroupForHighlight::Yes requestOriginatedInApp:highlight.requestOriginatedInApp == WebCore::HighlightRequestOriginatedInApp::Yes];
@@ -2250,11 +2297,6 @@ inline OptionSet<WebKit::FindOptions> toFindOptions(WKFindConfiguration *configu
         auto data = pdfData->createCFData();
         handler((NSData *)data.get(), nil);
     });
-}
-
-static RetainPtr<NSError> unknownError()
-{
-    return adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:nil]);
 }
 
 - (void)createWebArchiveDataWithCompletionHandler:(void (^)(NSData *, NSError *))completionHandler
@@ -2787,7 +2829,7 @@ static _WKSelectionAttributes selectionAttributes(const WebKit::EditorState& edi
             return;
         }
 
-        RetainPtr preview = [strongSelf->_contentView _createTargetedPreviewFromTextIndicator:WTFMove(textIndicator) previewContainer:strongSelf.get()];
+        RetainPtr preview = [strongSelf->_contentView _createTargetedPreviewFromTextIndicator:WTF::move(textIndicator) previewContainer:strongSelf.get()];
         completion(preview.get());
     });
 }
@@ -3142,7 +3184,7 @@ WebCore::CocoaColor *sampledFixedPositionContentColor(const WebCore::FixedContai
     [self _removePDFPageNumberIndicator:identifier];
     RetainPtr indicator = adoptNS([[WKPDFPageNumberIndicator alloc] initWithFrame:rect view:self pageCount:pageCount]);
     [self addSubview:indicator.get()];
-    _pdfPageNumberIndicator = std::make_pair(identifier, WTFMove(indicator));
+    _pdfPageNumberIndicator = std::make_pair(identifier, WTF::move(indicator));
 }
 
 - (void)_removePDFPageNumberIndicator:(WebKit::PDFPluginIdentifier)identifier
@@ -3271,7 +3313,7 @@ WebCore::CocoaColor *sampledFixedPositionContentColor(const WebCore::FixedContai
 
 - (void)_updateFixedColorExtensionViews
 {
-    if (!_page || !_page->protectedPreferences()->contentInsetBackgroundFillEnabled())
+    if (!_page || !protect(_page->preferences())->contentInsetBackgroundFillEnabled())
         return;
 
     RetainPtr parentView = [self _containerForFixedColorExtension];
@@ -3341,7 +3383,7 @@ WebCore::CocoaColor *sampledFixedPositionContentColor(const WebCore::FixedContai
 
 - (void)_updateFixedColorExtensionViewFrames
 {
-    if (!_page || !_page->protectedPreferences()->contentInsetBackgroundFillEnabled())
+    if (!_page || !protect(_page->preferences())->contentInsetBackgroundFillEnabled())
         return;
 
     RetainPtr parentView = [self _containerForFixedColorExtension];
@@ -3406,7 +3448,7 @@ WebCore::CocoaColor *sampledFixedPositionContentColor(const WebCore::FixedContai
 {
 #if PLATFORM(MAC)
     if (_isGettingAdjustedColorForTopContentInsetColorFromDelegate) {
-        RunLoop::mainSingleton().dispatch(WTFMove(callback));
+        RunLoop::mainSingleton().dispatch(WTF::move(callback));
         return;
     }
 #endif
@@ -3596,7 +3638,7 @@ struct WKWebViewData {
 
     auto data = Box<WKWebViewData>::create();
 
-    Ref callbackAggregator = CallbackAggregator::create([completionHandler = makeBlockPtr(completionHandler), dataTypesToEncode = WTFMove(dataTypesToEncode), data] {
+    Ref callbackAggregator = CallbackAggregator::create([completionHandler = makeBlockPtr(completionHandler), dataTypesToEncode = WTF::move(dataTypesToEncode), data] {
         WTF::Persistence::Encoder encoder;
         constexpr unsigned currentWKWebViewDataSerializationVersion = 1;
         encoder << currentWKWebViewDataSerializationVersion;
@@ -3625,7 +3667,7 @@ struct WKWebViewData {
     if (dataTypes & WKWebViewDataTypeSessionStorage) {
         RefPtr page = [self _protectedPage];
         page->fetchSessionStorage([callbackAggregator, protectedPage = page, data](auto&& sessionStorage) {
-            data->sessionStorage = WTFMove(sessionStorage);
+            data->sessionStorage = WTF::move(sessionStorage);
         });
     }
 }
@@ -3678,7 +3720,7 @@ struct WKWebViewData {
 
             if (!sessionStorage->isEmpty()) {
                 RefPtr page = [self _protectedPage];
-                page->restoreSessionStorage(WTFMove(*sessionStorage), [callbackAggregator, error](bool restoreSucceeded) {
+                page->restoreSessionStorage(WTF::move(*sessionStorage), [callbackAggregator, error](bool restoreSucceeded) {
                     if (!restoreSucceeded) {
                         NSDictionary *userInfo = @{ NSLocalizedDescriptionKey : @"Unknown error occurred while restoring data.", };
                         *error = adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:userInfo]).get();
@@ -3693,6 +3735,48 @@ struct WKWebViewData {
             break;
         }
     }
+}
+
+#if PLATFORM(MAC)
+
+- (BOOL)_alwaysBounceVertical
+{
+    return _impl->alwaysBounceVertical();
+}
+
+- (void)_setAlwaysBounceVertical:(BOOL)value
+{
+    _impl->setAlwaysBounceVertical(value);
+}
+
+- (BOOL)_alwaysBounceHorizontal
+{
+    return _impl->alwaysBounceHorizontal();
+}
+
+- (void)_setAlwaysBounceHorizontal:(BOOL)value
+{
+    _impl->setAlwaysBounceHorizontal(value);
+}
+
+- (void)_setContentOffsetX:(NSNumber *)x y:(NSNumber *)y animated:(BOOL)animated
+{
+    std::optional<int> optionalX = std::nullopt;
+    if (x)
+        optionalX = static_cast<int>([x doubleValue]);
+
+    std::optional<int> optionalY = std::nullopt;
+    if (y)
+        optionalY = static_cast<int>([y doubleValue]);
+
+    _page->setContentOffset(optionalX, optionalY, animated ? WebCore::ScrollIsAnimated::Yes : WebCore::ScrollIsAnimated::No);
+}
+
+#endif // PLATFORM(MAC)
+
+- (void)_scrollToEdge:(_WKRectEdge)edge animated:(BOOL)animated
+{
+    self._protectedPage->scrollToEdge(toRectEdges(edge), animated ? WebCore::ScrollIsAnimated::Yes : WebCore::ScrollIsAnimated::No);
 }
 
 @end
@@ -3842,7 +3926,7 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(FORWARD_ACTION_TO_WKCONTENTVIEW)
     [extensionIDToNameMap enumerateKeysAndObjectsUsingBlock:[&](NSString *extensionID, NSString *extensionName, BOOL *) {
         transformed.set(extensionID, extensionName);
     }];
-    _page->inspectorController().browserExtensionsEnabled(WTFMove(transformed));
+    _page->inspectorController().browserExtensionsEnabled(WTF::move(transformed));
 }
 
 - (void)_didDisableBrowserExtensions:(NSSet<NSString *> *)extensionIDs
@@ -3852,7 +3936,7 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(FORWARD_ACTION_TO_WKCONTENTVIEW)
     transformed.reserveInitialCapacity(extensionIDs.count);
     for (NSString *extensionID in extensionIDs)
         transformed.addVoid(extensionID);
-    _page->inspectorController().browserExtensionsDisabled(WTFMove(transformed));
+    _page->inspectorController().browserExtensionsDisabled(WTF::move(transformed));
 }
 
 - (_WKFrameHandle *)_mainFrame
@@ -3864,7 +3948,7 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(FORWARD_ACTION_TO_WKCONTENTVIEW)
 
 - (BOOL)_negotiatedLegacyTLS
 {
-    return _page->protectedPageLoadState()->hasNegotiatedLegacyTLS();
+    return protect(_page->pageLoadState())->hasNegotiatedLegacyTLS();
 }
 
 - (BOOL)_wasPrivateRelayed
@@ -3884,19 +3968,19 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(FORWARD_ACTION_TO_WKCONTENTVIEW)
 
 - (void)_frames:(void (^)(_WKFrameTreeNode *))completionHandler
 {
-    _page->getAllFrames([completionHandler = makeBlockPtr(completionHandler), page = Ref { *_page.get() }] (std::optional<WebKit::FrameTreeNodeData>&& data) {
+    _page->getAllFrames([completionHandler = makeBlockPtr(completionHandler), page = protect(*_page.get())] (std::optional<WebKit::FrameTreeNodeData>&& data) {
         if (!data)
             return completionHandler(nil);
-        completionHandler(wrapper(API::FrameTreeNode::create(WTFMove(*data), page.get())).get());
+        completionHandler(wrapper(API::FrameTreeNode::create(WTF::move(*data), page.get())).get());
     });
 }
 
 - (void)_frameTrees:(void (^)(NSSet<_WKFrameTreeNode *> *))completionHandler
 {
-    _page->getAllFrameTrees([completionHandler = makeBlockPtr(completionHandler), page = Ref { *_page.get() }] (Vector<WebKit::FrameTreeNodeData>&& vector) {
+    _page->getAllFrameTrees([completionHandler = makeBlockPtr(completionHandler), page = protect(*_page.get())] (Vector<WebKit::FrameTreeNodeData>&& vector) {
         auto set = adoptNS([[NSMutableSet alloc] initWithCapacity:vector.size()]);
         for (auto& data : vector)
-            [set addObject:wrapper(API::FrameTreeNode::create(WTFMove(data), page.get())).get()];
+            [set addObject:wrapper(API::FrameTreeNode::create(WTF::move(data), page.get())).get()];
         completionHandler(set.get());
     });
 }
@@ -3912,7 +3996,7 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(FORWARD_ACTION_TO_WKCONTENTVIEW)
     frame->getFrameInfo([completionHandler = makeBlockPtr(completionHandler)] (auto&& data) mutable {
         if (!data)
             return completionHandler(nil);
-        completionHandler(wrapper(API::FrameInfo::create(WTFMove(*data))).get());
+        completionHandler(wrapper(API::FrameInfo::create(WTF::move(*data))).get());
     });
 }
 
@@ -4098,7 +4182,7 @@ static WebCore::TextManipulationTokenIdentifier coreTextManipulationTokenIdentif
     for (_WKTextManipulationToken *wkToken in item.tokens)
         tokens.append(WebCore::TextManipulationToken { coreTextManipulationTokenIdentifierFromString(wkToken.identifier), wkToken.content, std::nullopt });
 
-    Vector<WebCore::TextManipulationItem> coreItems({ WebCore::TextManipulationItem { identifiers->frameID, false, false, identifiers->itemID, WTFMove(tokens) } });
+    Vector<WebCore::TextManipulationItem> coreItems({ WebCore::TextManipulationItem { identifiers->frameID, false, false, identifiers->itemID, WTF::move(tokens) } });
     _page->completeTextManipulation(coreItems, [capturedCompletionBlock = makeBlockPtr(completionHandler)] (auto failures) {
         capturedCompletionBlock(failures.isEmpty());
     });
@@ -4169,7 +4253,7 @@ static RetainPtr<NSArray> wkTextManipulationErrors(NSArray<_WKTextManipulationIt
             frameID = identifiers->frameID;
             itemID = identifiers->itemID;
         }
-        coreItems.append(WebCore::TextManipulationItem { frameID, false, false, itemID, WTFMove(coreTokens) });
+        coreItems.append(WebCore::TextManipulationItem { frameID, false, false, itemID, WTF::move(coreTokens) });
     }
 
     RetainPtr<NSArray<_WKTextManipulationItem *>> retainedItems = items;
@@ -4183,7 +4267,7 @@ static RetainPtr<NSArray> wkTextManipulationErrors(NSArray<_WKTextManipulationIt
 #if ENABLE(IMAGE_ANALYSIS)
     THROW_IF_SUSPENDED;
 
-    if (!_page || !_page->protectedPreferences()->visualTranslationEnabled() || !WebKit::languageIdentifierSupportsLiveText(sourceLanguageIdentifier))
+    if (!_page || !protect(_page->preferences())->visualTranslationEnabled() || !WebKit::languageIdentifierSupportsLiveText(sourceLanguageIdentifier))
         return;
 
     _page->startVisualTranslation(sourceLanguageIdentifier, targetLanguageIdentifier);
@@ -4363,38 +4447,38 @@ static RetainPtr<NSArray> wkTextManipulationErrors(NSArray<_WKTextManipulationIt
     _page->hitTestAtPoint(frame ? frame->_frameInfo->frameInfoData().frameID : mainFrame->frameID(), point, [completionHandler = makeBlockPtr(completionHandler)] (auto&& result) mutable {
         if (!result)
             return completionHandler(nil, unknownError().get());
-        completionHandler(wrapper(API::JSHandle::create(WTFMove(*result))).get(), nil);
+        completionHandler(wrapper(API::JSHandle::create(WTF::move(*result))).get(), nil);
     });
 }
 
 - (void)_setStatusBarIsVisible:(BOOL)visible
 {
-    _page->setStatusBarIsVisible(visible);
+    UNUSED_PARAM(visible);
 }
 
 - (BOOL)_statusBarIsVisible
 {
-    return _page->statusBarIsVisible();
+    return NO;
 }
 
 - (void)_setMenuBarIsVisible:(BOOL)visible
 {
-    _page->setMenuBarIsVisible(visible);
+    UNUSED_PARAM(visible);
 }
 
 - (BOOL)_menuBarIsVisible
 {
-    return _page->menuBarIsVisible();
+    return NO;
 }
 
 - (void)_setToolbarsAreVisible:(BOOL)visible
 {
-    _page->setToolbarsAreVisible(visible);
+    UNUSED_PARAM(visible);
 }
 
 - (BOOL)_toolbarsAreVisible
 {
-    return _page->toolbarsAreVisible();
+    return NO;
 }
 
 - (void)_toggleInWindow
@@ -4566,6 +4650,29 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
 #endif
 }
 
+- (id<_WKImmersiveEnvironmentDelegate>)_immersiveEnvironmentDelegate
+{
+#if ENABLE(MODEL_ELEMENT_IMMERSIVE)
+    return _immersiveEnvironmentDelegate.getAutoreleased();
+#else
+    return nil;
+#endif
+}
+
+- (void)_setImmersiveEnvironmentDelegate:(id<_WKImmersiveEnvironmentDelegate>)delegate
+{
+#if ENABLE(MODEL_ELEMENT_IMMERSIVE)
+    _immersiveEnvironmentDelegate = delegate;
+#endif
+}
+
+- (void)_exitImmersive
+{
+#if ENABLE(MODEL_ELEMENT_IMMERSIVE)
+    _page->exitImmersive();
+#endif
+}
+
 - (void)_addAppHighlight
 {
     THROW_IF_SUSPENDED;
@@ -4594,7 +4701,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
         if (!strongSelf)
             return completion(@[ ]);
 
-        completion(createNSArray(WTFMove(textRuns), [](auto&& textRun) {
+        completion(createNSArray(WTF::move(textRuns), [](auto&& textRun) {
             return wrapper(textRun);
         }).get());
     });
@@ -4602,7 +4709,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
 
 - (void)_requestTargetedElementInfo:(_WKTargetedElementRequest *)request completionHandler:(void(^)(NSArray<_WKTargetedElementInfo *> *))completion
 {
-    _page->requestTargetedElement(Ref { *request->_request }, [completion = makeBlockPtr(completion)](auto& elements) {
+    _page->requestTargetedElement(protect(*request->_request), [completion = makeBlockPtr(completion)](auto& elements) {
         completion(createNSArray(elements, [](auto& element) {
             return wrapper(element);
         }).get());
@@ -4641,7 +4748,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
 {
     THROW_IF_SUSPENDED;
     RetainPtr data = bridge_cast([string dataUsingEncoding:NSUTF8StringEncoding] ?: NSData.data);
-    _page->loadAlternateHTML(WebCore::DataSegment::create(WTFMove(data)), "UTF-8"_s, baseURL, unreachableURL, preferences ? preferences->_websitePolicies.get() : nullptr);
+    _page->loadAlternateHTML(WebCore::DataSegment::create(WTF::move(data)), "UTF-8"_s, baseURL, unreachableURL, preferences ? preferences->_websitePolicies.get() : nullptr);
 }
 
 - (WKNavigation *)_loadData:(NSData *)data MIMEType:(NSString *)MIMEType characterEncodingName:(NSString *)characterEncodingName baseURL:(NSURL *)baseURL userData:(id)userData
@@ -4683,8 +4790,8 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
     _page->loadAndDecodeImage(request, sizeConstraint, maximumBytesFromNetwork, [completionHandler = makeBlockPtr(completionHandler), url](Expected<Ref<WebCore::ShareableBitmap>, WebCore::ResourceError>&& result) mutable {
         if (!result) {
             if (result.error().isNull())
-                return completionHandler(nil, WebCore::internalError(url).protectedNSError().get()); // This can happen if IPC fails.
-            return completionHandler(nil, result.error().protectedNSError().get());
+                return completionHandler(nil, protect(WebCore::internalError(url).nsError()).get()); // This can happen if IPC fails.
+            return completionHandler(nil, protect(result.error().nsError()).get());
         }
         Ref bitmap = result.value();
 #if PLATFORM(MAC)
@@ -4726,7 +4833,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
     }
 
     auto buffer = WebCore::SharedBuffer::create(imageData);
-    _page->createIconDataFromImageData(WTFMove(buffer), targetLengths, [completionHandler = makeBlockPtr(completionHandler)](auto result) mutable {
+    _page->createIconDataFromImageData(WTF::move(buffer), targetLengths, [completionHandler = makeBlockPtr(completionHandler)](auto result) mutable {
         if (!result) {
             RetainPtr error = adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:@{ NSLocalizedDescriptionKey: @"Failed to decode data" }]);
             return completionHandler(nil, error.get());
@@ -4748,7 +4855,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
     }
 
     auto buffer = WebCore::SharedBuffer::create(imageData);
-    _page->decodeImageData(WTFMove(buffer), size, [completionHandler = makeBlockPtr(completionHandler)](RefPtr<WebCore::ShareableBitmap>&& bitmap) mutable {
+    _page->decodeImageData(WTF::move(buffer), size, [completionHandler = makeBlockPtr(completionHandler)](RefPtr<WebCore::ShareableBitmap>&& bitmap) mutable {
         if (!bitmap) {
             RetainPtr error = adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:@{ NSLocalizedDescriptionKey: @"Failed to decode data" }]);
             return completionHandler(nil, error.get());
@@ -4943,7 +5050,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
 
 - (BOOL)_webProcessIsResponsive
 {
-    return _page->protectedLegacyMainFrameProcess()->isResponsive();
+    return protect(_page->legacyMainFrameProcess())->isResponsive();
 }
 
 - (void)_killWebContentProcess
@@ -4952,7 +5059,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
     if (![self _isValid])
         return;
 
-    _page->protectedLegacyMainFrameProcess()->terminate();
+    protect(_page->legacyMainFrameProcess())->terminate();
 }
 
 - (WKNavigation *)_reloadWithoutContentBlockers
@@ -5034,7 +5141,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
     if (!WebKit::decodeLegacySessionState(span(sessionStateData), sessionState))
         return;
 
-    _page->restoreFromSessionState(WTFMove(sessionState), true);
+    _page->restoreFromSessionState(WTF::move(sessionState), true);
 }
 
 - (WKNavigation *)_restoreSessionState:(_WKSessionState *)sessionState andNavigate:(BOOL)navigate
@@ -5103,6 +5210,12 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
     return nil;
 }
 
+- (void)_simulateDeviceMotionChangeWithXAcceleration:(double)xAcceleration yAcceleration:(double)yAcceleration zAcceleration:(double)zAcceleration xAccelerationIncludingGravity:(double)xAccelerationIncludingGravity yAccelerationIncludingGravity:(double)yAccelerationIncludingGravity zAccelerationIncludingGravity:(double)zAccelerationIncludingGravity xRotationRate:(double)xRotationRate yRotationRate:(double)yRotationRate zRotationRate:(double)zRotationRate
+{
+    THROW_IF_SUSPENDED;
+    _page->simulateDeviceMotionChange(xAcceleration, yAcceleration, zAcceleration, xAccelerationIncludingGravity, yAccelerationIncludingGravity, zAccelerationIncludingGravity, xRotationRate, yRotationRate, zRotationRate);
+}
+
 - (void)_simulateDeviceOrientationChangeWithAlpha:(double)alpha beta:(double)beta gamma:(double)gamma
 {
     THROW_IF_SUSPENDED;
@@ -5118,7 +5231,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
 - (void)_clearBackForwardCache
 {
     THROW_IF_SUSPENDED;
-    _page->configuration().protectedProcessPool()->backForwardCache().removeEntriesForPage(*_page);
+    protect(_page->configuration().processPool())->backForwardCache().removeEntriesForPage(*_page);
 }
 
 + (BOOL)_handlesSafeBrowsing
@@ -5180,9 +5293,9 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
         });
     };
 #if PLATFORM(MAC)
-    _impl->showWarningView(safeBrowsingWarning, WTFMove(wrapper));
+    _impl->showWarningView(safeBrowsingWarning, WTF::move(wrapper));
 #else
-    [self _showWarningView:safeBrowsingWarning completionHandler:WTFMove(wrapper)];
+    [self _showWarningView:safeBrowsingWarning completionHandler:WTF::move(wrapper)];
 #endif
 }
 
@@ -5276,7 +5389,7 @@ static void convertAndAddHighlight(Vector<Ref<WebCore::SharedMemory>>& buffers, 
         [NSException raise:NSInvalidArgumentException format:@"Updating WKWebsiteDataStore is only supported during decidePolicyForNavigationAction."];
     if (webpagePreferences._userContentController)
         [NSException raise:NSInvalidArgumentException format:@"Updating WKUserContentController is only supported during decidePolicyForNavigationAction."];
-    _page->updateWebsitePolicies(Ref { *webpagePreferences->_websitePolicies });
+    _page->updateWebsitePolicies(protect(*webpagePreferences->_websitePolicies));
 }
 
 - (BOOL)_allowsRemoteInspection
@@ -5372,7 +5485,7 @@ static inline OptionSet<WebCore::LayoutMilestone> layoutMilestones(_WKRenderingP
 - (void)_saveResources:(NSURL *)directory suggestedFileName:(NSString *)name completionHandler:(void (^)(NSError *error))completionHandler
 {
     THROW_IF_SUSPENDED;
-    _page->saveResources(_page->protectedMainFrame().get(), { }, directory.path, name, [completionHandler = makeBlockPtr(completionHandler)](auto result) mutable {
+    _page->saveResources(protect(_page->mainFrame()), { }, directory.path, name, [completionHandler = makeBlockPtr(completionHandler)](auto result) mutable {
         if (!result)
             return completionHandler(adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:@{ NSLocalizedDescriptionKey: WebCore::errorDescription(result.error()).createNSString().get() }]).get());
 
@@ -5398,10 +5511,10 @@ static inline OptionSet<WebCore::LayoutMilestone> layoutMilestones(_WKRenderingP
             if (attributeLocalName && !attributeLocalName.get().length)
                 attibutes.append({ AtomString { attributeLocalName.get() }, attributeValue.get() });
         }
-        markupExclusionRules.append(WebCore::MarkupExclusionRule { AtomString { rule.elementLocalName }, WTFMove(attibutes) });
+        markupExclusionRules.append(WebCore::MarkupExclusionRule { AtomString { rule.elementLocalName }, WTF::move(attibutes) });
     }
 
-    _page->saveResources(_page->protectedMainFrame().get(), WTFMove(markupExclusionRules), configuration.directory.path, configuration.suggestedFileName, [completionHandler = makeBlockPtr(completionHandler)](auto result) mutable {
+    _page->saveResources(protect(_page->mainFrame()), WTF::move(markupExclusionRules), configuration.directory.path, configuration.suggestedFileName, [completionHandler = makeBlockPtr(completionHandler)](auto result) mutable {
         if (!result)
             return completionHandler(adoptNS([[NSError alloc] initWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:@{ NSLocalizedDescriptionKey: WebCore::errorDescription(result.error()).createNSString().get() }]).get());
 
@@ -5412,7 +5525,7 @@ static inline OptionSet<WebCore::LayoutMilestone> layoutMilestones(_WKRenderingP
 - (void)_getMainResourceDataWithCompletionHandler:(void (^)(NSData *, NSError *))completionHandler
 {
     THROW_IF_SUSPENDED;
-    _page->getMainResourceDataOfFrame(_page->protectedMainFrame().get(), [completionHandler = makeBlockPtr(completionHandler)](API::Data* data) {
+    _page->getMainResourceDataOfFrame(protect(_page->mainFrame()), [completionHandler = makeBlockPtr(completionHandler)](API::Data* data) {
         completionHandler(protectedWrapper(data).get(), nil);
     });
 }
@@ -5505,7 +5618,7 @@ static inline OptionSet<WebCore::LayoutMilestone> layoutMilestones(_WKRenderingP
 - (void)_getContentsAsStringWithCompletionHandlerKeepIPCConnectionAliveForTesting:(void (^)(NSString *, NSError *))completionHandler
 {
     THROW_IF_SUSPENDED;
-    _page->getContentsAsString(WebKit::ContentAsStringIncludesChildFrames::No, [handler = makeBlockPtr(completionHandler), connection = _page->legacyMainFrameProcess().protectedConnection()](String string) {
+    _page->getContentsAsString(WebKit::ContentAsStringIncludesChildFrames::No, [handler = makeBlockPtr(completionHandler), connection = protect(_page->legacyMainFrameProcess().connection())](String string) {
         handler(string.createNSString().get(), nil);
     });
 }
@@ -5776,12 +5889,12 @@ static inline OptionSet<WebKit::FindOptions> toFindOptions(_WKFindOptions wkFind
     THROW_IF_SUSPENDED;
     if (!item)
         return;
-    _page->recordNavigationSnapshot(Ref { item._item });
+    _page->recordNavigationSnapshot(protect(item._item));
 }
 
 - (void)_serviceWorkersEnabled:(void(^)(BOOL))completionHandler
 {
-    auto enabled = Ref { *[_configuration preferences]->_preferences }->serviceWorkersEnabled();
+    auto enabled = protect(*[_configuration preferences]->_preferences)->serviceWorkersEnabled();
     completionHandler(enabled);
 }
 
@@ -5799,8 +5912,8 @@ static inline OptionSet<WebKit::FindOptions> toFindOptions(_WKFindOptions wkFind
 
     auto request = WebCore::ResourceRequest { url };
     if (auto userAgent = _page->userAgent(); !userAgent.isEmpty())
-        request.setHTTPUserAgent(WTFMove(userAgent));
-    _page->preconnectTo(WTFMove(request));
+        request.setHTTPUserAgent(WTF::move(userAgent));
+    _page->preconnectTo(WTF::move(request));
 }
 
 - (BOOL)_canUseCredentialStorage
@@ -5876,7 +5989,7 @@ static inline OptionSet<WebKit::FindOptions> toFindOptions(_WKFindOptions wkFind
 
             if (inputDelegateRespondsToWillSubmitFormValuesLegacy) {
                 auto checker = WebKit::CompletionHandlerCallChecker::create(inputDelegate.get(), willSubmitFormValuesLegacySelector);
-                [inputDelegate _webView:webView.get() willSubmitFormValues:valueMap.get() userObject:userObject.get() submissionHandler:makeBlockPtr([completionHandler = WTFMove(completionHandler), checker = WTFMove(checker)] () mutable {
+                [inputDelegate _webView:webView.get() willSubmitFormValues:valueMap.get() userObject:userObject.get() submissionHandler:makeBlockPtr([completionHandler = WTF::move(completionHandler), checker = WTF::move(checker)] () mutable {
                     if (checker->completionHandlerHasBeenCalled())
                         return;
                     checker->didCallCompletionHandler();
@@ -5887,9 +6000,9 @@ static inline OptionSet<WebKit::FindOptions> toFindOptions(_WKFindOptions wkFind
 
             if (inputDelegateRespondsToWillSubmitFormValuesWithoutRequestURL) {
                 auto checker = WebKit::CompletionHandlerCallChecker::create(inputDelegate.get(), willSubmitFormValuesWithoutRequestURLSelector);
-                auto frameInfo = wrapper(API::FrameInfo::create(WTFMove(frameInfoData)));
-                auto sourceFrameInfo = wrapper(API::FrameInfo::create(WTFMove(sourceFrameInfoData)));
-                [inputDelegate _webView:webView.get() willSubmitFormValues:valueMap.get() frameInfo:frameInfo.get() sourceFrameInfo:sourceFrameInfo.get() userObject:userObject.get() submissionHandler:makeBlockPtr([completionHandler = WTFMove(completionHandler), checker = WTFMove(checker)] () mutable {
+                auto frameInfo = wrapper(API::FrameInfo::create(WTF::move(frameInfoData)));
+                auto sourceFrameInfo = wrapper(API::FrameInfo::create(WTF::move(sourceFrameInfoData)));
+                [inputDelegate _webView:webView.get() willSubmitFormValues:valueMap.get() frameInfo:frameInfo.get() sourceFrameInfo:sourceFrameInfo.get() userObject:userObject.get() submissionHandler:makeBlockPtr([completionHandler = WTF::move(completionHandler), checker = WTF::move(checker)] () mutable {
                     if (checker->completionHandlerHasBeenCalled())
                         return;
                     checker->didCallCompletionHandler();
@@ -5899,9 +6012,9 @@ static inline OptionSet<WebKit::FindOptions> toFindOptions(_WKFindOptions wkFind
             }
 
             auto checker = WebKit::CompletionHandlerCallChecker::create(inputDelegate.get(), willSubmitFormValuesSelector);
-            auto frameInfo = wrapper(API::FrameInfo::create(WTFMove(frameInfoData)));
-            auto sourceFrameInfo = wrapper(API::FrameInfo::create(WTFMove(sourceFrameInfoData)));
-            [inputDelegate _webView:webView.get() willSubmitFormValues:valueMap.get() frameInfo:frameInfo.get() sourceFrameInfo:sourceFrameInfo.get() userObject:userObject.get() requestURL:requestURL.createNSURL().get() method:method.createNSString().get() submissionHandler:makeBlockPtr([completionHandler = WTFMove(completionHandler), checker = WTFMove(checker)] () mutable {
+            auto frameInfo = wrapper(API::FrameInfo::create(WTF::move(frameInfoData)));
+            auto sourceFrameInfo = wrapper(API::FrameInfo::create(WTF::move(sourceFrameInfoData)));
+            [inputDelegate _webView:webView.get() willSubmitFormValues:valueMap.get() frameInfo:frameInfo.get() sourceFrameInfo:sourceFrameInfo.get() userObject:userObject.get() requestURL:requestURL.createNSURL().get() method:method.createNSString().get() submissionHandler:makeBlockPtr([completionHandler = WTF::move(completionHandler), checker = WTF::move(checker)] () mutable {
                 if (checker->completionHandlerHasBeenCalled())
                     return;
                 checker->didCallCompletionHandler();
@@ -6190,7 +6303,7 @@ static inline OptionSet<WebKit::FindOptions> toFindOptions(_WKFindOptions wkFind
 #if ENABLE(DATA_DETECTION)
     _page->removeDataDetectedLinks([completion = makeBlockPtr(completion), page = WeakPtr { _page.get() }] (auto&& result) {
         if (page)
-            page->setDataDetectionResult(WTFMove(result));
+            page->setDataDetectionResult(WTF::move(result));
         if (completion)
             completion();
     });
@@ -6330,7 +6443,7 @@ static Vector<Ref<API::TargetedElementInfo>> elementsFromWKElements(NSArray<_WKT
     Vector<Ref<API::TargetedElementInfo>> elements;
     elements.reserveInitialCapacity(wkElements.count);
     for (_WKTargetedElementInfo *element in wkElements)
-        elements.append(Ref { *element->_info });
+        elements.append(protect(*element->_info));
     return elements;
 }
 
@@ -6413,7 +6526,7 @@ static Vector<Ref<API::TargetedElementInfo>> elementsFromWKElements(NSArray<_WKT
             return;
         }
 
-        RetainPtr preview = [strongSelf->_contentView _createTargetedPreviewFromTextIndicator:WTFMove(textIndicator) previewContainer:strongSelf.get()];
+        RetainPtr preview = [strongSelf->_contentView _createTargetedPreviewFromTextIndicator:WTF::move(textIndicator) previewContainer:strongSelf.get()];
         completionHandler(preview.get());
     });
 }
@@ -6468,7 +6581,7 @@ static Vector<Ref<API::TargetedElementInfo>> elementsFromWKElements(NSArray<_WKT
     if (!_page || !_page->hasRunningProcess())
         return _WKWebProcessStateNotRunning;
 
-    switch (_page->protectedLegacyMainFrameProcess()->throttleStateForStatistics()) {
+    switch (protect(_page->legacyMainFrameProcess())->throttleStateForStatistics()) {
     case WebKit::ProcessThrottleState::Foreground:
         return _WKWebProcessStateForeground;
     case WebKit::ProcessThrottleState::Background:
@@ -6515,11 +6628,6 @@ static Vector<Ref<API::TargetedElementInfo>> elementsFromWKElements(NSArray<_WKT
     [[_configuration preferences] _setUseSystemAppearance:useSystemAppearance];
 }
 
-- (void)_scrollToEdge:(_WKRectEdge)edge animated:(BOOL)animated
-{
-    self._protectedPage->scrollToEdge(toRectEdges(edge), animated ? WebCore::ScrollIsAnimated::Yes : WebCore::ScrollIsAnimated::No);
-}
-
 - (BOOL)_shouldSuppressTopColorExtensionView
 {
     return _shouldSuppressTopColorExtensionView;
@@ -6558,7 +6666,7 @@ static Vector<Ref<API::TargetedElementInfo>> elementsFromWKElements(NSArray<_WKT
         if (!handle)
             return completionHandler(nil, makeUnknownError());
 
-        RefPtr bitmap = WebCore::ShareableBitmap::create(WTFMove(*handle), WebCore::SharedMemory::Protection::ReadOnly);
+        RefPtr bitmap = WebCore::ShareableBitmap::create(WTF::move(*handle), WebCore::SharedMemory::Protection::ReadOnly);
         if (!bitmap)
             return completionHandler(nil, makeUnknownError());
 
@@ -6593,6 +6701,11 @@ static Vector<Ref<API::TargetedElementInfo>> elementsFromWKElements(NSArray<_WKT
     return _impl->hasRemoteAccessibilityChild();
 }
 
+- (NSData *)_remoteAccessibilityChildToken
+{
+    return _impl->remoteAccessibilityChildToken();
+}
+
 - (RetainPtr<NSPopUpButtonCell>)_activePopupButtonCell
 {
     RefPtr popupMenu = dynamicDowncast<WebKit::WebPopupMenuProxyMac>(_page->activePopupMenu());
@@ -6602,7 +6715,7 @@ static Vector<Ref<API::TargetedElementInfo>> elementsFromWKElements(NSArray<_WKT
     if (!popupMenu->isVisible())
         return nil;
 
-    return popupMenu->protectedPopup();
+    return protect(popupMenu->popup());
 }
 
 #endif // PLATFORM(MAC)
@@ -6628,16 +6741,6 @@ static Vector<Ref<API::TargetedElementInfo>> elementsFromWKElements(NSArray<_WKT
 #endif
 }
 
-- (void)_debugTextWithConfiguration:(_WKTextExtractionConfiguration *)configuration completionHandler:(void(^)(NSString *))completionHandler
-{
-#if ENABLE(TEXT_EXTRACTION)
-    [self _extractDebugTextWithConfiguration:configuration completionHandler:makeBlockPtr([completionHandler = makeBlockPtr(completionHandler)](_WKTextExtractionResult *result) {
-        completionHandler(result.textContent);
-    }).get()];
-#endif
-}
-
-#if ENABLE(TEXT_EXTRACTION)
 static HashMap<String, String> extractReplacementStrings(_WKTextExtractionConfiguration *configuration)
 {
     HashMap<String, String> result;
@@ -6651,6 +6754,13 @@ static HashMap<String, String> extractReplacementStrings(_WKTextExtractionConfig
     return result;
 }
 
+- (void)_debugTextWithConfiguration:(_WKTextExtractionConfiguration *)configuration completionHandler:(void(^)(NSString *))completionHandler
+{
+    [self _extractDebugTextWithConfiguration:configuration completionHandler:makeBlockPtr([completionHandler = makeBlockPtr(completionHandler)](_WKTextExtractionResult *result) {
+        completionHandler(result.textContent);
+    }).get()];
+}
+
 static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtractionConfiguration *configuration)
 {
     switch (configuration.outputFormat) {
@@ -6660,25 +6770,73 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
         return WebKit::TextExtractionOutputFormat::HTMLMarkup;
     case _WKTextExtractionOutputFormatMarkdown:
         return WebKit::TextExtractionOutputFormat::Markdown;
+    case _WKTextExtractionOutputFormatJSON:
+        return WebKit::TextExtractionOutputFormat::MinifiedJSON;
     default:
         ASSERT_NOT_REACHED();
         return WebKit::TextExtractionOutputFormat::TextTree;
     }
 }
-#endif // ENABLE(TEXT_EXTRACTION)
+
+static RetainPtr<_WKTextExtractionResult> createEmptyTextExtractionResult()
+{
+    return adoptNS([[_WKTextExtractionResult alloc] initWithWebView:nil textContent:@"" filteredOutAnyText:NO shortenedURLs:@{ }]);
+}
 
 - (void)_extractDebugTextWithConfiguration:(_WKTextExtractionConfiguration *)configuration completionHandler:(void(^)(_WKTextExtractionResult *))completionHandler
 {
-#if ENABLE(TEXT_EXTRACTION)
-    bool allowFiltering = _page->protectedPreferences()->textExtractionFilterEnabled();
+    UniqueRef assertionScope = _page->createTextExtractionAssertionScope();
+#if USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
+    if (protect(_page->preferences())->textExtractionFilterEnabled() && (configuration.filterOptions & _WKTextExtractionFilterRules)) {
+        _page->hasTextExtractionFilterRules([assertionScope = WTF::move(assertionScope), configuration = RetainPtr { configuration }, completionHandler = makeBlockPtr(completionHandler), weakSelf = WeakObjCPtr { self }](bool hasRules) mutable {
+            RetainPtr strongSelf = weakSelf.get();
+            if (!strongSelf)
+                return completionHandler(createEmptyTextExtractionResult().get());
+
+            if (hasRules)
+                return [strongSelf _extractDebugTextWithConfigurationWithoutUpdatingFilterRules:configuration.get() assertionScope:WTF::move(assertionScope) completionHandler:completionHandler.get()];
+
+            WebKit::requestTextExtractionFilterRuleData([assertionScope = WTF::move(assertionScope), configuration = WTF::move(configuration), completionHandler = WTF::move(completionHandler), weakSelf](auto&& data) mutable {
+                RetainPtr strongSelf = weakSelf.get();
+                if (!strongSelf)
+                    return completionHandler(createEmptyTextExtractionResult().get());
+
+                strongSelf->_page->updateTextExtractionFilterRules(WTF::move(data));
+                [strongSelf _extractDebugTextWithConfigurationWithoutUpdatingFilterRules:configuration.get() assertionScope:WTF::move(assertionScope) completionHandler:completionHandler.get()];
+            });
+        });
+        return;
+    }
+#endif // USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
+
+    [self _extractDebugTextWithConfigurationWithoutUpdatingFilterRules:configuration assertionScope:WTF::move(assertionScope) completionHandler:completionHandler];
+}
+
+- (void)_extractDebugTextWithConfigurationWithoutUpdatingFilterRules:(_WKTextExtractionConfiguration *)configuration assertionScope:(UniqueRef<WebKit::TextExtractionAssertionScope>&&)assertionScope completionHandler:(void(^)(_WKTextExtractionResult *))completionHandler
+{
+    bool allowFiltering = protect(_page->preferences())->textExtractionFilterEnabled();
     bool filterUsingClassifier = allowFiltering && configuration.filterOptions & _WKTextExtractionFilterClassifier;
     bool filterHiddenText = allowFiltering && configuration.filterOptions & _WKTextExtractionFilterTextRecognition;
     bool filterUsingRules = allowFiltering && configuration.filterOptions & _WKTextExtractionFilterRules;
+
+    static uint64_t nextTextExtractionTracingID = 0;
+    auto currentTextExtractionTracingID = ++nextTextExtractionTracingID;
+    auto mainFrameWebProcessID = static_cast<uint64_t>(self._webProcessIdentifier);
+    auto gpuProcessID = static_cast<uint64_t>(self._gpuProcessIdentifier);
+    tracePoint(TextExtractionStart, currentTextExtractionTracingID, mainFrameWebProcessID, gpuProcessID);
+
+    auto endTextExtractionScope = makeScopeExit([assertionScope = WTF::move(assertionScope), currentTextExtractionTracingID, mainFrameWebProcessID, gpuProcessID] {
+        tracePoint(TextExtractionEnd, currentTextExtractionTracingID, mainFrameWebProcessID, gpuProcessID);
+    });
 
 #if ENABLE(TEXT_EXTRACTION_FILTER)
     if (filterUsingClassifier)
         WebKit::TextExtractionFilter::singleton().prewarm();
 #endif
+
+    RefPtr mainFrame = _page->mainFrame();
+    if (!mainFrame)
+        return completionHandler(nil);
 
     std::optional<WebKit::TextExtractionVersion> version;
     if (RetainPtr overrideVersion = dynamic_objc_cast<NSNumber>([[NSUserDefaults standardUserDefaults] objectForKey:@"WebKit2TextExtractionOutputVersion"]))
@@ -6688,19 +6846,25 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
     if (configuration.maxWordsPerParagraph < NSUIntegerMax)
         maxWordsPerParagraph = { static_cast<uint64_t>(configuration.maxWordsPerParagraph) };
 
+    if (!_textExtractionURLCache)
+        _textExtractionURLCache = WebKit::TextExtractionURLCache::create();
+
     [self _requestTextExtractionInternal:configuration completion:[
         completionHandler = makeBlockPtr(completionHandler),
         weakSelf = WeakObjCPtr<WKWebView>(self),
+        mainFrameIdentifier = mainFrame->frameID(),
         filterUsingClassifier,
         filterHiddenText,
         filterUsingRules,
         includeURLs = configuration.includeURLs,
         includeRects = configuration.includeRects,
         onlyIncludeText = configuration.onlyIncludeVisibleText,
-        maxWordsPerParagraph = WTFMove(maxWordsPerParagraph),
+        shortenURLs = configuration.shortenURLs,
+        maxWordsPerParagraph = WTF::move(maxWordsPerParagraph),
         version,
         replacementStrings = extractReplacementStrings(configuration),
-        outputFormat = textExtractionOutputFormat(configuration)
+        outputFormat = textExtractionOutputFormat(configuration),
+        endTextExtractionScope = WTF::move(endTextExtractionScope)
     ](auto&& item) mutable {
         RetainPtr strongSelf = weakSelf.get();
         if (!strongSelf)
@@ -6713,11 +6877,11 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
 
         if (filterUsingClassifier) {
 #if ENABLE(TEXT_EXTRACTION_FILTER)
-            filterCallbacks.append([](auto& text, auto&&) mutable {
+            filterCallbacks.append([](auto& text, auto&&, auto&&) mutable {
                 WebKit::TextExtractionFilterPromise::Producer producer;
                 Ref promise = producer.promise();
 
-                WebKit::TextExtractionFilter::singleton().shouldFilter(text, [producer = WTFMove(producer), text](bool shouldFilterOut) mutable {
+                WebKit::TextExtractionFilter::singleton().shouldFilter(text, [producer = WTF::move(producer), text](bool shouldFilterOut) mutable {
                     if (shouldFilterOut)
                         producer.settle(emptyString());
                     else
@@ -6730,7 +6894,7 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
 
         if (filterHiddenText) {
 #if ENABLE(TEXT_EXTRACTION_FILTER)
-            filterCallbacks.append([strongSelf](auto& text, auto&& enclosingNodeID) mutable {
+            filterCallbacks.append([strongSelf](auto& text, auto&& frameID, auto&& enclosingNodeID) mutable {
                 WebKit::TextExtractionFilterPromise::Producer producer;
                 Ref promise = producer.promise();
 
@@ -6738,19 +6902,19 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
                 auto components = Box<Vector<String>>::create();
                 components->resizeToFit(lines.size());
 
-                Ref aggregator = MainRunLoopCallbackAggregator::create([producer = WTFMove(producer), components] mutable {
-                    producer.settle(makeStringByJoining(WTFMove(*components), "\n"_s));
+                Ref aggregator = MainRunLoopCallbackAggregator::create([producer = WTF::move(producer), components] mutable {
+                    producer.settle(makeStringByJoining(WTF::move(*components), "\n"_s));
                 });
 
                 for (size_t index = 0; index < lines.size(); ++index) {
                     static constexpr auto minimumLengthForTextDetection = 100;
                     auto line = lines[index];
                     if (line.length() < minimumLengthForTextDetection) {
-                        components->at(index) = WTFMove(line);
+                        components->at(index) = WTF::move(line);
                         continue;
                     }
 
-                    [strongSelf _validateText:line inNode:std::optional { enclosingNodeID } completionHandler:[aggregator, components, index](auto& result) mutable {
+                    [strongSelf _validateText:line inFrame:std::optional { frameID } inNode:std::optional { enclosingNodeID } completionHandler:[aggregator, components, index](auto& result) mutable {
                         components->at(index) = result;
                     }];
                 }
@@ -6762,12 +6926,12 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
 
         if (filterUsingRules) {
 #if ENABLE(TEXT_EXTRACTION_FILTER)
-            filterCallbacks.append([page = strongSelf->_page](auto& text, auto&& enclosingNodeID) mutable {
+            filterCallbacks.append([page = strongSelf->_page](auto& text, auto&&, auto&& enclosingNodeID) mutable {
                 WebKit::TextExtractionFilterPromise::Producer producer;
                 Ref promise = producer.promise();
 
-                page->applyTextExtractionFilter(text, WTFMove(enclosingNodeID), [producer = WTFMove(producer)](auto&& output) mutable {
-                    producer.settle(WTFMove(output));
+                page->applyTextExtractionFilter(text, WTF::move(enclosingNodeID), [producer = WTF::move(producer)](auto&& output) mutable {
+                    producer.settle(WTF::move(output));
                 });
 
                 return promise;
@@ -6776,7 +6940,7 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
         }
 
         if (maxWordsPerParagraph) {
-            filterCallbacks.append([wordLimit = WTFMove(maxWordsPerParagraph)](auto& text, auto&&) mutable {
+            filterCallbacks.append([wordLimit = WTF::move(maxWordsPerParagraph)](auto& text, auto&&, auto&&) mutable {
                 auto truncatedComponents = text.splitAllowingEmptyEntries('\n').map([wordLimit](auto&& component) {
                     if (component.isEmpty())
                         return emptyString();
@@ -6807,8 +6971,8 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
                     return component;
                 });
 
-                auto truncatedString = makeStringByJoining(WTFMove(truncatedComponents), "\n"_s);
-                return WebKit::TextExtractionFilterPromise::createAndResolve(WTFMove(truncatedString));
+                auto truncatedString = makeStringByJoining(WTF::move(truncatedComponents), "\n"_s);
+                return WebKit::TextExtractionFilterPromise::createAndResolve(WTF::move(truncatedString));
             });
         }
 
@@ -6820,33 +6984,44 @@ static WebKit::TextExtractionOutputFormat textExtractionOutputFormat(_WKTextExtr
             optionFlags.add(IncludeRects);
         if (onlyIncludeText)
             optionFlags.add(OnlyIncludeText);
+        if (shortenURLs)
+            optionFlags.add(ShortenURLs);
+        RefPtr urlCache = strongSelf->_textExtractionURLCache;
         WebKit::TextExtractionOptions options {
-            WTFMove(filterCallbacks),
+            WTF::move(mainFrameIdentifier),
+            WTF::move(filterCallbacks),
             [strongSelf _activeNativeMenuItemTitles],
-            WTFMove(replacementStrings),
+            WTF::move(replacementStrings),
             version,
             optionFlags,
-            outputFormat
+            outputFormat,
+            urlCache.get(),
         };
-        WebKit::convertToText(WTFMove(*item), WTFMove(options), [completionHandler = WTFMove(completionHandler)](auto&& result) {
-            auto [text, filteredOutAnyText] = result;
-            completionHandler(adoptNS([[_WKTextExtractionResult alloc] initWithTextContent:text.createNSString().get() filteredOutAnyText:filteredOutAnyText]).get());
+        WebKit::convertToText(WTF::move(*item), WTF::move(options), [weakSelf, urlCache, completionHandler = WTF::move(completionHandler), endTextExtractionScope = WTF::move(endTextExtractionScope)](auto&& result) {
+            RetainPtr strongSelf = weakSelf.get();
+            if (!strongSelf)
+                return completionHandler(createEmptyTextExtractionResult().get());
+
+            auto [text, filteredOutAnyText, shortenedURLStrings] = result;
+            RetainPtr shortenedURLs = adoptNS([[NSMutableDictionary alloc] initWithCapacity:shortenedURLStrings.size()]);
+            for (auto& string : shortenedURLStrings) {
+                if (auto url = urlCache->urlForShortenedString(string); url.isValid()) {
+                    if (RetainPtr nsURL = url.createNSURL())
+                        [shortenedURLs setObject:nsURL.get() forKey:string.createNSString().get()];
+                }
+            }
+            completionHandler(adoptNS([[_WKTextExtractionResult alloc]
+                initWithWebView:strongSelf.get()
+                textContent:text.createNSString().get()
+                filteredOutAnyText:filteredOutAnyText
+                shortenedURLs:shortenedURLs.get()]).get());
         });
     }];
-#endif // ENABLE(TEXT_EXTRACTION)
 }
 
-static inline std::optional<WebCore::NodeIdentifier> toNodeIdentifier(const String& nodeIdentifier)
+- (std::pair<RefPtr<WebKit::WebFrameProxy>, WebCore::TextExtraction::Interaction>)_convertToWebCoreInteraction:(_WKTextExtractionInteraction *)wkInteraction
 {
-    auto rawValue = parseInteger<uint64_t>(nodeIdentifier);
-    if (!rawValue || !WebCore::NodeIdentifier::isValidIdentifier(*rawValue))
-        return std::nullopt;
-    return WebCore::NodeIdentifier { *rawValue };
-}
-
-#if ENABLE(TEXT_EXTRACTION)
-- (WebCore::TextExtraction::Interaction)_convertToWebCoreInteraction:(_WKTextExtractionInteraction *)wkInteraction
-{
+    std::optional<WebCore::FrameIdentifier> frameIdentifier;
     WebCore::TextExtraction::Interaction interaction;
     interaction.action = [&] {
         switch (wkInteraction.action) {
@@ -6870,7 +7045,11 @@ static inline std::optional<WebCore::NodeIdentifier> toNodeIdentifier(const Stri
         }
     }();
 
-    interaction.nodeIdentifier = toNodeIdentifier(wkInteraction.nodeIdentifier);
+    if (auto identifiers = WebKit::parseFrameAndNodeIdentifiers(String { wkInteraction.nodeIdentifier })) {
+        interaction.nodeIdentifier = { WTF::move(identifiers->nodeIdentifier) };
+        frameIdentifier = WTF::move(identifiers->frameIdentifier);
+    }
+
     if (wkInteraction.hasSetLocation) {
 #if PLATFORM(IOS_FAMILY)
         interaction.locationInRootView = [self convertPoint:wkInteraction.location toView:_contentView.get()];
@@ -6882,22 +7061,26 @@ static inline std::optional<WebCore::NodeIdentifier> toNodeIdentifier(const Stri
     interaction.replaceAll = wkInteraction.replaceAll;
     interaction.scrollToVisible = wkInteraction.scrollToVisible;
     interaction.scrollDelta = WebCore::FloatSize { wkInteraction.scrollDelta };
-    return interaction;
+    return {
+        { WebKit::WebFrameProxy::webFrame(frameIdentifier) ?: _page->mainFrame() },
+        WTF::move(interaction)
+    };
 }
-#endif // ENABLE(TEXT_EXTRACTION)
 
 - (void)_performInteraction:(_WKTextExtractionInteraction *)wkInteraction completionHandler:(void(^)(_WKTextExtractionInteractionResult *))completionHandler
 {
-#if ENABLE(TEXT_EXTRACTION)
+#if USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
     if (!self._isValid)
         return completionHandler(adoptNS([[_WKTextExtractionInteractionResult alloc] initWithErrorDescription:@"Web view is invalid"]).get());
 
-    if (!_page->protectedPreferences()->textExtractionEnabled())
+    RefPtr page = _page;
+    if (!protect(page->preferences())->textExtractionEnabled())
         return completionHandler(adoptNS([[_WKTextExtractionInteractionResult alloc] initWithErrorDescription:@"Text extraction is unavailable"]).get());
 
-    auto interaction = [self _convertToWebCoreInteraction:wkInteraction];
+    auto [targetFrame, interaction] = [self _convertToWebCoreInteraction:wkInteraction];
+    if (!targetFrame)
+        return completionHandler(adoptNS([[_WKTextExtractionInteractionResult alloc] initWithErrorDescription:@"Browsing context is invalid"]).get());
 
-    RefPtr page = _page;
 #if PLATFORM(MAC)
     RetainPtr nativePopup = [self _activePopupButtonCell];
     if (nativePopup && interaction.action == WebCore::TextExtraction::Action::SelectMenuItem && !interaction.text.isEmpty()) {
@@ -6907,7 +7090,7 @@ static inline std::optional<WebCore::NodeIdentifier> toNodeIdentifier(const Stri
             [nativePopup selectItemWithTitle:title.get()];
             [retainPtr([nativePopup menu]) cancelTrackingWithoutAnimation];
         }
-        page->callAfterNextPresentationUpdate([title, foundItem, completionHandler = makeBlockPtr(WTFMove(completionHandler))] {
+        page->callAfterNextPresentationUpdate([title, foundItem, completionHandler = makeBlockPtr(WTF::move(completionHandler))] {
             RetainPtr<NSString> errorDescription = foundItem ? nil : [NSString stringWithFormat:@"No popup menu item with title '%@'", title.get()];
             RetainPtr result = adoptNS([[_WKTextExtractionInteractionResult alloc] initWithErrorDescription:errorDescription.get()]);
             completionHandler(result.get());
@@ -6916,7 +7099,13 @@ static inline std::optional<WebCore::NodeIdentifier> toNodeIdentifier(const Stri
     }
 #endif // PLATFORM(MAC)
 
-    page->handleTextExtractionInteraction(WTFMove(interaction), [weakSelf = WeakObjCPtr<WKWebView>(self), weakPage = WeakPtr { *page }, completionHandler = makeBlockPtr(WTFMove(completionHandler))](bool success, String&& description) mutable {
+    UniqueRef assertionScope = _page->createTextExtractionAssertionScope();
+    targetFrame->handleTextExtractionInteraction(WTF::move(interaction), [
+        weakSelf = WeakObjCPtr<WKWebView>(self),
+        weakPage = WeakPtr { *page },
+        assertionScope = WTF::move(assertionScope),
+        completionHandler = makeBlockPtr(WTF::move(completionHandler))
+    ](bool success, String&& description) mutable {
         RetainPtr<NSString> errorDescription;
         if (!success)
             errorDescription = description.createNSString();
@@ -6929,11 +7118,46 @@ static inline std::optional<WebCore::NodeIdentifier> toNodeIdentifier(const Stri
         if (!strongPage)
             return completionHandler(result.get());
 
-        strongPage->callAfterNextPresentationUpdate([completionHandler = WTFMove(completionHandler), result] {
-            completionHandler(result.get());
+        Ref aggregator = EagerCallbackAggregator<void()>::create([completion = WTF::move(completionHandler), assertionScope = WTF::move(assertionScope), result] mutable {
+            completion(result.get());
+        });
+
+        strongPage->callAfterNextPresentationUpdate([aggregator] {
+            aggregator.get()();
+        });
+
+        RunLoop::mainSingleton().dispatchAfter(100_ms, [aggregator] {
+            aggregator.get()();
         });
     });
-#endif // ENABLE(TEXT_EXTRACTION)
+#endif // USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
+}
+
+- (void)_getSelectorPathDataForNode:(_WKJSHandle *)node completionHandler:(void (^)(NSData *))completion
+{
+    auto info = node->_ref->info();
+    RefPtr frame = WebKit::WebFrameProxy::webFrame(info.frameInfo.frameID);
+    if (!frame || !frame->isMainFrame())
+        return completion(nil);
+
+    frame->getSelectorPathsForNode(WTF::move(info), [completion = makeBlockPtr(completion)](auto&& selectors) {
+        completion(WebCore::serializeTargetedElementSelectors(selectors)->createNSData().get());
+    });
+}
+
+- (void)_getNodeForSelectorPathData:(NSData *)data completionHandler:(void (^)(_WKJSHandle *))completion
+{
+    RefPtr frame = _page->mainFrame();
+    if (!frame)
+        return completion(nil);
+
+    auto selectors = WebCore::deserializeTargetedElementSelectors(span(data));
+    if (!selectors)
+        return completion(nil);
+
+    frame->getNodeForSelectorPaths(WTF::move(*selectors), [completion = makeBlockPtr(completion)](auto&& info) {
+        completion(info ? wrapper(API::JSHandle::create(WTF::move(*info))).get() : nil);
+    });
 }
 
 @end
@@ -6963,46 +7187,80 @@ static inline std::optional<WebCore::NodeIdentifier> toNodeIdentifier(const Stri
 
 @implementation WKWebView (WKTextExtraction)
 
-#if ENABLE(TEXT_EXTRACTION)
+#if USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
 
-static std::optional<WebCore::JSHandleIdentifier> mainFrameJSHandleIdentifier(_WKJSHandle *nodeHandle)
+static std::optional<WebCore::JSHandleIdentifier> jsHandleIdentifierInFrame(const WebKit::WebFrameProxy& frame, _WKJSHandle *nodeHandle)
 {
     if (!nodeHandle)
         return std::nullopt;
 
-    auto info = nodeHandle->_ref->info();
-    if (!info.frameInfo.isMainFrame) {
-        // FIXME: Blocked on support for text extraction in subframes.
-        return std::nullopt;
+    auto handleInfo = nodeHandle->_ref->info();
+    if (RefPtr handleFrame = WebKit::WebFrameProxy::webFrame(handleInfo.frameInfo.frameID)) {
+        if (handleFrame->process().coreProcessIdentifier() == frame.process().coreProcessIdentifier())
+            return handleInfo.identifier;
     }
 
-    return info.identifier;
+    return std::nullopt;
 }
 
-static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClientNodeAttributes(_WKTextExtractionConfiguration *configuration)
+static Vector<WebCore::JSHandleIdentifier> extractHandleIdentifiersOfNodesToSkip(Ref<WebKit::WebFrameProxy>&& frame, _WKTextExtractionConfiguration *configuration)
+{
+    Vector<WebCore::JSHandleIdentifier> nodes;
+    RetainPtr nodesToSkip = [configuration nodesToSkip];
+    nodes.reserveInitialCapacity([nodesToSkip count]);
+    for (_WKJSHandle *handle in nodesToSkip.get()) {
+        if (auto identifier = jsHandleIdentifierInFrame(frame, handle))
+            nodes.append(WTF::move(*identifier));
+    }
+    return nodes;
+}
+
+static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClientNodeAttributes(Ref<WebKit::WebFrameProxy>&& frame, _WKTextExtractionConfiguration *configuration)
 {
     __block HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> result;
 
     [configuration forEachClientNodeAttribute:^(NSString *attribute, NSString *value, _WKJSHandle *nodeHandle) {
-        auto handleIdentifier = mainFrameJSHandleIdentifier(nodeHandle);
+        auto handleIdentifier = jsHandleIdentifierInFrame(frame.copyRef(), nodeHandle);
         if (!handleIdentifier)
             return;
 
         result.ensure(String { attribute }, [] {
             return HashMap<WebCore::JSHandleIdentifier, String> { };
-        }).iterator->value.add(WTFMove(*handleIdentifier), String { value });
+        }).iterator->value.add(WTF::move(*handleIdentifier), String { value });
     }];
 
     return result;
 }
 
-#endif // ENABLE(TEXT_EXTRACTION)
+#if ENABLE(DATA_DETECTION)
+
+static OptionSet<WebCore::DataDetectorType> coreDataDetectorTypes(_WKTextExtractionDataDetectorTypes types)
+{
+    OptionSet<WebCore::DataDetectorType> coreTypes;
+    if (types & _WKTextExtractionDataDetectorMoney)
+        coreTypes.add(WebCore::DataDetectorType::Money);
+    if (types & _WKTextExtractionDataDetectorAddress)
+        coreTypes.add(WebCore::DataDetectorType::Address);
+    if (types & _WKTextExtractionDataDetectorCalendarEvent)
+        coreTypes.add(WebCore::DataDetectorType::CalendarEvent);
+    if (types & _WKTextExtractionDataDetectorTrackingNumber)
+        coreTypes.add(WebCore::DataDetectorType::TrackingNumber);
+    return coreTypes;
+}
+
+#endif // ENABLE(DATA_DETECTION)
+
+#endif // USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
 
 - (void)_requestTextExtractionInternal:(_WKTextExtractionConfiguration *)configuration completion:(CompletionHandler<void(std::optional<WebCore::TextExtraction::Item>&&)>&&)completion
 {
-#if ENABLE(TEXT_EXTRACTION)
+#if USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
     Ref preferences = _page->preferences();
     if (!self._isValid || !preferences->textExtractionEnabled())
+        return completion({ });
+
+    RefPtr mainFrame = _page->mainFrame();
+    if (!mainFrame)
         return completion({ });
 
     auto rectInWebView = configuration.targetRect;
@@ -7015,6 +7273,8 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
             return WebCore::TextExtraction::NodeIdentifierInclusion::EditableOnly;
         case _WKTextExtractionNodeIdentifierInclusionInteractive:
             return WebCore::TextExtraction::NodeIdentifierInclusion::Interactive;
+        case _WKTextExtractionNodeIdentifierInclusionAllContainers:
+            return WebCore::TextExtraction::NodeIdentifierInclusion::AllContainers;
         }
         return WebCore::TextExtraction::NodeIdentifierInclusion::None;
     }();
@@ -7030,25 +7290,61 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
 #endif
     }();
 
-    WebCore::TextExtraction::Request request {
-        .clientNodeAttributes = extractClientNodeAttributes(configuration),
-        .collectionRectInRootView = WTFMove(rectInRootView),
-        .targetNodeHandleIdentifier = mainFrameJSHandleIdentifier(configuration.targetNode),
-        .mergeParagraphs = mergeParagraphs,
-        .skipNearlyTransparentContent = skipNearlyTransparentContent,
-        .nodeIdentifierInclusion = nodeIdentifierInclusion,
-        .includeEventListeners = !!configuration.includeEventListeners,
-        .includeAccessibilityAttributes = !!configuration.includeAccessibilityAttributes,
-        .includeTextInAutoFilledControls = !!configuration.includeTextInAutoFilledControls,
+    auto makeRequest = [&](Ref<WebKit::WebFrameProxy>&& frame) {
+        return WebCore::TextExtraction::Request {
+            .clientNodeAttributes = extractClientNodeAttributes(frame.copyRef(), configuration),
+            .collectionRectInRootView = rectInRootView,
+            .targetNodeHandleIdentifier = jsHandleIdentifierInFrame(frame, configuration.targetNode),
+            .handleIdentifiersOfNodesToSkip = extractHandleIdentifiersOfNodesToSkip(frame.copyRef(), configuration),
+            .mergeParagraphs = mergeParagraphs,
+            .skipNearlyTransparentContent = skipNearlyTransparentContent,
+            .nodeIdentifierInclusion = nodeIdentifierInclusion,
+            .includeEventListeners = !!configuration.includeEventListeners,
+            .includeAccessibilityAttributes = !!configuration.includeAccessibilityAttributes,
+            .includeTextInAutoFilledControls = !!configuration.includeTextInAutoFilledControls,
+#if ENABLE(DATA_DETECTION)
+            .dataDetectorTypes = coreDataDetectorTypes(configuration.dataDetectorTypes),
+#endif
+        };
     };
 
-    _page->requestTextExtraction(WTFMove(request), WTFMove(completion));
-#endif // ENABLE(TEXT_EXTRACTION)
+    HashSet<Ref<WebKit::WebFrameProxy>> additionalFrames;
+    for (WKFrameInfo *info in [configuration additionalFrames]) {
+        RefPtr frame = WebKit::WebFrameProxy::webFrame(info->_frameInfo->frameInfoData().frameID);
+        if (!frame)
+            continue;
+
+        RefPtr parentFrame = frame->parentFrame();
+        if (!parentFrame)
+            continue;
+
+        if (frame->isSameOriginAs(*parentFrame))
+            continue;
+
+        additionalFrames.add(frame.releaseNonNull());
+    }
+
+    auto items = Box<WebCore::TextExtraction::PageItems>::create();
+    auto aggregator = MainRunLoopCallbackAggregator::create([items, completion = WTF::move(completion)] mutable {
+        completion(WebCore::TextExtraction::collatePageItems(WTF::move(*items)));
+    });
+
+    mainFrame->requestTextExtraction(makeRequest({ *mainFrame }), [aggregator, items](auto&& root) {
+        items->mainFrameItem = WTF::move(root);
+    });
+
+    for (auto& frame : additionalFrames) {
+        frame->requestTextExtraction(makeRequest(frame.copyRef()), [frameID = frame->frameID(), aggregator, items](auto&& root) {
+            auto addResult = items->subFrameItems.add(frameID, makeUniqueRef<WebCore::TextExtraction::Item>(WTF::move(root)));
+            ASSERT_UNUSED(addResult, addResult.isNewEntry);
+        });
+    }
+#endif // USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
 }
 
 - (void)_requestTextExtraction:(_WKTextExtractionConfiguration *)configuration completionHandler:(void(^)(WKTextExtractionItem *))completionHandler
 {
-#if ENABLE(TEXT_EXTRACTION)
+#if USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
     [self _requestTextExtractionInternal:configuration completion:[completionHandler = makeBlockPtr(completionHandler), weakSelf = WeakObjCPtr<WKWebView>(self)](auto&& item) {
         RetainPtr strongSelf = weakSelf.get();
         if (!strongSelf)
@@ -7057,7 +7353,7 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
         if (!item)
             return completionHandler(nil);
 
-        RetainPtr rootItem = WebKit::createItem(WTFMove(*item), [strongSelf](auto& rectInRootView) -> WebCore::FloatRect {
+        RetainPtr rootItem = WebKit::createItem(WTF::move(*item), [strongSelf](auto& rectInRootView) -> WebCore::FloatRect {
 #if PLATFORM(IOS_FAMILY)
             if (RetainPtr contentView = strongSelf ? strongSelf->_contentView : nil)
                 return { [strongSelf convertRect:rectInRootView fromView:contentView.get()] };
@@ -7066,29 +7362,32 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
         });
         completionHandler(rootItem.get());
     }];
-#endif // ENABLE(TEXT_EXTRACTION)
+#endif // USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
 }
 
 - (void)_describeInteraction:(_WKTextExtractionInteraction *)wkInteraction completionHandler:(void (^)(NSString *, NSError *))completionHandler
 {
-#if ENABLE(TEXT_EXTRACTION)
+#if USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
     if (!self._isValid)
         return completionHandler(nil, [NSError errorWithDomain:WKErrorDomain code:WKErrorWebViewInvalidated userInfo:nil]);
 
     RefPtr page = _page;
-    if (!page->protectedPreferences()->textExtractionEnabled())
+    if (!protect(page->preferences())->textExtractionEnabled())
         return completionHandler(nil, [NSError errorWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:nil]);
 
-    auto interaction = [self _convertToWebCoreInteraction:wkInteraction];
+    auto [targetFrame, interaction] = [self _convertToWebCoreInteraction:wkInteraction];
+    if (!targetFrame)
+        return completionHandler(nil, [NSError errorWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:nil]);
+
 #if PLATFORM(MAC)
     if ([self _activePopupButtonCell] && interaction.action == WebCore::TextExtraction::Action::SelectMenuItem && !interaction.text.isEmpty())
         return completionHandler([NSString stringWithFormat:@"Select popup menu item labeled '%s'", interaction.text.utf8().data()], nil);
 #endif
 
-    page->describeTextExtractionInteraction(WTFMove(interaction), [weakSelf = WeakObjCPtr<WKWebView>(self), weakPage = WeakPtr { *page }, completionHandler = makeBlockPtr(WTFMove(completionHandler))](auto&& result) mutable {
-        auto [description, stringsToValidate] = WTFMove(result);
+    targetFrame->describeTextExtractionInteraction(WTF::move(interaction), [weakSelf = WeakObjCPtr<WKWebView>(self), weakPage = WeakPtr { *page }, completionHandler = makeBlockPtr(WTF::move(completionHandler))](auto&& result) mutable {
+        auto [description, stringsToValidate] = WTF::move(result);
         auto valid = Box<bool>::create(true);
-        Ref aggregator = MainRunLoopCallbackAggregator::create([completionHandler = WTFMove(completionHandler), description, valid] {
+        Ref aggregator = MainRunLoopCallbackAggregator::create([completionHandler = WTF::move(completionHandler), description, valid] {
             if (!valid.get()) {
                 completionHandler(nil, [NSError errorWithDomain:WKErrorDomain code:WKErrorUnknown userInfo:@{
                     NSDebugDescriptionErrorKey: @"One or more strings failed validation."
@@ -7100,7 +7399,7 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
         });
 
         RefPtr page = weakPage.get();
-        if (!page || !page->protectedPreferences()->textExtractionFilterEnabled())
+        if (!page || !protect(page->preferences())->textExtractionFilterEnabled())
             return;
 
 #if ENABLE(TEXT_EXTRACTION_FILTER)
@@ -7112,14 +7411,24 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
         }
 #endif // ENABLE(TEXT_EXTRACTION_FILTER)
     });
-#endif // ENABLE(TEXT_EXTRACTION)
+#endif // USE(APPLE_INTERNAL_SDK) || (!PLATFORM(WATCHOS) && !PLATFORM(APPLETV))
 }
+
+#if ENABLE(SYSTEM_TEXT_EXTRACTION)
+
+- (NSUUID *)_textExtractionIdentifier
+{
+    if (!_textExtractionIdentifier)
+        _textExtractionIdentifier = WTF::UUID::createVersion4Weak();
+    return _textExtractionIdentifier->createNSUUID().autorelease();
+}
+
+#endif
 
 #if ENABLE(TEXT_EXTRACTION_FILTER)
 
-- (void)_validateText:(const String&)text inNode:(std::optional<WebCore::NodeIdentifier>&&)nodeIdentifier completionHandler:(CompletionHandler<void(const String&)>&&)completionHandler
+- (void)_validateText:(const String&)text inFrame:(std::optional<WebCore::FrameIdentifier>&&)frameIdentifier inNode:(std::optional<WebCore::NodeIdentifier>&&)nodeIdentifier completionHandler:(CompletionHandler<void(const String&)>&&)completionHandler
 {
-#if ENABLE(TEXT_EXTRACTION)
     if (text.isEmpty())
         return completionHandler(text);
 
@@ -7132,7 +7441,11 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
         });
     }
 
-    _page->takeSnapshotOfExtractedText({ text, WTFMove(nodeIdentifier) }, [text, completionHandler = WTFMove(completionHandler), view = retainPtr(self), textHash](auto textIndicator) mutable {
+    RefPtr mainFrame = _page->mainFrame();
+    if (!mainFrame)
+        return completionHandler(text);
+
+    mainFrame->takeSnapshotOfExtractedText({ text, WTF::move(nodeIdentifier) }, [text = text, completionHandler = WTF::move(completionHandler), view = retainPtr(self), textHash](auto textIndicator) mutable {
         if (!textIndicator)
             return completionHandler(text);
 
@@ -7148,7 +7461,7 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
         if (!cgImage)
             return completionHandler(text);
 
-        WebKit::recognizeText(cgImage.get(), [text = WTFMove(text), completionHandler = WTFMove(completionHandler), view = WTFMove(view), textHash](NSString *recognizedText, NSError *error) mutable {
+        WebKit::recognizeText(cgImage.get(), [text = WTF::move(text), completionHandler = WTF::move(completionHandler), view = WTF::move(view), textHash](NSString *recognizedText, NSError *error) mutable {
             if (error)
                 return completionHandler(text);
 
@@ -7168,7 +7481,6 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
             }
         });
     });
-#endif // ENABLE(TEXT_EXTRACTION)
 }
 
 - (void)_clearTextExtractionFilterCache
@@ -7179,10 +7491,35 @@ static HashMap<String, HashMap<WebCore::JSHandleIdentifier, String>> extractClie
     if (RefPtr filter = WebKit::TextExtractionFilter::singletonIfCreated())
         filter->resetCache();
 
+    if (_textExtractionURLCache)
+        _textExtractionURLCache->clear();
+
     _textValidationCache.clear();
 }
 
 #endif // ENABLE(TEXT_EXTRACTION_FILTER)
+
+- (void)_requestJSHandleForNodeIdentifier:(NSString *)nodeIdentifierString searchText:(NSString *)searchText completionHandler:(void (^)(_WKJSHandle *))completion
+{
+    auto identifiers = WebKit::parseFrameAndNodeIdentifiers(String { nodeIdentifierString });
+    if (!identifiers && !searchText.length)
+        return completion(nil);
+
+    RefPtr targetFrame = _page->mainFrame();
+    std::optional<WebCore::NodeIdentifier> nodeIdentifier;
+    if (identifiers) {
+        nodeIdentifier = identifiers->nodeIdentifier;
+        if (identifiers->frameIdentifier)
+            targetFrame = WebKit::WebFrameProxy::webFrame(identifiers->frameIdentifier);
+    }
+
+    if (!targetFrame)
+        return completion(nil);
+
+    targetFrame->requestJSHandleForExtractedText({ String { searchText }, WTF::move(nodeIdentifier) }, [completion = makeBlockPtr(completion)](auto&& info) {
+        completion(info ? wrapper(API::JSHandle::create(WTF::move(*info))).get() : nil);
+    });
+}
 
 @end
 

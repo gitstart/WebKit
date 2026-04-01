@@ -141,18 +141,23 @@ public:
     virtual OSStatus produceSpeakerSamples(size_t sampleCount, AudioBufferList&, uint64_t sampleTime, double hostTime, AudioUnitRenderActionFlags&) = 0;
 };
 
-class CoreAudioCaptureSourceFactory : public AudioCaptureFactory, public AudioSessionInterruptionObserver {
+class CoreAudioCaptureSourceFactory : public AudioCaptureFactory, public AudioSessionInterruptionObserver, public RefCounted<CoreAudioCaptureSourceFactory> {
 public:
     WEBCORE_EXPORT static CoreAudioCaptureSourceFactory& singleton();
-
-    CoreAudioCaptureSourceFactory();
     ~CoreAudioCaptureSourceFactory();
+
+    // AudioSessionInterruptionObserver.
+    void ref() const final { RefCounted::ref(); }
+    void deref() const final { RefCounted::deref(); }
 
     void scheduleReconfiguration();
 
     WEBCORE_EXPORT void registerSpeakerSamplesProducer(CoreAudioSpeakerSamplesProducer&);
     WEBCORE_EXPORT void unregisterSpeakerSamplesProducer(CoreAudioSpeakerSamplesProducer&);
     WEBCORE_EXPORT bool shouldAudioCaptureUnitRenderAudio();
+
+protected:
+    CoreAudioCaptureSourceFactory();
 
 private:
     // AudioSessionInterruptionObserver
@@ -172,7 +177,7 @@ private:
 
 inline CaptureSourceOrError CoreAudioCaptureSourceFactory::createAudioCaptureSource(const CaptureDevice& device, MediaDeviceHashSalts&& hashSalts, const MediaConstraints* constraints, std::optional<PageIdentifier> pageIdentifier)
 {
-    return CoreAudioCaptureSource::create(device, WTFMove(hashSalts), constraints, pageIdentifier);
+    return CoreAudioCaptureSource::create(device, WTF::move(hashSalts), constraints, pageIdentifier);
 }
 
 } // namespace WebCore

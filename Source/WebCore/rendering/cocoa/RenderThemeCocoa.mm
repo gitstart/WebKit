@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2016-2022 Apple Inc. All rights reserved.
- * Copyright (C) 2025 Samuel Weinig <sam@webkit.org>
+ * Copyright (C) 2025-2026 Samuel Weinig <sam@webkit.org>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -55,6 +55,7 @@
 #import "RenderMeter.h"
 #import "RenderProgress.h"
 #import "RenderSlider.h"
+#import "RenderStyle+SettersInlines.h"
 #import "RenderText.h"
 #import "Settings.h"
 #import "StylePrimitiveNumericTypes+Evaluation.h"
@@ -130,7 +131,7 @@ static void drawFocusRingForPathForVectorBasedControls(const RenderObject& box, 
     // macOS controls have never honored outline offset.
 #if PLATFORM(IOS_FAMILY)
     auto deviceScaleFactor = box.document().deviceScaleFactor();
-    auto outlineOffset = floorToDevicePixel(Style::evaluate<float>(box.style().outlineOffset(), Style::ZoomNeeded { }), deviceScaleFactor);
+    auto outlineOffset = floorToDevicePixel(Style::evaluate<float>(box.style().usedOutlineOffset(), Style::ZoomNeeded { }), deviceScaleFactor);
 
     if (outlineOffset > 0) {
         const auto center = rect.center();
@@ -252,11 +253,6 @@ static inline bool canShowCapsLockIndicator()
     return true;
 }
 
-RenderThemeCocoa& RenderThemeCocoa::singleton()
-{
-    return static_cast<RenderThemeCocoa&>(RenderTheme::singleton());
-}
-
 void RenderThemeCocoa::purgeCaches()
 {
 #if ENABLE(VIDEO)
@@ -297,7 +293,7 @@ void RenderThemeCocoa::paintFileUploadIconDecorations(const RenderElement&, cons
         thumbnailRect.contract(kMultipleThumbnailShrinkSize, kMultipleThumbnailShrinkSize);
 
         // Background picture frame and simple background icon with a gradient matching the button.
-        auto backgroundImageColor = buttonRenderer.checkedStyle()->visitedDependentColor(CSSPropertyBackgroundColor);
+        auto backgroundImageColor = buttonRenderer.checkedStyle()->visitedDependentBackgroundColor();
         paintInfo.context().fillRoundedRect(FloatRoundedRect(thumbnailPictureFrameRect, cornerSize, cornerSize, cornerSize, cornerSize), pictureFrameColor);
         paintInfo.context().fillRect(thumbnailRect, backgroundImageColor);
 
@@ -314,7 +310,7 @@ void RenderThemeCocoa::paintFileUploadIconDecorations(const RenderElement&, cons
 
 Seconds RenderThemeCocoa::animationRepeatIntervalForProgressBar(const RenderProgress& renderer) const
 {
-    return renderer.protectedPage()->preferredRenderingUpdateInterval();
+    return protect(renderer.page())->preferredRenderingUpdateInterval();
 }
 
 #if ENABLE(APPLE_PAY)
@@ -436,6 +432,10 @@ static const String& macOSInlineMediaControlsStyleSheet()
         ".media-controls.mac.inline:not(.audio) .controls-bar.top-left {"
         "    border-radius: var(--inline-controls-border-radius);"
         "}"
+        "/* Hide top-right controls bar to prevent overlapping volume slider */"
+        ".media-controls.mac.inline:not(.audio) .controls-bar.top-right {"
+        "    display: none !important;"
+        "}"
         ".media-controls.mac.inline:not(.audio) {"
         "    display: flex;"
         "    flex-direction: column;"
@@ -462,44 +462,30 @@ static const String& macOSInlineMediaControlsStyleSheet()
         "    padding-inline: var(--inline-controls-inside-margin);"
         "    margin-bottom: var(--inline-controls-inside-margin);"
         "}"
-        ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .left-cluster,"
+        ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .buttons-container.left,"
         ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .time-control,"
-        ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .right-cluster {"
+        ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .buttons-container.right {"
         "    display: flex;"
         "    align-items: center;"
         "    position: relative;"
         "}"
-        ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .left-cluster {"
+        ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .buttons-container.left {"
         "    flex: 0 0 auto;"
         "    justify-content: flex-start;"
         "    min-width: fit-content;"
         "}"
         ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .time-control {"
-        "    flex: 1 1 0;"
-        "    justify-content: center;"
-        "    min-width: 0;"
-        "    max-width: calc(100% - 200px);"
-        "    margin-inline: 12px;"
+        "    left: auto !important;"
+        "    max-width: 540px;"
         "}"
-        ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .right-cluster {"
+        ".media-controls.mac.inline:not(.audio) > .controls-bar.bottom > .buttons-container.right {"
         "    flex: 0 0 auto;"
         "    justify-content: flex-end;"
         "    min-width: fit-content;"
         "}"
-        ".media-controls.mac.inline:not(.audio) .buttons-container.right {"
-        "    position: relative !important;"
-        "    right: auto !important;"
-        "    left: 35px !important;"
-        "    top: auto !important;"
-        "    bottom: auto !important;"
-        "    display: flex !important;"
-        "    align-items: center;"
-        "    gap: 8px;"
-        "}"
         ".media-controls.mac.inline:not(.audio) .controls-bar.bottom .time-control .slider,"
         ".media-controls.mac.inline:not(.audio) .controls-bar.bottom .time-control .scrubber{"
         "  display: flex;"
-        "  flex: 1 1 auto;"
         "  max-width: 452px;"
         "  min-width: 0px;"
         "  position: relative;"
@@ -513,11 +499,6 @@ static const String& macOSInlineMediaControlsStyleSheet()
         "    top: 50%;"
         "    transform: translateY(-50%);"
         "    height: 7.5px;"
-        "}"
-        ".media-controls.mac.inline:not(.audio) .buttons-container.right > * {"
-        "    display: flex;"
-        "    position: relative !important;"
-        "    left: -8px !important;"
         "}"
         ".media-controls.mac.inline:not(.audio) .slider.default > .appearance > .fill > .primary {"
         "    left: 0;"
@@ -1170,7 +1151,7 @@ static RoundedShape continuousRoundedShape(const FloatRect& rect, const float co
 
     Path path;
     path.addContinuousRoundedRect(rect, cornerRadius);
-    return { WTFMove(path), rect, cornerRadius, CornerType::Continuous };
+    return { WTF::move(path), rect, cornerRadius, CornerType::Continuous };
 }
 
 static RoundedShape roundedShape(const FloatRect& rect, const float cornerRadius, ShouldComputePath computePath)
@@ -1179,8 +1160,8 @@ static RoundedShape roundedShape(const FloatRect& rect, const float cornerRadius
         return { { }, rect, cornerRadius, CornerType::Noncontinuous };
 
     Path path;
-    path.addRoundedRect(FloatRoundedRect { rect, FloatRoundedRect::Radii { cornerRadius, cornerRadius } });
-    return { WTFMove(path), rect, cornerRadius, CornerType::Noncontinuous };
+    path.addRoundedRect(FloatRoundedRect { rect, CornerRadii { cornerRadius, cornerRadius } });
+    return { WTF::move(path), rect, cornerRadius, CornerType::Noncontinuous };
 }
 
 static bool nodeIsDateOrTimeRelatedInput(Node* node)
@@ -1649,7 +1630,7 @@ bool RenderThemeCocoa::paintColorWellForVectorBasedControls(const RenderElement&
     const auto isEnabled = states.contains(ControlStyle::State::Enabled);
 
     const auto radius = std::min(rect.width(), rect.height()) / 2.f;
-    const FloatRoundedRect boundingRoundedRect(rect, FloatRoundedRect::Radii(radius));
+    const FloatRoundedRect boundingRoundedRect(rect, CornerRadii(radius));
 
     auto backgroundColor = systemColor(CSSValueAppleSystemQuinaryLabel, box.styleColorOptions());
 
@@ -1707,7 +1688,7 @@ bool RenderThemeCocoa::paintColorWellSwatchForVectorBasedControls(const RenderEl
     }
 
     const auto radius = std::min(rect.width(), rect.height()) / 2.f;
-    const FloatRoundedRect boundingRoundedRect(rect, FloatRoundedRect::Radii(radius));
+    const FloatRoundedRect boundingRoundedRect(rect, CornerRadii(radius));
 
     Path path;
     path.addRoundedRect(boundingRoundedRect);
@@ -1743,13 +1724,13 @@ bool RenderThemeCocoa::adjustColorWellSwatchStyleForVectorBasedControls(RenderSt
 static void applyPaddingIfNotExplicitlySet(RenderStyle& style, Style::PaddingBox paddingBox)
 {
     if (!style.hasExplicitlySetPaddingLeft())
-        style.setPaddingLeft(WTFMove(paddingBox.left()));
+        style.setPaddingLeft(WTF::move(paddingBox.left()));
     if (!style.hasExplicitlySetPaddingTop())
-        style.setPaddingTop(WTFMove(paddingBox.top()));
+        style.setPaddingTop(WTF::move(paddingBox.top()));
     if (!style.hasExplicitlySetPaddingRight())
-        style.setPaddingRight(WTFMove(paddingBox.right()));
+        style.setPaddingRight(WTF::move(paddingBox.right()));
     if (!style.hasExplicitlySetPaddingBottom())
-        style.setPaddingBottom(WTFMove(paddingBox.bottom()));
+        style.setPaddingBottom(WTF::move(paddingBox.bottom()));
 }
 
 bool RenderThemeCocoa::adjustColorWellSwatchWrapperStyleForVectorBasedControls(RenderStyle& style, const Element* element) const
@@ -1800,7 +1781,7 @@ bool RenderThemeCocoa::paintColorWellDecorationsForVectorBasedControls(const Ren
     GraphicsContextStateSaver stateSaver(context);
     context.clip(rect);
 
-    const auto zoomFactor = box.style().zoom();
+    const auto zoomFactor = Style::evaluate<float>(box.style().zoom());
     const auto strokeThickness = 3.f * zoomFactor;
 
     constexpr std::array colorStops {
@@ -1822,7 +1803,7 @@ bool RenderThemeCocoa::paintColorWellDecorationsForVectorBasedControls(const Ren
 
     context.setStrokeThickness(strokeThickness);
     context.setStrokeStyle(StrokeStyle::SolidStroke);
-    context.setStrokeGradient(WTFMove(gradient));
+    context.setStrokeGradient(WTF::move(gradient));
 
     context.translate(rect.center());
     context.rotate(piOverTwoFloat);
@@ -2121,7 +2102,7 @@ bool RenderThemeCocoa::paintInnerSpinButtonForVectorBasedControls(const RenderEl
 
     const auto centerDividerRect = FloatRect { paintRect.center().x() - centerDividerWidth / 2.f, paintRect.center().y() - centerDividerHeight / 2.f, centerDividerWidth, centerDividerHeight };
 
-    FloatRoundedRect roundedDividerRect(centerDividerRect, FloatRoundedRect::Radii(centerDividerRect.height() / 2.f));
+    FloatRoundedRect roundedDividerRect(centerDividerRect, CornerRadii(centerDividerRect.height() / 2.f));
 
 #if PLATFORM(MAC)
     if (userPrefersContrast)
@@ -2476,7 +2457,7 @@ static bool paintTextAreaOrTextField(const RenderElement& box, const PaintInfo& 
 #endif
 
     const auto styleColorOptions = box.styleColorOptions();
-    auto backgroundColor = style->visitedDependentColor(CSSPropertyBackgroundColor);
+    auto backgroundColor = style->visitedDependentBackgroundColor();
 #if PLATFORM(MAC)
     const auto prefersContrast = Theme::singleton().userPrefersContrast();
     auto borderColor = prefersContrast ? highContrastOutlineColor(styleColorOptions) : RenderTheme::singleton().systemColor(CSSValueAppleSystemContainerBorder, styleColorOptions);
@@ -2726,7 +2707,7 @@ bool RenderThemeCocoa::adjustButtonStyleForVectorBasedControls(RenderStyle& styl
     if (!style.logicalWidth().isSpecified() || style.logicalHeight().isAuto()) {
         auto minimumHeight = controlBaseHeight / controlBaseFontSize * style.fontDescription().computedSizeForRangeZoomOption(CSS::RangeZoomOptions::Unzoomed);
         if (auto fixedValue = style.logicalMinHeight().tryFixed())
-            minimumHeight = std::max(minimumHeight, fixedValue->resolveZoom(Style::ZoomFactor { 1.0f, 1.0f }));
+            minimumHeight = std::max(minimumHeight, fixedValue->resolveZoom(Style::ZoomFactor { 1.0f }));
         // FIXME: This may need to be a layout time adjustment to support various
         // values like fit-content etc.
         style.setLogicalMinHeight(Style::MinimumSize::Fixed { minimumHeight });
@@ -2866,16 +2847,17 @@ bool RenderThemeCocoa::paintMenuListButtonDecorationsForVectorBasedControls(cons
     if (auto fixedPaddingEnd = style->paddingEnd().tryFixed())
         glyphPaddingEnd = fixedPaddingEnd->resolveZoom(usedZoom);
 
-    // Add RenderMenuList inner start padding for symmetry.
-    if (CheckedPtr menulist = dynamicDowncast<RenderMenuList>(box); menulist && menulist->innerRenderer()) {
-        if (auto innerPaddingStart = menulist->innerRenderer()->style().paddingStart().tryFixed())
-            glyphPaddingEnd += innerPaddingStart->resolveZoom(usedZoom);
+    // Add popup internal start padding for symmetry.
+    if (is<RenderMenuList>(box)) {
+        auto internalPadding = popupInternalPaddingBox(style.get());
+        if (auto paddingStart = internalPadding.start(style->writingMode()).tryFixed())
+            glyphPaddingEnd += paddingStart->resolveZoom(usedZoom);
     }
 
     if (!style->writingMode().isInlineFlipped())
-        glyphOrigin.setX(logicalRect.maxX() - glyphSize.width() - Style::evaluate<float>(box.style().borderEndWidth(), box.style().usedZoomForLength()) - glyphPaddingEnd);
+        glyphOrigin.setX(logicalRect.maxX() - glyphSize.width() - Style::evaluate<float>(box.style().usedBorderWidthEnd(), Style::ZoomNeeded { }) - glyphPaddingEnd);
     else
-        glyphOrigin.setX(logicalRect.x() + Style::evaluate<float>(box.style().borderEndWidth(), box.style().usedZoomForLength()) + glyphPaddingEnd);
+        glyphOrigin.setX(logicalRect.x() + Style::evaluate<float>(box.style().usedBorderWidthEnd(), Style::ZoomNeeded { }) + glyphPaddingEnd);
 
     if (!isHorizontalWritingMode)
         glyphOrigin = glyphOrigin.transposedPoint();
@@ -2914,7 +2896,7 @@ bool RenderThemeCocoa::paintMeterForVectorBasedControls(const RenderElement& ren
     GraphicsContextStateSaver stateSaver(context);
 
     float cornerRadius = std::min(rect.width(), rect.height()) / 2.0f;
-    FloatRoundedRect roundedFillRect(rect, FloatRoundedRect::Radii(cornerRadius));
+    FloatRoundedRect roundedFillRect(rect, CornerRadii(cornerRadius));
 
     auto styleColorOptions = renderer.styleColorOptions();
     auto isHorizontalWritingMode = renderer.writingMode().isHorizontal();
@@ -2986,13 +2968,14 @@ bool RenderThemeCocoa::adjustListButtonStyleForVectorBasedControls(RenderStyle& 
         return false;
 
 #if PLATFORM(IOS_FAMILY)
-    if (style.hasContent() || style.hasUsedContentNone())
+    if (style.hasContent() || style.hasUsedContentNone()) {
+        style.setLogicalWidth(11_css_px);
         return true;
+    }
 #endif
 
     // FIXME: rdar://150914436 The width to height ratio of the button needs to
     // dynamically change according to the overall control size.
-
     style.setLogicalWidth(15.4_css_percentage);
     style.setLogicalHeight(CSS::Keyword::Auto { });
 
@@ -3149,7 +3132,7 @@ bool RenderThemeCocoa::paintProgressBarForVectorBasedControls(const RenderElemen
     constexpr auto reducedMotionProgressAnimationMinOpacity = 0.3f;
     constexpr auto reducedMotionProgressAnimationMaxOpacity = 0.6f;
 
-    FloatRoundedRect::Radii barCornerRadii(
+    CornerRadii barCornerRadii(
         isHorizontalWritingMode ? barCornerRadiusInlineSize : barCornerRadiusBlockSize,
         isHorizontalWritingMode ? barCornerRadiusBlockSize : barCornerRadiusInlineSize
     );
@@ -3399,7 +3382,7 @@ bool RenderThemeCocoa::paintSliderTrackForVectorBasedControls(const RenderElemen
 
     auto cornerRadius = std::min(trackClip.width(), trackClip.height()) / 2.f;
 
-    FloatRoundedRect::Radii cornerRadii(cornerRadius, cornerRadius);
+    CornerRadii cornerRadii(cornerRadius, cornerRadius);
     FloatRoundedRect innerBorder(trackClip, cornerRadii);
     FloatRoundedRect outerBorder(trackClip, cornerRadii);
 
@@ -3473,7 +3456,7 @@ bool RenderThemeCocoa::paintSliderTrackForVectorBasedControls(const RenderElemen
     }
 
     const auto fillCornerRadius = isThumbVisible ? 0.f : std::min(trackClip.width(), trackClip.height()) / 2.f;
-    const auto fillCornerRadii = FloatRoundedRect::Radii { fillCornerRadius, fillCornerRadius };
+    const auto fillCornerRadii = CornerRadii { fillCornerRadius, fillCornerRadius };
 
     FloatRoundedRect fillRect(trackClip, fillCornerRadii);
     context.fillRoundedRect(fillRect, fillColor);
@@ -3936,7 +3919,7 @@ bool RenderThemeCocoa::paintPlatformResizerForVectorBasedControls(const RenderLa
     paintRect.setLocation(resizerCornerRect.maxXMaxYCorner() - paintRect.size());
 
     const auto barThickness = length * 0.075f;
-    const auto barRadii = FloatRoundedRect::Radii { barThickness / 2.f, barThickness / 2.f };
+    const auto barRadii = CornerRadii { barThickness / 2.f, barThickness / 2.f };
 
     const auto wideBarWidth = length * 0.75f;
     const auto wideBarX = paintRect.x() + (paintRect.width() - wideBarWidth) / 2.f;

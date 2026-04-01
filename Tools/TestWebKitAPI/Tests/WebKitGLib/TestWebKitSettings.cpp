@@ -415,12 +415,10 @@ ALLOW_DEPRECATED_DECLARATIONS_BEGIN
 ALLOW_DEPRECATED_DECLARATIONS_END
 #endif
 
-#if USE(SKIA)
     // 2D canvas acceleration is enabled by default.
     g_assert_true(webkit_settings_get_enable_2d_canvas_acceleration(settings));
     webkit_settings_set_enable_2d_canvas_acceleration(settings, FALSE);
     g_assert_false(webkit_settings_get_enable_2d_canvas_acceleration(settings));
-#endif
 
     // WebSecurity is enabled by default.
     g_assert_false(webkit_settings_get_disable_web_security(settings));
@@ -469,7 +467,7 @@ void testWebKitFeatures(Test* test, gconstpointer)
 
             auto identifier = String::fromUTF8(webkit_feature_get_identifier(feature));
             g_assert_false(featureIdentifiers.contains(identifier));
-            featureIdentifiers.add(WTFMove(identifier));
+            featureIdentifiers.add(WTF::move(identifier));
         }
 
         g_assert_cmpuint(featureIdentifiers.size(), ==, allFeaturesCount);

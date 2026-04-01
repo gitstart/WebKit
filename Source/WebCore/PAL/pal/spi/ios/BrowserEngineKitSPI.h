@@ -25,6 +25,8 @@
 
 #pragma once
 
+#if !PLATFORM(IOS_SIMULATOR) || !__has_feature(modules)
+
 DECLARE_SYSTEM_HEADER
 
 #if USE(BROWSERENGINEKIT)
@@ -70,3 +72,5 @@ DECLARE_SYSTEM_HEADER
 #endif
 
 #endif // USE(BROWSERENGINEKIT)
+
+#endif // !PLATFORM(IOS_SIMULATOR) || !__has_feature(modules)

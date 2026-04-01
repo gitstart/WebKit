@@ -29,6 +29,7 @@
 #if PLATFORM(MAC)
 
 #import "APIHitTestResult.h"
+#import "APIPageConfiguration.h"
 #import "AppKitSPI.h"
 #import "DrawingAreaProxy.h"
 #import "Logging.h"
@@ -56,6 +57,7 @@
 #import "WebEditCommandProxy.h"
 #import "WebPageProxy.h"
 #import "WebPopupMenuProxyMac.h"
+#import "WebPreferences.h"
 #import "WebViewImpl.h"
 #import "WindowServerConnection.h"
 #import "_WKDownloadInternal.h"
@@ -92,7 +94,7 @@
 #import <WebCore/WebMediaSessionManager.h>
 #endif
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 #import <WebCore/DigitalCredentialsRequestData.h>
 #import <WebCore/DigitalCredentialsResponseData.h>
 #import <WebCore/ExceptionData.h>
@@ -107,6 +109,8 @@
 namespace WebKit {
 
 using namespace WebCore;
+
+WTF_MAKE_TZONE_ALLOCATED_IMPL(PageClientImpl);
 
 PageClientImpl::PageClientImpl(NSView *view, WKWebView *webView)
     : PageClientImplCocoa(webView)
@@ -147,17 +151,21 @@ IntSize PageClientImpl::viewSize()
 
 NSView *PageClientImpl::activeView() const
 {
-    CheckedPtr impl = m_impl.get();
-    return (impl && impl->thumbnailView()) ? impl->thumbnailView().unsafeGet() : m_view.getAutoreleased();
+    if (CheckedPtr impl = m_impl.get()) {
+        if (RetainPtr thumbnailView = impl->thumbnailView())
+            return thumbnailView.autorelease();
+    }
+    return m_view.getAutoreleased();
 }
 
 NSWindow *PageClientImpl::activeWindow() const
 {
-    CheckedPtr impl = m_impl.get();
-    if (impl && impl->thumbnailView())
-        return [impl->thumbnailView() window];
-    if (impl && impl->targetWindowForMovePreparation())
-        return impl->targetWindowForMovePreparation();
+    if (CheckedPtr impl = m_impl.get()) {
+        if (RetainPtr thumbnailView = impl->thumbnailView())
+            return [thumbnailView window];
+        if (impl->targetWindowForMovePreparation())
+            return impl->targetWindowForMovePreparation();
+    }
     return [m_view.get() window];
 }
 
@@ -202,14 +210,16 @@ bool PageClientImpl::isViewVisible(NSView *view, NSWindow *viewWindow)
     if (!viewWindow)
         return false;
 
-    if (!viewWindow.isVisible)
-        return false;
-
     if (view.isHiddenOrHasHiddenAncestor)
         return false;
 
-    if (windowIsOccluded())
-        return false;
+    if (!m_impl || !m_impl->page().configuration().backgroundTextExtractionEnabled()) {
+        if (!viewWindow.isVisible)
+            return false;
+
+        if (windowIsOccluded())
+            return false;
+    }
 
     return true;
 }
@@ -306,6 +316,11 @@ void PageClientImpl::didCommitLoadForMainFrame(const String&, bool)
 #if ENABLE(TEXT_EXTRACTION_FILTER)
     [webView() _clearTextExtractionFilterCache];
 #endif
+
+#if ENABLE(SYSTEM_TEXT_EXTRACTION)
+    if (impl->page().preferences().systemTextExtractionEnabled())
+        [webView() _addTextExtractionAnnotation];
+#endif
 }
 
 void PageClientImpl::didFinishLoadingDataForCustomContentProvider(const String& suggestedFilename, std::span<const uint8_t> dataReference)
@@ -364,7 +379,7 @@ void PageClientImpl::setCursorHiddenUntilMouseMoves(bool hiddenUntilMouseMoves)
 
 void PageClientImpl::registerEditCommand(Ref<WebEditCommandProxy>&& command, UndoOrRedo undoOrRedo)
 {
-    checkedImpl()->registerEditCommand(WTFMove(command), undoOrRedo);
+    checkedImpl()->registerEditCommand(WTF::move(command), undoOrRedo);
 }
 
 void PageClientImpl::registerInsertionUndoGrouping()
@@ -412,13 +427,13 @@ void PageClientImpl::executeUndoRedo(UndoOrRedo undoOrRedo)
 void PageClientImpl::startDrag(const WebCore::DragItem& item, ShareableBitmap::Handle&& image, const std::optional<WebCore::NodeIdentifier>& nodeID)
 {
     UNUSED_PARAM(nodeID);
-    checkedImpl()->startDrag(item, WTFMove(image));
+    checkedImpl()->startDrag(item, WTF::move(image));
 }
 
 void PageClientImpl::setPromisedDataForImage(const String& pasteboardName, Ref<FragmentedSharedBuffer>&& imageBuffer, const String& filename, const String& extension, const String& title, const String& url, const String& visibleURL, RefPtr<FragmentedSharedBuffer>&& archiveBuffer, const String& originIdentifier)
 {
     auto image = BitmapImage::create();
-    image->setData(WTFMove(imageBuffer), true);
+    image->setData(WTF::move(imageBuffer), true);
     checkedImpl()->setPromisedDataForImage(image.get(), filename.createNSString().get(), extension.createNSString().get(), title.createNSString().get(), url.createNSString().get(), visibleURL.createNSString().get(), archiveBuffer.get(), pasteboardName.createNSString().get(), originIdentifier.createNSString().get());
 }
 
@@ -510,12 +525,12 @@ void PageClientImpl::doneWithKeyEvent(const NativeWebKeyboardEvent& event, bool 
 
 void PageClientImpl::requestTextRecognition(const URL& imageURL, ShareableBitmap::Handle&& imageData, const String& sourceLanguageIdentifier, const String& targetLanguageIdentifier, CompletionHandler<void(TextRecognitionResult&&)>&& completion)
 {
-    checkedImpl()->requestTextRecognition(imageURL, WTFMove(imageData), sourceLanguageIdentifier, targetLanguageIdentifier, WTFMove(completion));
+    checkedImpl()->requestTextRecognition(imageURL, WTF::move(imageData), sourceLanguageIdentifier, targetLanguageIdentifier, WTF::move(completion));
 }
 
 void PageClientImpl::computeHasVisualSearchResults(const URL& imageURL, ShareableBitmap& imageBitmap, CompletionHandler<void(bool)>&& completion)
 {
-    checkedImpl()->computeHasVisualSearchResults(imageURL, imageBitmap, WTFMove(completion));
+    checkedImpl()->computeHasVisualSearchResults(imageURL, imageBitmap, WTF::move(completion));
 }
 
 #endif
@@ -529,7 +544,7 @@ RefPtr<WebPopupMenuProxy> PageClientImpl::createPopupMenuProxy(WebPageProxy& pag
 
 Ref<WebContextMenuProxy> PageClientImpl::createContextMenuProxy(WebPageProxy& page, FrameInfoData&& frameInfo, ContextMenuContextData&& context, const UserData& userData)
 {
-    return WebContextMenuProxyMac::create(m_view.get().get(), page, WTFMove(frameInfo), WTFMove(context), userData);
+    return WebContextMenuProxyMac::create(m_view.get().get(), page, WTF::move(frameInfo), WTF::move(context), userData);
 }
 
 void PageClientImpl::didShowContextMenu()
@@ -546,7 +561,7 @@ void PageClientImpl::didDismissContextMenu()
 
 RefPtr<WebColorPicker> PageClientImpl::createColorPicker(WebPageProxy& page, const WebCore::Color& initialColor, const WebCore::IntRect& rect, ColorControlSupportsAlpha supportsAlpha, Vector<WebCore::Color>&& suggestions)
 {
-    return WebColorPickerMac::create(&page.checkedColorPickerClient().get(), initialColor, rect, supportsAlpha, WTFMove(suggestions), m_view.get().get());
+    return WebColorPickerMac::create(&page.checkedColorPickerClient().get(), initialColor, rect, supportsAlpha, WTF::move(suggestions), m_view.get().get());
 }
 
 RefPtr<WebDataListSuggestionsDropdown> PageClientImpl::createDataListSuggestionsDropdown(WebPageProxy& page)
@@ -561,13 +576,13 @@ RefPtr<WebDateTimePicker> PageClientImpl::createDateTimePicker(WebPageProxy& pag
 
 Ref<ValidationBubble> PageClientImpl::createValidationBubble(String&& message, const ValidationBubble::Settings& settings)
 {
-    return ValidationBubble::create(m_view.get().get(), WTFMove(message), settings);
+    return ValidationBubble::create(m_view.get().get(), WTF::move(message), settings);
 }
 
 void PageClientImpl::showBrowsingWarning(const BrowsingWarning& warning, CompletionHandler<void(Variant<WebKit::ContinueUnsafeLoad, URL>&&)>&& completionHandler)
 {
     if (CheckedPtr impl = m_impl.get())
-        return impl->showWarningView(warning, WTFMove(completionHandler));
+        return impl->showWarningView(warning, WTF::move(completionHandler));
     completionHandler(ContinueUnsafeLoad::Yes);
 }
 
@@ -629,7 +644,7 @@ void PageClientImpl::updateAcceleratedCompositingMode(const LayerTreeContext& la
 
 void PageClientImpl::setRemoteLayerTreeRootNode(RemoteLayerTreeNode* rootNode)
 {
-    checkedImpl()->setAcceleratedCompositingRootLayer(rootNode ? rootNode->protectedLayer().get() : nil);
+    checkedImpl()->setAcceleratedCompositingRootLayer(rootNode ? protect(rootNode->layer()).get() : nil);
 }
 
 CALayer *PageClientImpl::acceleratedCompositingRootLayer() const
@@ -664,19 +679,19 @@ void PageClientImpl::selectionDidChange()
 
 bool PageClientImpl::showShareSheet(ShareDataWithParsedURL&& shareData, WTF::CompletionHandler<void(bool)>&& completionHandler)
 {
-    checkedImpl()->showShareSheet(WTFMove(shareData), WTFMove(completionHandler), webView().get());
+    checkedImpl()->showShareSheet(WTF::move(shareData), WTF::move(completionHandler), webView().get());
     return true;
 }
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 void PageClientImpl::showDigitalCredentialsPicker(const WebCore::DigitalCredentialsRequestData& requestData, WTF::CompletionHandler<void(Expected<WebCore::DigitalCredentialsResponseData, WebCore::ExceptionData>&&)>&& completionHandler)
 {
-    m_impl->showDigitalCredentialsPicker(requestData, WTFMove(completionHandler), webView().get());
+    checkedImpl()->showDigitalCredentialsPicker(requestData, WTF::move(completionHandler), webView().get());
 }
 
 void PageClientImpl::dismissDigitalCredentialsPicker(WTF::CompletionHandler<void(bool)>&& completionHandler)
 {
-    m_impl->dismissDigitalCredentialsPicker(WTFMove(completionHandler), webView().get());
+    checkedImpl()->dismissDigitalCredentialsPicker(WTF::move(completionHandler), webView().get());
 }
 #endif
 
@@ -817,14 +832,14 @@ bool PageClientImpl::isFullScreen()
     if (!impl->hasFullScreenWindowController())
         return false;
 
-    return impl->protectedFullScreenWindowController().get().isFullScreen;
+    return protect(impl->fullScreenWindowController()).get().isFullScreen;
 }
 
 void PageClientImpl::enterFullScreen(FloatSize, CompletionHandler<void(bool)>&& completionHandler)
 {
     CheckedRef impl = *m_impl;
     if (RetainPtr fullScreenWindowController = impl->fullScreenWindowController())
-        [fullScreenWindowController enterFullScreen:WTFMove(completionHandler)];
+        [fullScreenWindowController enterFullScreen:WTF::move(completionHandler)];
     else
         return completionHandler(false);
 }
@@ -833,7 +848,7 @@ void PageClientImpl::exitFullScreen(CompletionHandler<void()>&& completionHandle
 {
     CheckedRef impl = *m_impl;
     if (RetainPtr fullScreenWindowController = impl->fullScreenWindowController())
-        [fullScreenWindowController exitFullScreen:WTFMove(completionHandler)];
+        [fullScreenWindowController exitFullScreen:WTF::move(completionHandler)];
     else
         return completionHandler();
 }
@@ -842,7 +857,7 @@ void PageClientImpl::beganEnterFullScreen(const IntRect& initialFrame, const Int
 {
     CheckedRef impl = *m_impl;
     if (RetainPtr fullScreenWindowController = impl->fullScreenWindowController())
-        [fullScreenWindowController beganEnterFullScreenWithInitialFrame:initialFrame finalFrame:finalFrame completionHandler:WTFMove(completionHandler)];
+        [fullScreenWindowController beganEnterFullScreenWithInitialFrame:initialFrame finalFrame:finalFrame completionHandler:WTF::move(completionHandler)];
     else
         completionHandler(false);
 
@@ -853,7 +868,7 @@ void PageClientImpl::beganExitFullScreen(const IntRect& initialFrame, const IntR
 {
     CheckedRef impl = *m_impl;
     if (RetainPtr fullScreenWindowController = impl->fullScreenWindowController()) {
-        [fullScreenWindowController beganExitFullScreenWithInitialFrame:initialFrame finalFrame:finalFrame completionHandler:WTFMove(completionHandler)];
+        [fullScreenWindowController beganExitFullScreenWithInitialFrame:initialFrame finalFrame:finalFrame completionHandler:WTF::move(completionHandler)];
         impl->updateSupportsArbitraryLayoutModes();
     } else
         return completionHandler();
@@ -1092,7 +1107,7 @@ void PageClientImpl::performSwitchHapticFeedback()
 
 void PageClientImpl::requestDOMPasteAccess(WebCore::DOMPasteAccessCategory pasteAccessCategory, WebCore::DOMPasteRequiresInteraction requiresInteraction, const WebCore::IntRect& elementRect, const String& originIdentifier, CompletionHandler<void(WebCore::DOMPasteAccessResponse)>&& completion)
 {
-    checkedImpl()->requestDOMPasteAccess(pasteAccessCategory, requiresInteraction, elementRect, originIdentifier, WTFMove(completion));
+    checkedImpl()->requestDOMPasteAccess(pasteAccessCategory, requiresInteraction, elementRect, originIdentifier, WTF::move(completion));
 }
 
 void PageClientImpl::makeViewBlank(bool makeBlank)
@@ -1167,7 +1182,7 @@ void PageClientImpl::handleClickForDataDetectionResult(const DataDetectorElement
 
 void PageClientImpl::beginTextRecognitionForVideoInElementFullscreen(ShareableBitmap::Handle&& bitmapHandle, FloatRect bounds)
 {
-    checkedImpl()->beginTextRecognitionForVideoInElementFullscreen(WTFMove(bitmapHandle), bounds);
+    checkedImpl()->beginTextRecognitionForVideoInElementFullscreen(WTF::move(bitmapHandle), bounds);
 }
 
 void PageClientImpl::cancelTextRecognitionForVideoInElementFullscreen()
@@ -1184,12 +1199,7 @@ void PageClientImpl::didChangeLocalInspectorAttachment()
 
 void PageClientImpl::showCaptionDisplaySettings(WebCore::HTMLMediaElementIdentifier identifier, const WebCore::ResolvedCaptionDisplaySettingsOptions& options, CompletionHandler<void(Expected<void, WebCore::ExceptionData>&&)>&& completionHandler)
 {
-    checkedImpl()->showCaptionDisplaySettings(identifier, options, WTFMove(completionHandler));
-}
-
-RetainPtr<NSView> PageClient::protectedViewForPresentingRevealPopover() const
-{
-    return viewForPresentingRevealPopover();
+    checkedImpl()->showCaptionDisplaySettings(identifier, options, WTF::move(completionHandler));
 }
 
 } // namespace WebKit

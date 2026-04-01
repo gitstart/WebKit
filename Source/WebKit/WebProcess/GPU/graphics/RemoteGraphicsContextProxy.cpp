@@ -235,6 +235,13 @@ void RemoteGraphicsContextProxy::clipOut(const Path& path)
 void RemoteGraphicsContextProxy::clipPath(const Path& path, WindRule rule)
 {
     updateStateForClipPath(path);
+    if (RefPtr impl = path.asImpl(); impl && !impl->isTransient()) {
+        if (auto identifier = recordResourceUse(*impl)) {
+            send(Messages::RemoteGraphicsContext::ClipCachedPath(*identifier, rule));
+            return;
+        }
+    }
+
     send(Messages::RemoteGraphicsContext::ClipPath(path, rule));
 }
 
@@ -270,7 +277,7 @@ void RemoteGraphicsContextProxy::drawFilteredImageBuffer(ImageBuffer* sourceImag
         identifier = sourceImage->renderingResourceIdentifier();
     }
 
-    send(Messages::RemoteGraphicsContext::DrawFilteredImageBuffer(WTFMove(identifier), sourceImageRect, filter));
+    send(Messages::RemoteGraphicsContext::DrawFilteredImageBuffer(WTF::move(identifier), sourceImageRect, filter));
 }
 
 void RemoteGraphicsContextProxy::drawGlyphs(const Font& font, std::span<const GlyphBufferGlyph> glyphs, std::span<const GlyphBufferAdvance> advances, const FloatPoint& localAnchor, FontSmoothingMode smoothingMode)
@@ -464,6 +471,13 @@ void RemoteGraphicsContextProxy::fillPath(const Path& path)
         return;
     }
 
+    if (RefPtr impl = path.asImpl(); impl && !impl->isTransient()) {
+        if (auto identifier = recordResourceUse(*impl)) {
+            send(Messages::RemoteGraphicsContext::FillCachedPath(*identifier));
+            return;
+        }
+    }
+
     send(Messages::RemoteGraphicsContext::FillPath(path));
 }
 
@@ -527,11 +541,11 @@ void RemoteGraphicsContextProxy::drawVideoFrame(const VideoFrame& frame, const F
     auto sharedVideoFrame = m_sharedVideoFrameWriter->write(frame, [&](auto& semaphore) {
         send(Messages::RemoteGraphicsContext::SetSharedVideoFrameSemaphore { semaphore });
     }, [&](SharedMemory::Handle&& handle) {
-        send(Messages::RemoteGraphicsContext::SetSharedVideoFrameMemory { WTFMove(handle) });
+        send(Messages::RemoteGraphicsContext::SetSharedVideoFrameMemory { WTF::move(handle) });
     });
     if (!sharedVideoFrame)
         return;
-    send(Messages::RemoteGraphicsContext::DrawVideoFrame(WTFMove(*sharedVideoFrame), destination, orientation, shouldDiscardAlpha));
+    send(Messages::RemoteGraphicsContext::DrawVideoFrame(WTF::move(*sharedVideoFrame), destination, orientation, shouldDiscardAlpha));
 #endif
 }
 #endif
@@ -715,6 +729,17 @@ std::optional<RemoteGradientIdentifier> RemoteGraphicsContextProxy::recordResour
     }
 
     return renderingBackend->remoteResourceCacheProxy().recordGradientUse(gradient);
+}
+
+std::optional<RemotePathImplIdentifier> RemoteGraphicsContextProxy::recordResourceUse(const WebCore::PathImpl& path)
+{
+    RefPtr renderingBackend = m_renderingBackend.get();
+    if (!renderingBackend) [[unlikely]] {
+        ASSERT_NOT_REACHED();
+        return std::nullopt;
+    }
+
+    return renderingBackend->remoteResourceCacheProxy().recordPathImplUse(path);
 }
 
 bool RemoteGraphicsContextProxy::recordResourceUse(Filter& filter)

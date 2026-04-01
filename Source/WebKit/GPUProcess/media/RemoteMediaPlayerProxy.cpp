@@ -28,6 +28,7 @@
 
 #if ENABLE(GPU_PROCESS) && ENABLE(VIDEO)
 
+#include "ArgumentCoders.h"
 #include "GPUConnectionToWebProcess.h"
 #include "LayerHostingContext.h"
 #include "Logging.h"
@@ -42,7 +43,6 @@
 #include "RemoteMediaResource.h"
 #include "RemoteMediaResourceIdentifier.h"
 #include "RemoteMediaResourceLoader.h"
-#include "RemoteMediaResourceManager.h"
 #include "RemoteAudioSessionProxy.h"
 #include "RemoteTextTrackProxy.h"
 #include "RemoteVideoFrameObjectHeap.h"
@@ -77,6 +77,10 @@
 #include "VideoReceiverEndpointManager.h"
 #endif
 
+#if PLATFORM(IOS_FAMILY)
+#include <WebCore/MediaSessionHelperIOS.h>
+#endif
+
 #include <wtf/NativePromise.h>
 
 namespace WebKit {
@@ -87,13 +91,13 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(RemoteMediaPlayerProxy);
 
 Ref<RemoteMediaPlayerProxy> RemoteMediaPlayerProxy::create(RemoteMediaPlayerManagerProxy& manager, MediaPlayerIdentifier identifier, MediaPlayerClientIdentifier clientIdentifier, Ref<IPC::Connection>&& connection, MediaPlayerEnums::MediaEngineIdentifier engineIdentifier, RemoteMediaPlayerProxyConfiguration&& configuration, RemoteVideoFrameObjectHeap& videoFrameObjectHeap, const WebCore::ProcessIdentity& resourceOwner)
 {
-    return adoptRef(*new RemoteMediaPlayerProxy(manager, identifier, clientIdentifier, WTFMove(connection), engineIdentifier, WTFMove(configuration), videoFrameObjectHeap, resourceOwner));
+    return adoptRef(*new RemoteMediaPlayerProxy(manager, identifier, clientIdentifier, WTF::move(connection), engineIdentifier, WTF::move(configuration), videoFrameObjectHeap, resourceOwner));
 }
 
 RemoteMediaPlayerProxy::RemoteMediaPlayerProxy(RemoteMediaPlayerManagerProxy& manager, MediaPlayerIdentifier identifier, MediaPlayerClientIdentifier clientIdentifier, Ref<IPC::Connection>&& connection, MediaPlayerEnums::MediaEngineIdentifier engineIdentifier, RemoteMediaPlayerProxyConfiguration&& configuration, RemoteVideoFrameObjectHeap& videoFrameObjectHeap, const WebCore::ProcessIdentity& resourceOwner)
     : m_id(identifier)
     , m_clientIdentifier(clientIdentifier)
-    , m_webProcessConnection(WTFMove(connection))
+    , m_webProcessConnection(WTF::move(connection))
     , m_manager(manager)
     , m_engineIdentifier(engineIdentifier)
     , m_updateCachedStateMessageTimer(RunLoop::mainSingleton(), "RemoteMediaPlayerProxy::UpdateCachedStateMessageTimer"_s, this, &RemoteMediaPlayerProxy::timerFired)
@@ -115,6 +119,10 @@ RemoteMediaPlayerProxy::RemoteMediaPlayerProxy(RemoteMediaPlayerManagerProxy& ma
     RefPtr player = m_player;
     player->setResourceOwner(resourceOwner);
     player->setPresentationSize(m_configuration.presentationSize);
+#if PLATFORM(COCOA)
+    if (!m_configuration.videoLayerSize.isEmpty())
+        m_layerHostingContextManager->setInitialVideoLayerSize(m_configuration.videoLayerSize);
+#endif
 #if HAVE(SPATIAL_AUDIO_EXPERIENCE)
     player->setPrefersSpatialAudioExperience(m_configuration.prefersSpatialAudioExperience);
 #endif
@@ -170,7 +178,7 @@ void RemoteMediaPlayerProxy::getConfiguration(RemoteMediaPlayerConfiguration& co
     configuration.supportsPauseAtHostTime = player->supportsPauseAtHostTime();
 
 #if ENABLE(WIRELESS_PLAYBACK_TARGET)
-    configuration.canPlayToWirelessPlaybackTarget = player->canPlayToWirelessPlaybackTarget();
+    configuration.supportedPlaybackTargetTypes = player->supportedPlaybackTargetTypes();
 #endif
     configuration.shouldIgnoreIntrinsicSize = player->shouldIgnoreIntrinsicSize();
 
@@ -184,7 +192,7 @@ void RemoteMediaPlayerProxy::load(URL&& url, std::optional<SandboxExtension::Han
 {
     RemoteMediaPlayerConfiguration configuration;
     if (sandboxExtensionHandle) {
-        m_sandboxExtension = SandboxExtension::create(WTFMove(sandboxExtensionHandle.value()));
+        m_sandboxExtension = SandboxExtension::create(WTF::move(sandboxExtensionHandle.value()));
         if (RefPtr sandboxExtension = m_sandboxExtension)
             sandboxExtension->consume();
         else
@@ -193,7 +201,7 @@ void RemoteMediaPlayerProxy::load(URL&& url, std::optional<SandboxExtension::Han
 
     protectedPlayer()->load(url, options);
     getConfiguration(configuration);
-    completionHandler(WTFMove(configuration));
+    completionHandler(WTF::move(configuration));
 }
 
 #if ENABLE(MEDIA_SOURCE)
@@ -204,12 +212,12 @@ void RemoteMediaPlayerProxy::loadMediaSource(URL&& url, const MediaPlayer::LoadO
 
     RemoteMediaPlayerConfiguration configuration;
     if (!manager || !manager->gpuConnectionToWebProcess()) {
-        completionHandler(WTFMove(configuration));
+        completionHandler(WTF::move(configuration));
         return;
     }
     bool reattached = false;
     if (RefPtr mediaSourceProxy = manager->pendingMediaSource(mediaSourceIdentifier)) {
-        m_mediaSourceProxy = WTFMove(mediaSourceProxy);
+        m_mediaSourceProxy = WTF::move(mediaSourceProxy);
         reattached = true;
     } else
         m_mediaSourceProxy = adoptRef(*new RemoteMediaSourceProxy(*manager, mediaSourceIdentifier, *this));
@@ -220,7 +228,7 @@ void RemoteMediaPlayerProxy::loadMediaSource(URL&& url, const MediaPlayer::LoadO
     if (reattached)
         protectedMediaSourceProxy()->setMediaPlayers(*this, player->protectedPlayerPrivate().get());
     getConfiguration(configuration);
-    completionHandler(WTFMove(configuration));
+    completionHandler(WTF::move(configuration));
 }
 #endif
 
@@ -355,7 +363,7 @@ void RemoteMediaPlayerProxy::setRate(double rate)
 
 void RemoteMediaPlayerProxy::didLoadingProgress(CompletionHandler<void(bool)>&& completionHandler)
 {
-    protectedPlayer()->didLoadingProgress(WTFMove(completionHandler));
+    protectedPlayer()->didLoadingProgress(WTF::move(completionHandler));
 
     protectedConnection()->send(Messages::MediaPlayerPrivateRemote::ReportGPUMemoryFootprint(WTF::memoryFootprint()), m_id);
 }
@@ -367,35 +375,6 @@ void RemoteMediaPlayerProxy::setPresentationSize(const WebCore::IntSize& size)
 
     m_configuration.presentationSize = size;
     protectedPlayer()->setPresentationSize(size);
-}
-
-RefPtr<PlatformMediaResource> RemoteMediaPlayerProxy::requestResource(ResourceRequest&& request, PlatformMediaResourceLoader::LoadOptions options)
-{
-    ASSERT(isMainRunLoop());
-
-    RefPtr manager = m_manager.get();
-    ASSERT(manager && manager->gpuConnectionToWebProcess());
-    if (!manager || !manager->gpuConnectionToWebProcess())
-        return nullptr;
-
-    Ref remoteMediaResourceManager = manager->gpuConnectionToWebProcess()->remoteMediaResourceManager();
-    auto remoteMediaResourceIdentifier = RemoteMediaResourceIdentifier::generate();
-    auto remoteMediaResource = RemoteMediaResource::create(remoteMediaResourceManager, *this, remoteMediaResourceIdentifier);
-    remoteMediaResourceManager->addMediaResource(remoteMediaResourceIdentifier, remoteMediaResource);
-
-    protectedConnection()->send(Messages::MediaPlayerPrivateRemote::RequestResource(remoteMediaResourceIdentifier, request, options), m_id);
-
-    return remoteMediaResource;
-}
-
-void RemoteMediaPlayerProxy::sendH2Ping(const URL& url, CompletionHandler<void(Expected<WTF::Seconds, WebCore::ResourceError>&&)>&& completionHandler)
-{
-    protectedConnection()->sendWithAsyncReply(Messages::MediaPlayerPrivateRemote::SendH2Ping(url), WTFMove(completionHandler), m_id);
-}
-
-void RemoteMediaPlayerProxy::removeResource(RemoteMediaResourceIdentifier remoteMediaResourceIdentifier)
-{
-    protectedConnection()->send(Messages::MediaPlayerPrivateRemote::RemoveResource(remoteMediaResourceIdentifier), m_id);
 }
 
 // MediaPlayerClient
@@ -568,7 +547,7 @@ String RemoteMediaPlayerProxy::mediaPlayerNetworkInterfaceName() const
 
 void RemoteMediaPlayerProxy::mediaPlayerGetRawCookies(const URL& url, WebCore::MediaPlayerClient::GetRawCookiesCallback&& completionHandler) const
 {
-    protectedConnection()->sendWithAsyncReply(Messages::MediaPlayerPrivateRemote::GetRawCookies(url), WTFMove(completionHandler), m_id);
+    protectedConnection()->sendWithAsyncReply(Messages::MediaPlayerPrivateRemote::GetRawCookies(url), WTF::move(completionHandler), m_id);
 }
 #endif
 
@@ -832,7 +811,7 @@ RefPtr<ArrayBuffer> RemoteMediaPlayerProxy::mediaPlayerCachedKeyForKeyId(const S
     if (!m_legacySession)
         return nullptr;
 
-    if (RefPtr cdmSession = manager->gpuConnectionToWebProcess()->protectedLegacyCdmFactoryProxy()->getSession(*m_legacySession))
+    if (RefPtr cdmSession = protect(manager->gpuConnectionToWebProcess()->legacyCdmFactoryProxy())->getSession(*m_legacySession))
         return cdmSession->getCachedKeyForKeyId(keyId);
     return nullptr;
 }
@@ -882,6 +861,15 @@ void RemoteMediaPlayerProxy::setWirelessPlaybackTarget(MediaPlaybackTargetContex
 {
     Ref { *m_player }->setWirelessPlaybackTarget(targetContext.playbackTarget());
 }
+
+MediaPlaybackTargetType RemoteMediaPlayerProxy::playbackTargetType() const
+{
+#if PLATFORM(IOS_FAMILY)
+    if (RefPtr playbackTarget = MediaSessionHelper::protectedSharedHelper()->playbackTarget())
+        return playbackTarget->type();
+#endif
+    return MediaPlaybackTargetType::None;
+}
 #endif // ENABLE(WIRELESS_PLAYBACK_TARGET)
 
 bool RemoteMediaPlayerProxy::mediaPlayerIsFullscreen() const
@@ -906,7 +894,7 @@ bool RemoteMediaPlayerProxy::mediaPlayerPlatformVolumeConfigurationRequired() co
     return false;
 }
 
-CachedResourceLoader* RemoteMediaPlayerProxy::mediaPlayerCachedResourceLoader()
+CachedResourceLoader* RemoteMediaPlayerProxy::mediaPlayerCachedResourceLoader() const
 {
     notImplemented();
     return nullptr;
@@ -914,7 +902,14 @@ CachedResourceLoader* RemoteMediaPlayerProxy::mediaPlayerCachedResourceLoader()
 
 Ref<PlatformMediaResourceLoader> RemoteMediaPlayerProxy::mediaPlayerCreateResourceLoader()
 {
-    return RemoteMediaResourceLoader::create(*this);
+    auto loader = RemoteMediaResourceLoader::create(*this, protectedConnection());
+    protectedConnection()->send(Messages::MediaPlayerPrivateRemote::CreateResourceLoader(loader->identifier()), m_id);
+    return loader;
+}
+
+void RemoteMediaPlayerProxy::destroyResourceLoader(RemoteMediaResourceLoaderIdentifier loaderIdentifier)
+{
+    protectedConnection()->send(Messages::MediaPlayerPrivateRemote::DestroyResourceLoader(loaderIdentifier), m_id);
 }
 
 bool RemoteMediaPlayerProxy::doesHaveAttribute(const AtomString&, AtomString*) const
@@ -924,10 +919,10 @@ bool RemoteMediaPlayerProxy::doesHaveAttribute(const AtomString&, AtomString*) c
 }
 
 #if PLATFORM(COCOA)
-Vector<RefPtr<PlatformTextTrack>> RemoteMediaPlayerProxy::outOfBandTrackSources()
+Vector<Ref<PlatformTextTrack>> RemoteMediaPlayerProxy::outOfBandTrackSources()
 {
-    return WTF::map(m_configuration.outOfBandTrackData, [](auto& data) -> RefPtr<PlatformTextTrack> {
-        return PlatformTextTrack::create(WTFMove(data));
+    return WTF::map(m_configuration.outOfBandTrackData, [](auto& data) {
+        return PlatformTextTrack::create(WTF::move(data));
     });
 }
 
@@ -1008,7 +1003,24 @@ void RemoteMediaPlayerProxy::videoFrameForCurrentTimeIfChanged(CompletionHandler
         if (videoFrame)
             result = protectedVideoFrameObjectHeap()->add(videoFrame.releaseNonNull());
     }
-    completionHandler(WTFMove(result), changed);
+    completionHandler(WTF::move(result), changed);
+}
+
+void RemoteMediaPlayerProxy::bitmapImageForCurrentTime(CompletionHandler<void(std::optional<WebCore::ShareableBitmap::Handle>&&)>&& completionHandler)
+{
+    RefPtr player = m_player;
+    if (!player) {
+        completionHandler({ });
+        return;
+    }
+
+    player->bitmapImageForCurrentTime()->whenSettled(RunLoop::mainSingleton(), [completionHandler = WTF::move(completionHandler)](auto&& result) mutable {
+        if (!result) {
+            completionHandler({ });
+            return;
+        }
+        completionHandler((*result)->createHandle());
+    });
 }
 
 void RemoteMediaPlayerProxy::setShouldDisableHDR(bool shouldDisable)
@@ -1060,15 +1072,15 @@ void RemoteMediaPlayerProxy::setLegacyCDMSession(std::optional<RemoteLegacyCDMSe
     RefPtr player = m_player;
 
     if (m_legacySession) {
-        if (RefPtr cdmSession = manager->gpuConnectionToWebProcess()->protectedLegacyCdmFactoryProxy()->getSession(*m_legacySession))
+        if (RefPtr cdmSession = protect(manager->gpuConnectionToWebProcess()->legacyCdmFactoryProxy())->getSession(*m_legacySession))
             player->setCDMSession(nullptr);
     }
 
     m_legacySession = instanceId;
 
     if (m_legacySession) {
-        if (RefPtr cdmSession = manager->gpuConnectionToWebProcess()->protectedLegacyCdmFactoryProxy()->getSession(*m_legacySession))
-            player->setCDMSession(cdmSession->protectedSession().get());
+        if (RefPtr cdmSession = protect(manager->gpuConnectionToWebProcess()->legacyCdmFactoryProxy())->getSession(*m_legacySession))
+            player->setCDMSession(protect(cdmSession->session()).get());
     }
 }
 
@@ -1086,7 +1098,7 @@ void RemoteMediaPlayerProxy::cdmInstanceAttached(RemoteCDMInstanceIdentifier&& i
     if (!manager || !manager->gpuConnectionToWebProcess())
         return;
 
-    if (RefPtr instanceProxy = manager->gpuConnectionToWebProcess()->protectedCdmFactoryProxy()->getInstance(instanceId))
+    if (RefPtr instanceProxy = protect(manager->gpuConnectionToWebProcess()->cdmFactoryProxy())->getInstance(instanceId))
         protectedPlayer()->cdmInstanceAttached(instanceProxy->instance());
 }
 
@@ -1097,7 +1109,7 @@ void RemoteMediaPlayerProxy::cdmInstanceDetached(RemoteCDMInstanceIdentifier&& i
     if (!manager || !manager->gpuConnectionToWebProcess())
         return;
 
-    if (RefPtr instanceProxy = manager->gpuConnectionToWebProcess()->protectedCdmFactoryProxy()->getInstance(instanceId))
+    if (RefPtr instanceProxy = protect(manager->gpuConnectionToWebProcess()->cdmFactoryProxy())->getInstance(instanceId))
         protectedPlayer()->cdmInstanceDetached(instanceProxy->instance());
 }
 
@@ -1108,7 +1120,7 @@ void RemoteMediaPlayerProxy::attemptToDecryptWithInstance(RemoteCDMInstanceIdent
     if (!manager || !manager->gpuConnectionToWebProcess())
         return;
 
-    if (RefPtr instanceProxy = manager->gpuConnectionToWebProcess()->protectedCdmFactoryProxy()->getInstance(instanceId))
+    if (RefPtr instanceProxy = protect(manager->gpuConnectionToWebProcess()->cdmFactoryProxy())->getInstance(instanceId))
         protectedPlayer()->attemptToDecryptWithInstance(instanceProxy->instance());
 }
 #endif
@@ -1152,7 +1164,7 @@ void RemoteMediaPlayerProxy::performTaskAtTime(const MediaTime& taskTime, Perfor
         // A media player is only expected to track one pending task-at-time at once (e.g. see
         // MediaPlayerPrivateAVFoundationObjC::performTaskAtMediaTime), so cancel the existing
         // CompletionHandler.
-        auto handler = WTFMove(m_performTaskAtTimeCompletionHandler);
+        auto handler = WTF::move(m_performTaskAtTimeCompletionHandler);
         handler(std::nullopt);
     }
 
@@ -1163,7 +1175,7 @@ void RemoteMediaPlayerProxy::performTaskAtTime(const MediaTime& taskTime, Perfor
         return;
     }
 
-    m_performTaskAtTimeCompletionHandler = WTFMove(completionHandler);
+    m_performTaskAtTimeCompletionHandler = WTF::move(completionHandler);
     player->performTaskAtTime([weakThis = WeakPtr { *this }](const MediaTime& time) mutable {
         RefPtr protectedThis = weakThis.get();
         if (!protectedThis || !protectedThis->m_performTaskAtTimeCompletionHandler)
@@ -1210,7 +1222,7 @@ void RemoteMediaPlayerProxy::updateCachedVideoMetrics()
             return;
         if (result) {
             protectedThis->m_cachedState.videoMetrics = *result;
-            protectedThis->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::UpdatePlaybackQualityMetrics(WTFMove(*result)), protectedThis->m_id);
+            protectedThis->protectedConnection()->send(Messages::MediaPlayerPrivateRemote::UpdatePlaybackQualityMetrics(WTF::move(*result)), protectedThis->m_id);
         } else
             protectedThis->m_cachedState.videoMetrics.reset();
         protectedThis->m_hasPlaybackMetricsUpdatePending = false;
@@ -1345,7 +1357,7 @@ Ref<RemoteVideoFrameObjectHeap> RemoteMediaPlayerProxy::protectedVideoFrameObjec
 
 void RemoteMediaPlayerProxy::audioOutputDeviceChanged(String&& deviceId)
 {
-    m_configuration.audioOutputDeviceId = WTFMove(deviceId);
+    m_configuration.audioOutputDeviceId = WTF::move(deviceId);
     if (RefPtr player = m_player)
         player->audioOutputDeviceChanged();
 

@@ -249,7 +249,7 @@ void WKContextSetDownloadClient(WKContextRef context, const WKContextDownloadCli
         {
             if (m_client.didReceiveServerRedirect)
                 m_client.didReceiveServerRedirect(m_context, WebKit::toAPI(&downloadProxy), WebKit::toURLRef(request.url().string().impl()), m_client.base.clientInfo);
-            completionHandler(WTFMove(request));
+            completionHandler(WTF::move(request));
         }
         WKContextRef m_context;
     };
@@ -399,7 +399,7 @@ WKWebsiteDataStoreRef WKContextGetWebsiteDataStore(WKContextRef)
 
 WKGeolocationManagerRef WKContextGetGeolocationManager(WKContextRef contextRef)
 {
-    return WebKit::toAPI(WebKit::toProtectedImpl(contextRef)->protectedSupplement<WebKit::WebGeolocationManagerProxy>().get());
+    return WebKit::toAPI(protect(WebKit::toProtectedImpl(contextRef)->supplement<WebKit::WebGeolocationManagerProxy>()).get());
 }
 
 WKIconDatabaseRef WKContextGetIconDatabase(WKContextRef)
@@ -414,7 +414,7 @@ WKKeyValueStorageManagerRef WKContextGetKeyValueStorageManager(WKContextRef cont
 
 WKNotificationManagerRef WKContextGetNotificationManager(WKContextRef contextRef)
 {
-    return WebKit::toAPI(WebKit::toProtectedImpl(contextRef)->protectedSupplement<WebKit::WebNotificationManagerProxy>().get());
+    return WebKit::toAPI(protect(WebKit::toProtectedImpl(contextRef)->supplement<WebKit::WebNotificationManagerProxy>()).get());
 }
 
 WKResourceCacheManagerRef WKContextGetResourceCacheManager(WKContextRef context)

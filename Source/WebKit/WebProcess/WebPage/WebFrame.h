@@ -66,9 +66,20 @@ class IntRect;
 class LocalFrame;
 class PlatformMouseEvent;
 class RemoteFrame;
+class TextIndicator;
+class WebKitJSHandle;
+
+namespace TextExtraction {
+struct ExtractedText;
+struct InteractionDescription;
+struct Interaction;
+struct Item;
+struct Request;
+}
 
 enum class FocusDirection : uint8_t;
 enum class FoundElementInRemoteFrame : bool;
+enum class ShouldFocusElement : bool;
 
 struct FocusEventData;
 struct GlobalWindowIdentifier;
@@ -94,6 +105,7 @@ class WebRemoteFrameClient;
 
 struct FrameInfoData;
 struct FrameTreeNodeData;
+struct JSHandleInfo;
 struct ProvisionalFrameCreationParameters;
 struct WebsitePoliciesData;
 
@@ -116,15 +128,12 @@ public:
     ScopeExit<Function<void()>> makeInvalidator();
 
     WebPage* page() const;
-    RefPtr<WebPage> protectedPage() const;
 
     static WebFrame* webFrame(std::optional<WebCore::FrameIdentifier>);
     static RefPtr<WebFrame> fromCoreFrame(const WebCore::Frame&);
     WebCore::LocalFrame* coreLocalFrame() const;
-    RefPtr<WebCore::LocalFrame> protectedCoreLocalFrame() const;
     WebCore::RemoteFrame* coreRemoteFrame() const;
     WebCore::Frame* coreFrame() const;
-    RefPtr<WebCore::Frame> protectedCoreFrame() const;
 
     void createProvisionalFrame(ProvisionalFrameCreationParameters&&);
     void commitProvisionalFrame();
@@ -218,8 +227,7 @@ public:
     String mimeTypeForResourceWithURL(const URL&) const;
 
     void setTextDirection(const String&);
-    void updateRemoteFrameSize(WebCore::IntSize);
-    void updateFrameSize(WebCore::IntSize);
+    void updateFrameRectFromRemote(WebCore::IntRect);
 
 #if PLATFORM(COCOA)
     typedef bool (*FrameFilterFunction)(WKBundleFrameRef, WKBundleFrameRef subframe, void* context);
@@ -234,7 +242,6 @@ public:
 #endif
 
     WebLocalFrameLoaderClient* localFrameLoaderClient() const;
-    RefPtr<WebLocalFrameLoaderClient> protectedLocalFrameLoaderClient() const;
 
     WebRemoteFrameClient* remoteFrameClient() const;
     WebFrameLoaderClient* frameLoaderClient() const;
@@ -262,6 +269,8 @@ public:
 
     String frameTextForTesting(bool);
 
+    std::pair<Ref<WebCore::WebKitJSHandle>, JSHandleInfo> createAndPrepareToSendJSHandle(WebCore::Node&) const;
+
     void markAsRemovedInAnotherProcess() { m_wasRemovedInAnotherProcess = true; }
     bool wasRemovedInAnotherProcess() const { return m_wasRemovedInAnotherProcess; }
 
@@ -278,6 +287,15 @@ public:
     void disconnectInspector();
     void sendMessageToInspectorTarget(const String& message);
 
+    void requestTextExtraction(WebCore::TextExtraction::Request&&, CompletionHandler<void(WebCore::TextExtraction::Item&&)>&&);
+    void handleTextExtractionInteraction(WebCore::TextExtraction::Interaction&&, CompletionHandler<void(bool, String&&)>&&);
+    void describeTextExtractionInteraction(WebCore::TextExtraction::Interaction&&, CompletionHandler<void(WebCore::TextExtraction::InteractionDescription&&)>&&);
+    void takeSnapshotOfExtractedText(WebCore::TextExtraction::ExtractedText&&, CompletionHandler<void(RefPtr<WebCore::TextIndicator>&&)>&&);
+    void requestJSHandleForExtractedText(WebCore::TextExtraction::ExtractedText&&, CompletionHandler<void(std::optional<JSHandleInfo>&&)>&&);
+
+    void getSelectorPathsForNode(JSHandleInfo&&, CompletionHandler<void(Vector<HashSet<String>>&&)>&&);
+    void getNodeForSelectorPaths(Vector<HashSet<String>>&&, CompletionHandler<void(std::optional<JSHandleInfo>&&)>&&);
+
 private:
     WebFrame(WebPage&, WebCore::FrameIdentifier);
 
@@ -285,15 +303,15 @@ private:
     uint64_t messageSenderDestinationID() const final;
 
     void setLayerHostingContextIdentifier(WebCore::LayerHostingContextIdentifier identifier) { m_layerHostingContextIdentifier = identifier; }
-    void updateLocalFrameSize(WebCore::LocalFrame&, WebCore::IntSize);
+    void updateLocalFrameRect(WebCore::LocalFrame&, WebCore::IntRect);
 
     inline WebCore::DocumentLoader* policySourceDocumentLoader() const;
 
     RefPtr<WebCore::LocalFrame> localFrame();
 
-    void findFocusableElementDescendingIntoRemoteFrame(WebCore::FocusDirection, const WebCore::FocusEventData&, CompletionHandler<void(WebCore::FoundElementInRemoteFrame)>&&);
+    void findFocusableElementDescendingIntoRemoteFrame(WebCore::FocusDirection, const WebCore::FocusEventData&, WebCore::ShouldFocusElement, CompletionHandler<void(WebCore::FoundElementInRemoteFrame)>&&);
 
-    WebFrameInspectorTarget& ensureInspectorTarget();
+    CheckedRef<WebFrameInspectorTarget> ensureInspectorTarget();
 
     WeakPtr<WebCore::Frame> m_coreFrame;
     WeakPtr<WebPage> m_page;

@@ -53,7 +53,7 @@ template<typename IDLType> class DOMPromiseDeferred;
 template<typename> class ExceptionOr;
 
 class PaymentRequest final : public ActiveDOMObject, public EventTarget, public RefCounted<PaymentRequest> {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(PaymentRequest);
+    WTF_MAKE_TZONE_ALLOCATED(PaymentRequest);
 public:
     using AbortPromise = DOMPromiseDeferred<void>;
     using CanMakePaymentPromise = DOMPromiseDeferred<IDLBoolean>;
@@ -127,7 +127,6 @@ private:
     void whenDetailsSettled(std::function<void()>&&);
     void abortWithException(Exception&&);
     PaymentHandler* activePaymentHandler() { return m_activePaymentHandler ? m_activePaymentHandler->paymentHandler.ptr() : nullptr; }
-    RefPtr<PaymentHandler> protectedActivePaymentHandler();
     void settleShowPromise(ExceptionOr<PaymentResponse&>&&);
     void closeActivePaymentHandler();
 

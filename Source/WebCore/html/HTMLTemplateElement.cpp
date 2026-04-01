@@ -49,7 +49,7 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(HTMLTemplateElement);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(HTMLTemplateElement);
 
 using namespace HTMLNames;
 
@@ -85,13 +85,13 @@ DocumentFragment& HTMLTemplateElement::content() const
 {
     ASSERT(!m_declarativeShadowRoot);
     if (!m_content)
-        lazyInitialize(m_content, TemplateContentDocumentFragment::create(protectedDocument()->ensureProtectedTemplateDocument(), *this));
+        lazyInitialize(m_content, TemplateContentDocumentFragment::create(protect(document())->ensureProtectedTemplateDocument(), *this));
     return *m_content;
 }
 
 void HTMLTemplateElement::adoptDeserializedContent(Ref<TemplateContentDocumentFragment>&& content)
 {
-    lazyInitialize(m_content, WTFMove(content));
+    lazyInitialize(m_content, WTF::move(content));
 }
 
 const AtomString& HTMLTemplateElement::shadowRootMode() const
@@ -128,7 +128,7 @@ Ref<Node> HTMLTemplateElement::cloneNodeInternal(Document& document, CloningOper
     if (m_content) {
         auto& templateElement = downcast<HTMLTemplateElement>(*clone);
         Ref fragment = templateElement.content();
-        m_content->cloneChildNodes(fragment->protectedDocument(), nullptr, fragment);
+        m_content->cloneChildNodes(protect(fragment->document()), nullptr, fragment);
     }
     return clone.releaseNonNull();
 }
@@ -151,11 +151,11 @@ SerializedNode HTMLTemplateElement::serializeNode(CloningOperation type) const
 
     return { SerializedNode::HTMLTemplateElement {
         SerializedNode::Element {
-            { WTFMove(children) },
+            { WTF::move(children) },
             { tagQName() },
             serializeAttributes<SerializedNode::Element::Attribute>(),
             serializeShadowRoot<SerializedNode::ShadowRoot>()
-        }, WTFMove(contentChildren)
+        }, WTF::move(contentChildren)
     } };
 }
 

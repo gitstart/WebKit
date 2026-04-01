@@ -650,19 +650,19 @@ static constexpr auto removeLineLimitForChildrenMenuOption = static_cast<UIMenuO
     for (UIMenuElement *menuElement in menuElements) {
         if ([menuElement isKindOfClass:UIAction.class]) {
             if (currentIndex == optionIndex)
-                return (UIAction *)menuElement;
+                return checked_objc_cast<UIAction>(menuElement);
 
-            currentIndex++;
+            ++currentIndex;
             continue;
         }
 
-        UIMenu *groupedMenu = (UIMenu *)menuElement;
-        NSUInteger numGroupedOptions = groupedMenu.children.count;
+        RetainPtr groupedMenu = checked_objc_cast<UIMenu>(menuElement);
+        NSUInteger numGroupedOptions = [groupedMenu children].count;
 
         if (currentIndex + numGroupedOptions <= (NSUInteger)optionIndex)
             currentIndex += numGroupedOptions;
         else
-            return (UIAction *)[groupedMenu.children objectAtIndex:(groupedMenu.children.count - numGroupedOptions) + (optionIndex - currentIndex)];
+            return checked_objc_cast<UIAction>([[groupedMenu children] objectAtIndex:([groupedMenu children].count - numGroupedOptions) + (optionIndex - currentIndex)]);
     }
 
     return nil;
@@ -699,10 +699,9 @@ static constexpr auto removeLineLimitForChildrenMenuOption = static_cast<UIMenuO
 {
     _isAnimatingContextMenuDismissal = YES;
     [animator addCompletion:[weakSelf = WeakObjCPtr<WKSelectPicker>(self), elementContext = _view.focusedElementInformation.elementContext] {
-        auto strongSelf = weakSelf.get();
-        if (strongSelf) {
+        if (RetainPtr strongSelf = weakSelf.get()) {
             RetainPtr view = strongSelf->_view;
-            if (elementContext.isSameElement([view focusedElementInformation].elementContext))
+            if ([view _isSameAsFocusedElement:elementContext])
                 [view accessoryDone];
             [[view webView] _didDismissContextMenu];
             strongSelf->_isAnimatingContextMenuDismissal = NO;

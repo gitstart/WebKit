@@ -33,7 +33,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 WTF_MAKE_TZONE_ALLOCATED_IMPL(CollectionNamedElementCache);
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(HTMLCollection);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(HTMLCollection);
 
 inline auto HTMLCollection::rootTypeFromCollectionType(CollectionType type) -> RootType
 {
@@ -127,7 +127,7 @@ HTMLCollection::HTMLCollection(ContainerNode& ownerNode, CollectionType type)
 HTMLCollection::~HTMLCollection()
 {
     if (hasNamedElementCache())
-        protectedDocument()->collectionWillClearIdNameMap(*this);
+        protect(document())->collectionWillClearIdNameMap(*this);
 
     // HTMLNameCollection & ClassCollection remove cache by themselves.
     // FIXME: We need a cleaner way to handle this.
@@ -222,7 +222,7 @@ void HTMLCollection::updateNamedElementCache() const
             cache->appendToNameCache(name, *htmlElement);
     }
 
-    setNamedItemCache(WTFMove(cache));
+    setNamedItemCache(WTF::move(cache));
 }
 
 Vector<Ref<Element>> HTMLCollection::namedItems(const AtomString& name) const

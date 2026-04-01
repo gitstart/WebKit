@@ -71,10 +71,9 @@ enum GeneratedOperandType { GeneratedOperandTypeUnknown, GeneratedOperandInteger
 // a speculative check has failed. This allows the SpeculativeJIT
 // to propagate type information (including information that has
 // only speculatively been asserted) through the dataflow.
-DECLARE_ALLOCATOR_WITH_HEAP_IDENTIFIER(SpeculativeJIT);
 class SpeculativeJIT : public JITCompiler {
     using Base = JITCompiler;
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(SpeculativeJIT, SpeculativeJIT);
+    WTF_MAKE_SEQUESTERED_ARENA_ALLOCATED(SpeculativeJIT);
     friend struct OSRExit;
 private:
     typedef JITCompiler::TrustedImm32 TrustedImm32;
@@ -1499,6 +1498,7 @@ public:
     void compileMapIterationEntry(Node*);
     void compileMapIterationEntryKey(Node*);
     void compileMapIterationEntryValue(Node*);
+    void compileMapOrSetSize(Node*);
     void compileSetAdd(Node*);
     void compileMapSet(Node*);
     void compileMapOrSetDelete(Node*);
@@ -1725,6 +1725,7 @@ public:
     void compileCompareEqPtr(Node*);
     void compileDefineDataProperty(Node*);
     void compileDefineAccessorProperty(Node*);
+    void compileObjectDefineProperty(Node*);
     void compileStringSlice(Node*);
     void compileStringSubstring(Node*);
     void compileToLowerCase(Node*);
@@ -1772,8 +1773,6 @@ public:
     void compileCreateGenerator(Node*);
     void compileCreateAsyncGenerator(Node*);
     void compileNewObject(Node*);
-    void compileNewGenerator(Node*);
-    void compileNewAsyncGenerator(Node*);
     void compileNewInternalFieldObject(Node*);
     void compileToPrimitive(Node*);
     void compileToPropertyKey(Node*);
@@ -1789,6 +1788,7 @@ public:
     void compileStringCodePointAt(Node*);
     void compileStringLocaleCompare(Node*);
     void compileStringIndexOf(Node*);
+    void compileStringStartsWith(Node*);
     void compileDateGet(Node*);
     void compileDateSet(Node*);
     void compileGlobalIsNaN(Node*);
@@ -2298,7 +2298,7 @@ public:
         m_edge = edge;
         ASSERT(m_gprOrInvalid == InvalidGPRReg);
         ASSERT(m_jit);
-        ASSERT(edge.useKind() == UntypedUse || edge.useKind() == KnownCellUse);
+        ASSERT(edge.useKind() == KnownStorageUse);
         if (jit->isFilled(node()))
             gpr();
     }

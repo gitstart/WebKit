@@ -84,7 +84,7 @@ public:
     bool usesRangeOffset() const;
 
     const RenderStyle* style() const { return m_style.get(); }
-    void setStyle(std::unique_ptr<RenderStyle>&& style) { m_style = WTFMove(style); }
+    void setStyle(std::unique_ptr<RenderStyle>&& style) { m_style = WTF::move(style); }
 
     TimingFunction* timingFunction() const { return m_timingFunction.get(); }
     void setTimingFunction(const RefPtr<TimingFunction>& timingFunction) { m_timingFunction = timingFunction; }
@@ -162,6 +162,7 @@ public:
     bool hasKeyframeNotUsingRangeOffset() const { return m_hasKeyframeNotUsingRangeOffset; }
 
     void updatedComputedOffsets(NOESCAPE const Function<double(const BlendingKeyframe::Offset&)>&);
+    bool hasKeyframeWithUnresolvedComputedOffset() const;
 
 private:
     void analyzeKeyframe(const BlendingKeyframe&);

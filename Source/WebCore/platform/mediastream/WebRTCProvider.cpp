@@ -29,11 +29,11 @@
 #include "AV1Utilities.h"
 #include "ContentType.h"
 #include "HEVCUtilities.h"
-#include "MediaCapabilitiesDecodingInfo.h"
-#include "MediaCapabilitiesEncodingInfo.h"
-#include "MediaDecodingConfiguration.h"
-#include "MediaEncodingConfiguration.h"
-#include "MediaEngineConfigurationFactory.h"
+#include "PlatformMediaCapabilitiesDecodingInfo.h"
+#include "PlatformMediaCapabilitiesEncodingInfo.h"
+#include "PlatformMediaDecodingConfiguration.h"
+#include "PlatformMediaEncodingConfiguration.h"
+#include "PlatformMediaEngineConfigurationFactory.h"
 #include "VP9Utilities.h"
 
 #include <wtf/Function.h>
@@ -183,22 +183,22 @@ std::optional<RTCRtpCapabilities>& WebRTCProvider::videoEncodingCapabilities()
 
 #endif // ENABLE(WEB_RTC)
 
-std::optional<MediaCapabilitiesInfo> WebRTCProvider::computeVPParameters(const VideoConfiguration&)
+std::optional<PlatformMediaCapabilitiesInfo> WebRTCProvider::computeVPParameters(const PlatformMediaCapabilitiesVideoConfiguration&)
 {
     return { };
 }
 
-bool WebRTCProvider::isVPSoftwareDecoderSmooth(const VideoConfiguration&)
+bool WebRTCProvider::isVPSoftwareDecoderSmooth(const PlatformMediaCapabilitiesVideoConfiguration&)
 {
     return true;
 }
 
-bool WebRTCProvider::isVPXEncoderSmooth(const VideoConfiguration&)
+bool WebRTCProvider::isVPXEncoderSmooth(const PlatformMediaCapabilitiesVideoConfiguration&)
 {
     return false;
 }
 
-bool WebRTCProvider::isH264EncoderSmooth(const VideoConfiguration&)
+bool WebRTCProvider::isH264EncoderSmooth(const PlatformMediaCapabilitiesVideoConfiguration&)
 {
     return true;
 }
@@ -328,24 +328,24 @@ static String contentTypeFromRTPVideoMimeType(const String& mimeType)
     return { };
 }
 
-void WebRTCProvider::createDecodingConfiguration(MediaDecodingConfiguration&& configuration, DecodingConfigurationCallback&& callback)
+void WebRTCProvider::createDecodingConfiguration(PlatformMediaDecodingConfiguration&& configuration, DecodingConfigurationCallback&& callback)
 {
-    ASSERT(configuration.type == MediaDecodingType::WebRTC);
+    ASSERT(configuration.type == PlatformMediaDecodingType::WebRTC);
 
     // FIXME: Validate additional parameters, in particular mime type parameters.
-    MediaCapabilitiesDecodingInfo info { { }, WTFMove(configuration) };
+    PlatformMediaCapabilitiesDecodingInfo info { { }, WTF::move(configuration) };
 
 #if ENABLE(WEB_RTC)
     if (info.configuration.video) {
         ContentType contentType { info.configuration.video->contentType };
         auto codec = codecCapability(contentType, videoDecodingCapabilities());
         if (!codec) {
-            callback({ { }, WTFMove(info.configuration) });
+            callback({ { }, WTF::move(info.configuration) });
             return;
         }
         if (auto infoOverride = videoDecodingCapabilitiesOverride(*info.configuration.video)) {
             if (!infoOverride->supported) {
-                callback({ { }, WTFMove(info.configuration) });
+                callback({ { }, WTF::move(info.configuration) });
                 return;
             }
             info.smooth = infoOverride->smooth;
@@ -356,7 +356,7 @@ void WebRTCProvider::createDecodingConfiguration(MediaDecodingConfiguration&& co
         ContentType contentType { info.configuration.audio->contentType };
         auto codec = codecCapability(contentType, audioDecodingCapabilities());
         if (!codec) {
-            callback({ { }, WTFMove(info.configuration) });
+            callback({ { }, WTF::move(info.configuration) });
             return;
         }
     }
@@ -366,41 +366,41 @@ void WebRTCProvider::createDecodingConfiguration(MediaDecodingConfiguration&& co
         auto videoConfiguration = info.configuration;
         videoConfiguration.audio = { };
         videoConfiguration.video->contentType = contentTypeFromRTPVideoMimeType(info.configuration.video->contentType);
-        videoConfiguration.type = MediaDecodingType::MediaSource;
+        videoConfiguration.type = PlatformMediaDecodingType::MediaSource;
 
-        MediaEngineConfigurationFactory::createDecodingConfiguration(WTFMove(videoConfiguration), [info = WTFMove(info), callback = WTFMove(callback)](auto&& result) mutable {
+        PlatformMediaEngineConfigurationFactory::createDecodingConfiguration(WTF::move(videoConfiguration), [info = WTF::move(info), callback = WTF::move(callback)](auto&& result) mutable {
             info.supported = result.supported;
             info.smooth = result.smooth;
             info.powerEfficient = result.powerEfficient;
             if (!info.supported)
                 info.configuration = { };
-            callback(WTFMove(info));
+            callback(WTF::move(info));
         });
         return;
     }
 
     info.supported = true;
-    callback(WTFMove(info));
+    callback(WTF::move(info));
 }
 
-void WebRTCProvider::createEncodingConfiguration(MediaEncodingConfiguration&& configuration, EncodingConfigurationCallback&& callback)
+void WebRTCProvider::createEncodingConfiguration(PlatformMediaEncodingConfiguration&& configuration, EncodingConfigurationCallback&& callback)
 {
-    ASSERT(configuration.type == MediaEncodingType::WebRTC);
+    ASSERT(configuration.type == PlatformMediaEncodingType::WebRTC);
 
     // FIXME: Validate additional parameters, in particular mime type parameters.
-    MediaCapabilitiesEncodingInfo info { { }, WTFMove(configuration) };
+    PlatformMediaCapabilitiesEncodingInfo info { { }, WTF::move(configuration) };
 
 #if ENABLE(WEB_RTC)
     if (info.configuration.video) {
         ContentType contentType { info.configuration.video->contentType };
         auto codec = codecCapability(contentType, videoEncodingCapabilities());
         if (!codec) {
-            callback({ { }, WTFMove(info.configuration) });
+            callback({ { }, WTF::move(info.configuration) });
             return;
         }
         if (auto infoOverride = videoEncodingCapabilitiesOverride(*info.configuration.video)) {
             if (!infoOverride->supported) {
-                callback({ { }, WTFMove(info.configuration) });
+                callback({ { }, WTF::move(info.configuration) });
                 return;
             }
             info.smooth = infoOverride->smooth;
@@ -411,13 +411,13 @@ void WebRTCProvider::createEncodingConfiguration(MediaEncodingConfiguration&& co
         ContentType contentType { info.configuration.audio->contentType };
         auto codec = codecCapability(contentType, audioEncodingCapabilities());
         if (!codec) {
-            callback({ { }, WTFMove(info.configuration) });
+            callback({ { }, WTF::move(info.configuration) });
             return;
         }
     }
 #endif
     info.supported = true;
-    callback(WTFMove(info));
+    callback(WTF::move(info));
 }
 
 void WebRTCProvider::initializeAudioDecodingCapabilities()
@@ -440,12 +440,12 @@ void WebRTCProvider::initializeVideoEncodingCapabilities()
 
 }
 
-std::optional<MediaCapabilitiesDecodingInfo> WebRTCProvider::videoDecodingCapabilitiesOverride(const VideoConfiguration&)
+std::optional<PlatformMediaCapabilitiesDecodingInfo> WebRTCProvider::videoDecodingCapabilitiesOverride(const PlatformMediaCapabilitiesVideoConfiguration&)
 {
     return { };
 }
 
-std::optional<MediaCapabilitiesEncodingInfo> WebRTCProvider::videoEncodingCapabilitiesOverride(const VideoConfiguration&)
+std::optional<PlatformMediaCapabilitiesEncodingInfo> WebRTCProvider::videoEncodingCapabilitiesOverride(const PlatformMediaCapabilitiesVideoConfiguration&)
 {
     return { };
 }

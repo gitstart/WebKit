@@ -54,7 +54,7 @@ public:
     // Decoding
     bool isLargeForDecoding() const { return m_source->isLargeForDecoding(); }
     void stopDecodingWorkQueue() { m_source->stopDecodingWorkQueue(); }
-    void decode(Function<void(DecodingStatus)>&& decodeCallback) { m_source->decode(WTFMove(decodeCallback)); }
+    void decode(Function<void(DecodingStatus)>&& decodeCallback) { m_source->decode(WTF::move(decodeCallback)); }
 
     // Current ImageFrame
     unsigned currentFrameIndex() const { return m_source->currentFrameIndex(); }
@@ -102,6 +102,9 @@ private:
     // Encoded and decoded data
     EncodedDataStatus dataChanged(bool allDataReceived) final;
     void destroyDecodedData(bool destroyAll = true) final;
+
+    bool canReplaceData() const final { return m_source->canReplaceData(); }
+    void dataReplaced() final;
 
     // Current ImageFrame
     bool currentFrameKnownToBeOpaque() const final { return !currentFrameHasAlpha(); }

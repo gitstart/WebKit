@@ -34,7 +34,7 @@
 #include "RenderLayer.h"
 #include "RenderSVGResourceMarkerInlines.h"
 #include "RenderSVGShapeInlines.h"
-#include "RenderStyleInlines.h"
+#include "RenderStyle+GettersInlines.h"
 #include "SVGElementTypeHelpers.h"
 #include "SVGMarkerElement.h"
 #include "SVGPathElement.h"
@@ -44,10 +44,10 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(RenderSVGPath);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(RenderSVGPath);
 
 RenderSVGPath::RenderSVGPath(SVGGraphicsElement& element, RenderStyle&& style)
-    : RenderSVGShape(Type::SVGPath, element, WTFMove(style))
+    : RenderSVGShape(Type::SVGPath, element, WTF::move(style))
 {
     ASSERT(isRenderSVGPath());
 }
@@ -78,8 +78,11 @@ FloatRect RenderSVGPath::adjustStrokeBoundingBoxForZeroLengthLinecaps(RepaintRec
     if (style().hasStroke()) {
         // FIXME: zero-length subpaths do not respect vector-effect = non-scaling-stroke.
         float strokeWidth = this->strokeWidth();
-        for (size_t i = 0; i < m_zeroLengthLinecapLocations.size(); ++i)
-            strokeBoundingBox.unite(zeroLengthSubpathRect(m_zeroLengthLinecapLocations[i], strokeWidth));
+        for (auto& zeroLengthLinecapLocation : m_zeroLengthLinecapLocations) {
+            auto subpathRect = zeroLengthSubpathRect(zeroLengthLinecapLocation, strokeWidth);
+            if (!subpathRect.isNaN())
+                strokeBoundingBox.unite(subpathRect);
+        }
     }
 
     return strokeBoundingBox;
@@ -87,9 +90,9 @@ FloatRect RenderSVGPath::adjustStrokeBoundingBoxForZeroLengthLinecaps(RepaintRec
 
 static void useStrokeStyleToFill(GraphicsContext& context)
 {
-    if (auto gradient = context.strokeGradient())
+    if (RefPtr gradient = context.strokeGradient())
         context.setFillGradient(*gradient, context.strokeGradientSpaceTransform());
-    else if (Pattern* pattern = context.strokePattern())
+    else if (RefPtr pattern = context.strokePattern())
         context.setFillPattern(*pattern);
     else
         context.setFillColor(context.strokeColor());
@@ -228,12 +231,13 @@ void RenderSVGPath::drawMarkers(PaintInfo& paintInfo)
     if (!markerStart && !markerMid && !markerEnd)
         return;
 
-    float strokeWidth = this->strokeWidth();
+    float strokeWidth = this->strokeWidthForMarkerUnits();
     for (auto& markerPosition : m_markerPositions) {
         if (auto* marker = markerForType(markerPosition.type, markerStart.get(), markerMid.get(), markerEnd.get()); marker && marker->hasLayer()) {
             auto& context = paintInfo.context();
             GraphicsContextStateSaver stateSaver(context);
 
+            context.setLineDash(DashArray(), 0);
             auto contentTransform = marker->markerTransformation(markerPosition.origin, markerPosition.angle, strokeWidth);
             marker->checkedLayer()->paintSVGResourceLayer(context, contentTransform);
         }
@@ -292,7 +296,7 @@ bool RenderSVGPath::isRenderingDisabled() const
     return !hasPath() || path().isEmpty();
 }
 
-void RenderSVGPath::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+void RenderSVGPath::styleDidChange(Style::Difference diff, const RenderStyle* oldStyle)
 {
     if (RefPtr pathElement = dynamicDowncast<SVGPathElement>(graphicsElement())) {
         if (!oldStyle || style().d() != oldStyle->d())

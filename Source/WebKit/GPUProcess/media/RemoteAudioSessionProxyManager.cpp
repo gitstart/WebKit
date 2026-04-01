@@ -281,11 +281,11 @@ void RemoteAudioSessionProxyManager::updatePresentingProcesses()
             presentingProcesses.append(token.auditToken());
     });
 
-    if (auto token = m_gpuProcess->protectedParentProcessConnection()->getAuditToken(); token && shouldAppendParentProcess)
+    if (auto token = protect(m_gpuProcess->parentProcessConnection())->getAuditToken(); token && shouldAppendParentProcess)
         presentingProcesses.append(*token);
 
     if (!presentingProcesses.isEmpty())
-        AudioSession::singleton().setPresentingProcesses(WTFMove(presentingProcesses));
+        AudioSession::singleton().setPresentingProcesses(WTF::move(presentingProcesses));
 }
 
 void RemoteAudioSessionProxyManager::beginInterruptionRemote()

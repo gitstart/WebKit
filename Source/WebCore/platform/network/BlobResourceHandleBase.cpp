@@ -42,7 +42,7 @@ static constexpr auto httpOKText = "OK"_s;
 static constexpr auto httpPartialContentText = "Partial Content"_s;
 
 BlobResourceHandleBase::BlobResourceHandleBase(bool async, RefPtr<BlobData>&& blobData)
-    : m_blobData(WTFMove(blobData))
+    : m_blobData(WTF::move(blobData))
 {
     if (async)
         m_stream = makeUnique<AsyncFileStream>(*this);
@@ -188,15 +188,13 @@ void BlobResourceHandleBase::getSizeForNext()
         break;
     case BlobDataItem::Type::File: {
         // Files know their sizes, but asking the stream to verify that the file wasn't modified.
-        RefPtr file = item.file();
+        Ref file = item.file();
         if (async())
             asyncStream()->getSize(file->path(), file->expectedModificationTime());
         else
             didGetSize(syncStream()->getSize(file->path(), file->expectedModificationTime()));
         break;
     }
-    default:
-        ASSERT_NOT_REACHED();
     }
 }
 
@@ -284,7 +282,6 @@ void BlobResourceHandleBase::readAsync()
 bool BlobResourceHandleBase::readDataAsync(const BlobDataItem& item)
 {
     ASSERT(isMainThread());
-    ASSERT(item.data());
 
     ASSERT(m_currentItemReadSize <= static_cast<uint64_t>(item.length()));
     uint64_t bytesToRead = static_cast<uint64_t>(item.length()) - m_currentItemReadSize;
@@ -399,7 +396,7 @@ void BlobResourceHandleBase::dispatchDidReceiveResponse()
     // as if the response had a Content-Disposition header with the filename parameter set to the File's name attribute.
     // Notably, this will affect a name suggested in "File Save As".
 
-    didReceiveResponse(WTFMove(response));
+    didReceiveResponse(WTF::move(response));
 }
 
 } // namespace WebCore

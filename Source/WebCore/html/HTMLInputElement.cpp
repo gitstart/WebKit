@@ -2,7 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004-2025 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2026 Apple Inc. All rights reserved.
  *           (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  * Copyright (C) 2007 Samuel Weinig (sam@webkit.org)
  * Copyright (C) 2010-2021 Google Inc. All rights reserved.
@@ -72,7 +72,7 @@
 #include "PseudoClassChangeInvalidation.h"
 #include "RadioInputType.h"
 #include "RenderObjectInlines.h"
-#include "RenderStyleSetters.h"
+#include "RenderStyle+SettersInlines.h"
 #include "RenderTextControlSingleLine.h"
 #include "RenderTheme.h"
 #include "ResourceLoadObserver.h"
@@ -80,6 +80,7 @@
 #include "SearchInputType.h"
 #include "Settings.h"
 #include "StepRange.h"
+#include "StyleComputedStyle+InitialInlines.h"
 #include "StyleGradientImage.h"
 #include "TextControlInnerElements.h"
 #include "TextInputType.h"
@@ -97,7 +98,7 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(HTMLInputElement);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(HTMLInputElement);
 
 using namespace CSS::Literals;
 using namespace HTMLNames;
@@ -470,7 +471,7 @@ void HTMLInputElement::setDefaultSelectionAfterFocus(SelectionRestorationMode re
     ASSERT(isTextField());
     unsigned start = 0;
     auto direction = SelectionHasNoDirection;
-    auto* frame = document().frame();
+    RefPtr frame = document().frame();
     if (frame && frame->editor().behavior().shouldMoveSelectionToEndWhenFocusingTextInput()) {
         start = std::numeric_limits<unsigned>::max();
         direction = SelectionHasForwardDirection;
@@ -514,7 +515,7 @@ void HTMLInputElement::resignStrongPasswordAppearance()
     setAutofilled(false);
     setAutofilledAndViewable(false);
     setAutofillButtonType(AutoFillButtonType::None);
-    if (auto* page = document().page())
+    if (RefPtr page = document().page())
         page->chrome().client().inputElementDidResignStrongPasswordAppearance(*this);
 }
 
@@ -544,7 +545,7 @@ void HTMLInputElement::updateType(const AtomString& typeAttributeValue)
 
     if (didStoreValue && !willStoreValue) {
         if (auto dirtyValue = std::exchange(m_valueIfDirty, { }); !dirtyValue.isEmpty())
-            setAttributeWithoutSynchronization(valueAttr, AtomString { WTFMove(dirtyValue) });
+            setAttributeWithoutSynchronization(valueAttr, AtomString { WTF::move(dirtyValue) });
     }
 
     m_inputType->removeShadowSubtree();
@@ -554,7 +555,7 @@ void HTMLInputElement::updateType(const AtomString& typeAttributeValue)
     bool didDirAutoUseValue = m_inputType->dirAutoUsesValue();
     bool previouslySelectable = m_inputType->supportsSelectionAPI();
 
-    m_inputType = WTFMove(newType);
+    m_inputType = WTF::move(newType);
     if (!didStoreValue && willStoreValue)
         m_valueIfDirty = sanitizeValue(attributeWithoutSynchronization(valueAttr));
     else
@@ -593,7 +594,7 @@ void HTMLInputElement::updateType(const AtomString& typeAttributeValue)
             attributeChanged(alignAttr, nullAtom(), align->value());
     }
 
-    if (auto* form = this->form(); form && wasSuccessfulSubmitButtonCandidate != m_inputType->canBeSuccessfulSubmitButton())
+    if (RefPtr form = this->form(); form && wasSuccessfulSubmitButtonCandidate != m_inputType->canBeSuccessfulSubmitButton())
         form->resetDefaultButton();
 
     runPostTypeUpdateTasks();
@@ -793,6 +794,10 @@ void HTMLInputElement::attributeChanged(const QualifiedName& name, const AtomStr
         if (selfOrPrecedingNodesAffectDirAuto())
             updateEffectiveTextDirection();
         m_valueAttributeWasUpdatedAfterParsing = !m_parsingInProgress;
+
+        if (CheckedPtr cache = document().existingAXObjectCache())
+            cache->valueChanged(*this);
+
         break;
     case AttributeNames::nameAttr:
         removeFromRadioButtonGroup();
@@ -928,7 +933,7 @@ bool HTMLInputElement::rendererIsNeeded(const RenderStyle& style)
 
 RenderPtr<RenderElement> HTMLInputElement::createElementRenderer(RenderStyle&& style, const RenderTreePosition&)
 {
-    return m_inputType->createInputRenderer(WTFMove(style));
+    return m_inputType->createInputRenderer(WTF::move(style));
 }
 
 bool HTMLInputElement::isReplaced(const RenderStyle*) const
@@ -1085,6 +1090,8 @@ void HTMLInputElement::setChecked(bool isChecked, WasSetByJavaScript wasCheckedB
         if (CheckedPtr cache = renderer->document().existingAXObjectCache())
             cache->checkedStateChanged(*this);
     }
+
+    invalidateStyleInternal();
 }
 
 void HTMLInputElement::setIndeterminate(bool newValue)
@@ -1135,7 +1142,7 @@ ValueOrReference<String> HTMLInputElement::value() const
 {
     if (shouldApplyScriptTrackingPrivacyProtection())
         return m_inputType->defaultValue();
-    if (auto* fileInput = dynamicDowncast<FileInputType>(*m_inputType))
+    if (RefPtr fileInput = dynamicDowncast<FileInputType>(*m_inputType))
         return fileInput->firstElementPathForInputValue();
 
     if (!m_valueIfDirty.isNull())
@@ -1407,7 +1414,7 @@ bool HTMLInputElement::isURLAttribute(const Attribute& attribute) const
 
 ExceptionOr<void> HTMLInputElement::showPicker()
 {
-    auto* frame = document().frame();
+    RefPtr frame = document().frame();
     if (!frame)
         return { };
 
@@ -1417,12 +1424,12 @@ ExceptionOr<void> HTMLInputElement::showPicker()
     // In cross-origin iframes it should throw a "SecurityError" DOMException except on file and color. In same-origin iframes it should work fine.
     // https://github.com/whatwg/html/issues/6909#issuecomment-917138991
     if (!m_inputType->allowsShowPickerAcrossFrames()) {
-        auto* localTopFrame = dynamicDowncast<LocalFrame>(frame->tree().top());
-        if (!localTopFrame || !frame->protectedDocument()->protectedSecurityOrigin()->isSameOriginAs(localTopFrame->protectedDocument()->protectedSecurityOrigin()))
+        RefPtr localTopFrame = dynamicDowncast<LocalFrame>(frame->tree().top());
+        if (!localTopFrame || !protect(protect(frame->document())->securityOrigin())->isSameOriginAs(protect(protect(localTopFrame->document())->securityOrigin())))
             return Exception { ExceptionCode::SecurityError, "Input showPicker() called from cross-origin iframe."_s };
     }
 
-    auto* window = frame->window();
+    RefPtr window = frame->window();
     if (!window || !window->consumeTransientActivation())
         return Exception { ExceptionCode::NotAllowedError, "Input showPicker() requires a user gesture."_s };
 
@@ -1622,8 +1629,8 @@ FileList* HTMLInputElement::files()
 
 void HTMLInputElement::setFiles(RefPtr<FileList>&& files, WasSetByJavaScript wasSetByJavaScript)
 {
-    if (auto* fileInputType = dynamicDowncast<FileInputType>(*m_inputType))
-        fileInputType->setFiles(WTFMove(files), wasSetByJavaScript);
+    if (RefPtr fileInputType = dynamicDowncast<FileInputType>(*m_inputType))
+        fileInputType->setFiles(WTF::move(files), wasSetByJavaScript);
 }
 
 #if ENABLE(DRAG_SUPPORT)
@@ -1853,20 +1860,20 @@ void HTMLInputElement::requiredStateChanged()
 
 Color HTMLInputElement::valueAsColor() const
 {
-    if (auto* colorInputType = dynamicDowncast<ColorInputType>(*m_inputType))
+    if (RefPtr colorInputType = dynamicDowncast<ColorInputType>(*m_inputType))
         return colorInputType->valueAsColor();
     return Color::black;
 }
 
 void HTMLInputElement::selectColor(StringView color)
 {
-    if (auto* colorInputType = dynamicDowncast<ColorInputType>(*m_inputType))
+    if (RefPtr colorInputType = dynamicDowncast<ColorInputType>(*m_inputType))
         colorInputType->selectColor(color);
 }
 
 Vector<Color> HTMLInputElement::suggestedColors() const
 {
-    if (auto* colorInputType = dynamicDowncast<ColorInputType>(*m_inputType))
+    if (RefPtr colorInputType = dynamicDowncast<ColorInputType>(*m_inputType))
         return colorInputType->suggestedColors();
     return { };
 }
@@ -2362,7 +2369,7 @@ RenderStyle HTMLInputElement::createInnerTextStyle(const RenderStyle& style)
         return isText() && !style.logicalHeight().isAuto() && !hasAutofillStrongPasswordButton();
     };
     if (shouldUseInitialLineHeight())
-        textBlockStyle.setLineHeight(RenderStyle::initialLineHeight());
+        textBlockStyle.setLineHeight(Style::ComputedStyle::initialLineHeight());
 
     return textBlockStyle;
 }

@@ -63,6 +63,7 @@ MSG_FOR_EXCESSIVE_LOGS = f'Stopped due to excessive logging, limit: {THRESHOLD_F
 HASH_LENGTH_TO_DISPLAY = 8
 SCAN_BUILD_OUTPUT_DIR = 'scan-build-output'
 SAFER_CPP_ARCHIVE_DIR = 'smart-pointer-result-archive'
+SWIFT_DIR = 'swift-project/swift'
 
 DNS_NAME = CURRENT_HOSTNAME
 if DNS_NAME in BUILD_WEBKIT_HOSTNAMES:
@@ -613,9 +614,6 @@ class TestMiniBrowserBundle(shell.ShellCommand, ShellMixin):
     descriptionDone = ["tested minibrowser bundle"]
     haltOnFailure = False
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, timeout=3 * 60 * 60, **kwargs)
-
     @defer.inlineCallbacks
     def run(self):
         filter_command = ' '.join(self.command) + ' 2>&1 | python3 Tools/Scripts/filter-test-logs minibrowser'
@@ -828,16 +826,17 @@ class RunTest262Tests(TestWithFailureCount, CustomFlagsMixin, ShellMixin):
     test_summary_re = re.compile(r'^\! NEW FAIL')
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, timeout=2 * 60 * 60, **kwargs)
+        kwargs['timeout'] = 60 * 60
+        super().__init__(*args, **kwargs)
 
     def run(self):
-        self.appendCustomBuildFlags(self.getProperty('platform'), self.getProperty('fullPlatform'))
         filter_command = ' '.join(self.command) + ' 2>&1 | python3 Tools/Scripts/filter-test-logs test262'
         self.command = self.shell_command(filter_command)
 
         self.log_observer = ParseByLineLogObserver(self.parseOutputLine)
         self.addLogObserver('stdio', self.log_observer)
         self.failedTestCount = 0
+        self.appendCustomBuildFlags(self.getProperty('platform'), self.getProperty('fullPlatform'))
 
         steps_to_add = [
             GenerateS3URL(
@@ -920,10 +919,12 @@ class RunWebKitTests(shell.Test, CustomFlagsMixin, ShellMixin):
 
         if additionalArguments:
             self.command += additionalArguments
-            # Double the timeout for site isolation queues.
-            # FIXME: We should remove the need for these timeouts altogether. (webkit.org/b/290867)
-            if '--site-isolation' in additionalArguments:
-                self.timeout = 10 * 60 * 60
+
+        # Up the timeout limit for site isolation queues to 300
+        # FIXME: We should remove the need for these timeouts altogether. (webkit.org/b/303404)
+        if additionalArguments and '--site-isolation' in additionalArguments:
+            idx = self.command.index('--exit-after-n-crashes-or-timeouts')
+            self.command[idx + 1] = '300'
 
         filter_command = ' '.join(self.command) + ' 2>&1 | python3 Tools/Scripts/filter-test-logs layout'
         self.command = self.shell_command(filter_command)
@@ -1043,7 +1044,7 @@ class RunWorldLeaksTests(RunWebKitTests):
 
 class RunAPITests(TestWithFailureCount, CustomFlagsMixin, ShellMixin):
     name = "run-api-tests"
-    VALID_ADDITIONAL_ARGUMENTS_LIST = ["--remote-layer-tree", "--use-gpu-process", "--child-processes", "--site-isolation",]
+    VALID_ADDITIONAL_ARGUMENTS_LIST = ["--remote-layer-tree", "--use-gpu-process", "--child-processes", "--site-isolation", "--wpe-legacy-api"]
     description = ["api tests running"]
     descriptionDone = ["api-tests"]
     jsonFileName = "api_test_results.json"
@@ -1090,7 +1091,13 @@ class RunAPITests(TestWithFailureCount, CustomFlagsMixin, ShellMixin):
         self.log_observer = ParseByLineLogObserver(self.parseOutputLine)
         self.addLogObserver('stdio', self.log_observer)
         self.failedTestCount = 0
-        self.appendCustomTestingFlags(self.getProperty('platform'), self.getProperty('device_model'))
+        platform = self.getProperty('platform')
+        if platform in ['gtk', 'wpe']:
+            self.command = ['python3', f'Tools/Scripts/run-{platform}-tests',
+                            f'--{self.getProperty("configuration")}',
+                            f'--json-output={self.jsonFileName}']
+        else:
+            self.appendCustomTestingFlags(platform, self.getProperty('device_model'))
         additionalArguments = self.getProperty("additionalArguments")
         for additionalArgument in additionalArguments or []:
             if self._is_valid_additional_argument(additionalArgument):
@@ -1340,77 +1347,6 @@ class RunMVTTests(shell.Test):
         return super().getResultSummary()
 
 
-class RunGLibAPITests(shell.Test):
-    name = "API-tests"
-    description = ["API tests running"]
-    descriptionDone = ["API tests"]
-
-    @defer.inlineCallbacks
-    def run(self):
-        additionalArguments = self.getProperty("additionalArguments")
-        if additionalArguments:
-            self.command += additionalArguments
-
-        self.log_observer = logobserver.BufferLogObserver()
-        self.addLogObserver('stdio', self.log_observer)
-
-        rc = yield super().run()
-
-        logText = self.log_observer.getStdout()
-
-        failedTests = 0
-        crashedTests = 0
-        timedOutTests = 0
-        messages = []
-        self.statusLine = []
-
-        foundItems = re.findall(r"Unexpected failures \((\d+)\)", logText)
-        if foundItems:
-            failedTests = int(foundItems[0])
-            messages.append("%d failures" % failedTests)
-
-        foundItems = re.findall(r"Unexpected crashes \((\d+)\)", logText)
-        if foundItems:
-            crashedTests = int(foundItems[0])
-            messages.append("%d crashes" % crashedTests)
-
-        foundItems = re.findall(r"Unexpected timeouts \((\d+)\)", logText)
-        if foundItems:
-            timedOutTests = int(foundItems[0])
-            messages.append("%d timeouts" % timedOutTests)
-
-        foundItems = re.findall(r"Unexpected passes \((\d+)\)", logText)
-        if foundItems:
-            newPassTests = int(foundItems[0])
-            messages.append("%d new passes" % newPassTests)
-
-        self.totalFailedTests = failedTests + crashedTests + timedOutTests
-        if messages:
-            self.statusLine = ["API tests: %s" % ", ".join(messages)]
-
-        if self.totalFailedTests > 0:
-            defer.returnValue(FAILURE)
-        else:
-            defer.returnValue(SUCCESS if rc == 0 else FAILURE)
-
-    def getText(self, cmd, results):
-        return self.getText2(cmd, results)
-
-    def getText2(self, cmd, results):
-        if results != SUCCESS and self.totalFailedTests > 0:
-            return self.statusLine
-
-        return [self.name]
-
-
-class RunGtkAPITests(RunGLibAPITests):
-    command = ["python3", "Tools/Scripts/run-gtk-tests", WithProperties("--%(configuration)s")]
-
-
-class RunWPEAPITests(RunGLibAPITests):
-    command = ["python3", "Tools/Scripts/run-wpe-tests", WithProperties("--%(configuration)s")]
-
-
 class RunWebDriverTests(shell.Test, CustomFlagsMixin, ShellMixin):
     name = "webdriver-test"
     description = ["webdriver-tests running"]
@@ -1440,13 +1376,17 @@ class RunWebDriverTests(shell.Test, CustomFlagsMixin, ShellMixin):
         logText = self.log_observer.getStdout()
 
         self.failuresCount = 0
+        self.timeoutCount = 0
         self.newPassesCount = 0
-        foundItems = re.findall(r"^Unexpected .+ \((\d+)\)", logText, re.MULTILINE)
-        if foundItems:
-            self.failuresCount = int(foundItems[0])
-        foundItems = re.findall(r"^Expected to .+, but passed \((\d+)\)", logText, re.MULTILINE)
-        if foundItems:
-            self.newPassesCount = int(foundItems[0])
+        foundFailures = re.findall(r"Unexpected failures \((\d+)\)", logText, re.MULTILINE)
+        if foundFailures:
+            self.failuresCount = int(foundFailures[0])
+        foundTimeouts = re.findall(r"Unexpected timeouts \((\d+)\)", logText, re.MULTILINE)
+        if foundTimeouts:
+            self.timeoutCount = int(foundTimeouts[0])
+        foundNewPasses = re.findall(r"Expected to .+, but passed \((\d+)\)", logText, re.MULTILINE)
+        if foundNewPasses:
+            self.newPassesCount = int(foundNewPasses[0])
 
         steps_to_add = [
             GenerateS3URL(
@@ -1471,19 +1411,36 @@ class RunWebDriverTests(shell.Test, CustomFlagsMixin, ShellMixin):
         else:
             defer.returnValue(SUCCESS)
 
-    def getText(self, cmd, results):
-        return self.getText2(cmd, results)
-
-    def getText2(self, cmd, results):
-        if results != SUCCESS and (self.failuresCount or self.newPassesCount):
-            lines = []
+    def getResultSummary(self):
+        if self.results != SUCCESS:
+            summaries = []
+            summary = None
+            shouldReportBuild = False
             if self.failuresCount:
-                lines.append("%d failures" % self.failuresCount)
+                suffix = "" if self.failuresCount == 1 else "s"
+                summaries.append(f"{self.failuresCount} failure{suffix}")
+                shouldReportBuild = True
+            if self.timeoutCount:
+                suffix = "" if self.timeoutCount == 1 else "s"
+                summaries.append(f"{self.timeoutCount} timeout{suffix}")
+                shouldReportBuild = True
             if self.newPassesCount:
-                lines.append("%d new passes" % self.newPassesCount)
-            return ["%s %s" % (self.name, ", ".join(lines))]
+                suffix = "" if self.newPassesCount == 1 else "es"
+                summaries.append(f"{self.newPassesCount} new pass{suffix}")
 
-        return [self.name]
+            if len(summaries) >= 2:
+                last = summaries.pop()
+                summary = ', '.join(summaries) + ' and ' + last
+            elif summaries:
+                summary = summaries[0]
+
+            if summary:
+                result = {'step': summary}
+                if shouldReportBuild:
+                    result['build'] = summary
+
+                return result
+        return super().getResultSummary()
 
 
 class RunWebKit1Tests(RunWebKitTests):
@@ -1557,19 +1514,26 @@ class RunBenchmarkTests(shell.Test):
                "--browser-version", WithProperties("%(archive_revision)s"),
                "--timestamp-from-repo", "."]
 
+    def __init__(self, *args, **kwargs):
+        kwargs['timeout'] = 2000
+        super().__init__(*args, **kwargs)
+
     def run(self):
-        platform = self.getProperty("platform")
-        if platform == "gtk":
-            self.command += ["--browser", "minibrowser-gtk"]
+        self.command += ['--build-log-url', f'{self.master.config.buildbotURL}#/builders/{self.build._builderid}/builds/{self.build.number}']
         return super().run()
 
-    def getText(self, cmd, results):
-        return self.getText2(cmd, results)
+    def evaluateCommand(self, cmd):
+        self.totalUnexpectedFailures = cmd.rc
+        if self.totalUnexpectedFailures != 0:
+            self.commandFailed = True
+            return FAILURE
+        return SUCCESS
 
-    def getText2(self, cmd, results):
-        if results != SUCCESS:
-            return ["%d benchmark tests failed" % cmd.rc]
-        return [self.name]
+    def getResultSummary(self):
+        if self.results != SUCCESS and self.totalUnexpectedFailures > 0:
+            s = "s" if self.totalUnexpectedFailures > 1 else ""
+            return {'step': f"Benchmark Tests: {self.totalUnexpectedFailures} unexpected failure{s}"}
+        return super().getResultSummary()
 
 
 class ArchiveTestResults(shell.ShellCommand):
@@ -2117,6 +2081,8 @@ class PrintConfiguration(steps.ShellSequence, ShellMixin):
             command_list.extend(self.command_list_apple)
         elif platform in ('gtk', 'wpe', 'jsc-only'):
             command_list.extend(self.command_list_linux)
+            if platform in ('gtk', 'wpe'):
+                command_list.append(self.shell_command('if test -f /etc/build-info; then cat /etc/build-info; else cat /etc/os-release; fi'))
 
         for command in command_list:
             self.commands.append(util.ShellArg(command=command, logname='stdio'))
@@ -2326,8 +2292,53 @@ class RebootWithUpdatedCrossTargetImage(shell.ShellCommand):
         defer.returnValue(rc)
 
 
-class SetO3OptimizationLevel(shell.ShellCommand):
-    command = ["Tools/Scripts/set-webkit-configuration", "--force-optimization-level=O3"]
-    name = "set-o3-optimization-level"
-    description = ["set O3 optimization level"]
-    descriptionDone = ["set O3 optimization level"]
+class BuildSwift(shell.ShellCommand, ShellMixin):
+    name = 'build-swift'
+
+    def __init__(self, **kwargs):
+        super().__init__(logEnviron=False, workdir=SWIFT_DIR, **kwargs)
+
+    @defer.inlineCallbacks
+    def run(self):
+        self.command = ['utils/build-script', '--skip-build-benchmarks', '--swift-darwin-supported-archs', self.getProperty('architecture'), '--release', '--no-assertions', '--swift-disable-dead-stripping', '--bootstrapping=hosttools']
+
+        filter_command = ' '.join(quote(str(c)) for c in self.command) + f" 2>&1 | python3 {self.getProperty('builddir')}/build/Tools/Scripts/filter-test-logs swift --output {self.getProperty('builddir')}/build/swift-build-log.txt"
+        self.command = self.shell_command(filter_command)
+
+        rc = yield super().run()
+
+        steps_to_add = [
+            GenerateS3URL(
+                f"{self.getProperty('fullPlatform')}-{self.getProperty('archForUpload')}-{self.getProperty('configuration')}-{self.name}",
+                extension='txt',
+                content_type='text/plain',
+                additions=f'{self.build.number}',
+            ),
+            UploadFileToS3(
+                'swift-build-log.txt',
+                links={self.name: 'Swift build log'},
+                content_type='text/plain',
+            )
+        ]
+        self.build.addStepsAfterCurrentStep(steps_to_add)
+
+        if rc != SUCCESS:
+            if self.getProperty('current_swift_tag', ''):
+                return WARNINGS
+            self.build.buildFinished(['Failed to set up swift, retrying update'], RETRY)
+
+        return defer.returnValue(rc)
+
+    def getResultSummary(self):
+        if self.results == SKIPPED:
+            return {'step': 'Swift executable already exists'}
+        elif self.results == WARNINGS:
+            return {'step': 'Failed to update swift, using previous checkout'}
+        elif self.results != SUCCESS:
+            return {'step': 'Failed to build Swift'}
+        return {'step': 'Successfully built Swift'}
+
+    def doStepIf(self, step):
+        if not self.getProperty('has_swift_executable'):
+            return True
+        return self.getProperty('canonical_swift_tag') and self.getProperty('current_swift_tag', '') != self.getProperty('canonical_swift_tag')

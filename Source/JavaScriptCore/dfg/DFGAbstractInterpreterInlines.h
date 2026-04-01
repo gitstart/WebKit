@@ -57,6 +57,7 @@
 #include "RegExpPrototype.h"
 #include "SetPrivateBrandStatus.h"
 #include "StringObject.h"
+#include "StringPrototypeInlines.h"
 #include "StructureCache.h"
 #include "StructureRareDataInlines.h"
 #include "WasmTypeDefinitionInlines.h"
@@ -1655,6 +1656,10 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
     case MapSet:
         break;
 
+    case MapOrSetSize:
+        setTypeForNode(node, SpecInt32Only);
+        break;
+
     case MapGet:
         clearForNode(node);
         break;
@@ -2396,6 +2401,7 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
                 || value.isType(SpecBoolean)
                 || value.isType(SpecSymbol)
                 || value.isType(SpecOther)) {
+                bool didFold = false;
                 switch (node->op()) {
                 case CompareLess:
                 case CompareGreater:
@@ -2403,6 +2409,7 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
                     if (value.isType(SpecSymbol))
                         break;
                     setConstant(node, jsBoolean(false));
+                    didFold = true;
                     break;
                 case CompareLessEq:
                 case CompareGreaterEq: {
@@ -2416,12 +2423,14 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
                 }
                 case CompareEq:
                     setConstant(node, jsBoolean(true));
+                    didFold = true;
                     break;
                 default:
                     DFG_CRASH(m_graph, node, "Unexpected node type");
                     break;
                 }
-                break;
+                if (didFold)
+                    break;
             }
         }
 
@@ -2594,28 +2603,28 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
         break;
     }
         
-    case StringCodePointAt:
-        setNonCellTypeForNode(node, SpecInt32Only);
-        break;
-
     case StringIndexOf:
         setNonCellTypeForNode(node, SpecInt32Only);
         break;
 
-    case StringFromCharCode:
-        switch (node->child1().useKind()) {
-        case Int32Use:
-        case KnownInt32Use:
-            break;
-        case UntypedUse:
+    case StringStartsWith:
+        setNonCellTypeForNode(node, SpecBoolean);
+        break;
+
+    case StringFromCharCode: {
+        if (node->child1().useKind() == Int32Use || node->child1().useKind() == KnownInt32Use) {
+            if (node->child1()->isInt32Constant() && node->child1()->asUInt32() <= maxSingleCharacterString) {
+                JSString* string = m_vm.smallStrings.singleCharacterString(static_cast<unsigned char>(node->child1()->asUInt32()));
+                setConstant(node, *m_graph.freeze(string));
+                break;
+            }
+        } else if (node->child1().useKind() == UntypedUse)
             clobberWorld();
-            break;
-        default:
+        else
             DFG_CRASH(m_graph, node, "Bad use kind");
-            break;
-        }
         setTypeForNode(node, SpecStringResolved);
         break;
+    }
 
     case StringCharAt: {
         auto& value = forNode(node->child1());
@@ -2631,12 +2640,16 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
         break;
     }
 
-    case StringCharCodeAt: {
+    case StringCharCodeAt:
+    case StringCodePointAt: {
         if (auto string = node->child1()->tryGetString(m_graph); !string.isNull()) {
             if (node->child2()->isInt32Constant()) {
                 int32_t index = node->child2()->asInt32();
                 if (index >= 0 && static_cast<unsigned>(index) < string.length()) {
-                    setConstant(node, jsNumber(string.characterAt(static_cast<unsigned>(index))));
+                    if (node->op() == StringCharCodeAt)
+                        setConstant(node, jsNumber(string.characterAt(static_cast<unsigned>(index))));
+                    else
+                        setConstant(node, jsNumber(codePointAt(string, static_cast<unsigned>(index), string.length())));
                     break;
                 }
             }
@@ -3668,9 +3681,13 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
         case PhantomCreateRest:
             break;
         default:
-            if (!m_graph.canDoFastSpread(node, forNode(node->child1())))
-                clobberWorld();
-            else
+            if (!m_graph.canDoFastSpread(node, forNode(node->child1()))) {
+                // SetObjectUse and MapIteratorObjectUse have no side effects since we iterate directly over internal storage.
+                if (node->child1().useKind() == SetObjectUse || node->child1().useKind() == MapIteratorObjectUse)
+                    didFoldClobberWorld();
+                else
+                    clobberWorld();
+            } else
                 didFoldClobberWorld();
             break;
         }
@@ -3919,8 +3936,6 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
         break;
     }
 
-    case NewGenerator:
-    case NewAsyncGenerator:    
     case NewInternalFieldObject:
     case NewObject:
     case MaterializeNewInternalFieldObject:
@@ -5228,6 +5243,7 @@ bool AbstractInterpreter<AbstractStateType>::executeEffects(unsigned clobberLimi
 
     case DefineDataProperty:
     case DefineAccessorProperty:
+    case ObjectDefineProperty:
         clobberWorld();
         break;
         

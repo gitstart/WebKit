@@ -71,7 +71,7 @@ class SourceBuffer
     , private LoggerHelper
 #endif
 {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(SourceBuffer);
+    WTF_MAKE_TZONE_ALLOCATED(SourceBuffer);
 public:
     void ref() const final { RefCounted::ref(); }
     void deref() const final { RefCounted::deref(); }
@@ -190,7 +190,7 @@ private:
     void videoTrackSelectedChanged(VideoTrack&) final;
 
     // EventTarget
-    enum EventTargetInterfaceType eventTargetInterface() const final { return EventTargetInterfaceType::SourceBuffer; }
+    enum EventTargetInterfaceType eventTargetInterface() const override { return EventTargetInterfaceType::SourceBuffer; }
 
     bool isRemoved() const;
     void scheduleEvent(const AtomString& eventName);
@@ -213,9 +213,6 @@ private:
 
     void rangeRemoval(const MediaTime&, const MediaTime&);
     RefPtr<MediaSource> protectedSource() const;
-    RefPtr<VideoTrackList> protectedVideoTracks() const;
-    RefPtr<AudioTrackList> protectedAudioTracks() const;
-    RefPtr<TextTrackList> protectedTextTracks() const;
 
     friend class Internals;
     using SamplesPromise = NativePromise<Vector<String>, PlatformMediaError>;
@@ -280,5 +277,7 @@ private:
 };
 
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_EVENTTARGET(SourceBuffer)
 
 #endif

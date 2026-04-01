@@ -60,7 +60,7 @@ public:
     ExceptionOr<void> leave();
     void close();
 
-    String identifier() const { return m_privateCoordinator ? m_privateCoordinator->identifier() : String(); }
+    String identifier() const { return m_privateCoordinator ? protectedPrivateCoordinator()->identifier() : String(); }
     MediaSessionCoordinatorState state() const { return m_state; }
 
     void seekTo(double, DOMPromiseDeferred<void>&&);
@@ -76,7 +76,7 @@ public:
         std::optional<double> atTime;
         std::optional<MonotonicTime> hostTime;
     };
-    std::optional<PlaySessionCommand> takeCurrentPlaySessionCommand() { return WTFMove(m_currentPlaySessionCommand); }
+    std::optional<PlaySessionCommand> takeCurrentPlaySessionCommand() { return WTF::move(m_currentPlaySessionCommand); }
 
 private:
     MediaSessionCoordinator(ScriptExecutionContext*);
@@ -112,6 +112,8 @@ private:
     static ASCIILiteral logClassName() { return "MediaSessionCoordinator"_s; }
     bool shouldFireEvents() const;
 
+    RefPtr<MediaSessionCoordinatorPrivate> protectedPrivateCoordinator() const { return m_privateCoordinator; }
+
     WeakPtr<MediaSession> m_session;
     RefPtr<MediaSessionCoordinatorPrivate> m_privateCoordinator;
     const Ref<const Logger> m_logger;
@@ -121,6 +123,8 @@ private:
     std::optional<PlaySessionCommand> m_currentPlaySessionCommand;
 };
 
-}
+} // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_EVENTTARGET(MediaSessionCoordinator)
 
 #endif // ENABLE(MEDIA_SESSION_COORDINATOR)

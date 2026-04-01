@@ -99,14 +99,14 @@ public:
 
     // The hit-tested point in the coordinates of the inner node.
     const LayoutPoint& localPoint() const { return m_localPoint; }
-    void setLocalPoint(const LayoutPoint& p) { m_localPoint = p; }
+    void setLocalPoint(const LayoutPoint&);
 
     WEBCORE_EXPORT void setToNonUserAgentShadowAncestor();
 
     const HitTestLocation& hitTestLocation() const { return m_hitTestLocation; }
 
     WEBCORE_EXPORT LocalFrame* frame() const;
-    WEBCORE_EXPORT Frame* targetFrame() const;
+    WEBCORE_EXPORT RefPtr<Frame> targetFrame() const;
     WEBCORE_EXPORT bool isSelected() const;
     WEBCORE_EXPORT bool allowsFollowingLink() const;
     WEBCORE_EXPORT bool allowsFollowingImageURL() const;

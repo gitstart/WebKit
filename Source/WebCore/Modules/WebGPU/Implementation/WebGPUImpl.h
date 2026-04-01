@@ -38,15 +38,17 @@
 #include <wtf/Function.h>
 #include <wtf/TZoneMalloc.h>
 
+namespace WebModel {
+struct MeshDescriptor;
+}
+
 namespace WebCore {
+class ConvertToBackingContext;
 class GraphicsContext;
 class IntSize;
+class Mesh;
+class ModelConvertToBackingContext;
 class NativeImage;
-namespace DDModel {
-class ConvertToBackingContext;
-class DDMesh;
-struct DDMeshDescriptor;
-}
 }
 
 namespace WebCore::WebGPU {
@@ -85,9 +87,9 @@ public:
     void ref() const final { RefCounted::ref(); }
     void deref() const final { RefCounted::deref(); }
 
-    static Ref<GPUImpl> create(WebGPUPtr<WGPUInstance>&& instance, ConvertToBackingContext& convertToBackingContext, DDModel::ConvertToBackingContext& modelConvertToBackingContext)
+    static Ref<GPUImpl> create(WebGPUPtr<WGPUInstance>&& instance, ConvertToBackingContext& convertToBackingContext, ModelConvertToBackingContext& modelConvertToBackingContext)
     {
-        return adoptRef(*new GPUImpl(WTFMove(instance), convertToBackingContext, modelConvertToBackingContext));
+        return adoptRef(*new GPUImpl(WTF::move(instance), convertToBackingContext, modelConvertToBackingContext));
     }
 
     virtual ~GPUImpl();
@@ -97,7 +99,7 @@ public:
 private:
     friend class DowncastConvertToBackingContext;
 
-    GPUImpl(WebGPUPtr<WGPUInstance>&&, ConvertToBackingContext&, DDModel::ConvertToBackingContext&);
+    GPUImpl(WebGPUPtr<WGPUInstance>&&, ConvertToBackingContext&, ModelConvertToBackingContext&);
 
     GPUImpl(const GPUImpl&) = delete;
     GPUImpl(GPUImpl&&) = delete;
@@ -105,9 +107,10 @@ private:
     GPUImpl& operator=(GPUImpl&&) = delete;
 
     WGPUInstance backing() const { return m_backing.get(); }
+    bool isGPUImpl() const final { return true; }
 
     void requestAdapter(const RequestAdapterOptions&, CompletionHandler<void(RefPtr<Adapter>&&)>&&) final;
-    RefPtr<DDModel::DDMesh> createModelBacking(unsigned width, unsigned height, CompletionHandler<void(Vector<MachSendRight>&&)>&&) final;
+    RefPtr<WebCore::Mesh> createModelBacking(unsigned width, unsigned height, const WebModel::ImageAsset& diffuseTexture, const WebModel::ImageAsset& specularTexture, CompletionHandler<void(Vector<MachSendRight>&&)>&&) final;
 
     RefPtr<PresentationContext> createPresentationContext(const PresentationContextDescriptor&) final;
 
@@ -142,9 +145,13 @@ private:
 
     WebGPUPtr<WGPUInstance> m_backing;
     const Ref<ConvertToBackingContext> m_convertToBackingContext;
-    const Ref<DDModel::ConvertToBackingContext> m_modelConvertToBackingContext;
+    const Ref<ModelConvertToBackingContext> m_modelConvertToBackingContext;
 };
 
 } // namespace WebCore::WebGPU
+
+SPECIALIZE_TYPE_TRAITS_BEGIN(WebCore::WebGPU::GPUImpl)
+    static bool isType(const WebCore::WebGPU::GPU& gpu) { return gpu.isGPUImpl(); }
+SPECIALIZE_TYPE_TRAITS_END()
 
 #endif // HAVE(WEBGPU_IMPLEMENTATION)

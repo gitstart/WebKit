@@ -72,7 +72,7 @@ static BOOL isForcingPreviewUpdate;
 
 - (void)dealloc
 {
-    ensureOnMainRunLoop([frame = std::exchange(_webFrame, nullptr), previews = WTFMove(_pagePreviews)] {
+    ensureOnMainRunLoop([frame = std::exchange(_webFrame, nullptr), previews = WTF::move(_pagePreviews)] {
         // Deallocate these on the main thread, not the current thread, since the
         // reference counting and the destructors aren't threadsafe.
     });
@@ -246,10 +246,8 @@ static void pageDidDrawToImage(std::optional<WebCore::ShareableBitmap::Handle>&&
         ASSERT([view _isPrintingPreview]);
 
         if (imageHandle) {
-            auto image = WebCore::ShareableBitmap::create(WTFMove(*imageHandle), WebCore::SharedMemory::Protection::ReadOnly);
-
-            if (image)
-                view->_pagePreviews.add(iter->value, image);
+            if (RefPtr image = WebCore::ShareableBitmap::create(WTF::move(*imageHandle), WebCore::SharedMemory::Protection::ReadOnly))
+                view->_pagePreviews.add(iter->value, image.releaseNonNull());
         }
 
         view->_expectedPreviewCallbacks.remove(*context->callbackID);
@@ -307,7 +305,7 @@ static void pageDidDrawToImage(std::optional<WebCore::ShareableBitmap::Handle>&&
             view->_printingCallbackCondition.notifyOne();
         }
     };
-    _expectedPrintCallback = page->drawPagesToPDF(webFrame, printInfo, firstPage - 1, lastPage - firstPage + 1, WTFMove(callback));
+    _expectedPrintCallback = page->drawPagesToPDF(webFrame, printInfo, firstPage - 1, lastPage - firstPage + 1, WTF::move(callback));
     context->view = self;
     context->callbackID = _expectedPrintCallback;
 }
@@ -376,7 +374,7 @@ static void pageDidComputePageRects(const Vector<WebCore::IntRect>& pageRects, d
         std::unique_ptr<IPCCallbackContext> contextDeleter(context);
         pageDidComputePageRects(pageRects, totalScaleFactorForPrinting, computedPageMargin, context);
     };
-    _expectedComputedPagesCallback = webFrame->protectedPage()->computePagesForPrinting(webFrame->frameID(), WebKit::PrintInfo([_printOperation.get() printInfo]), WTFMove(callback));
+    _expectedComputedPagesCallback = protect(webFrame->page())->computePagesForPrinting(webFrame->frameID(), WebKit::PrintInfo([_printOperation.get() printInfo]), WTF::move(callback));
     context->view = self;
     context->callbackID = _expectedComputedPagesCallback;
 
@@ -482,7 +480,7 @@ static RetainPtr<NSString> linkDestinationName(PDFDocument *document, PDFDestina
         return;
     }
 
-    RetainPtr<CGContextRef> context = [[NSGraphicsContext currentContext] CGContext];
+    RetainPtr context = [[NSGraphicsContext currentContext] CGContext];
 
     CGContextSaveGState(context.get());
     CGContextTranslateCTM(context.get(), point.x, point.y);
@@ -535,8 +533,8 @@ static RetainPtr<NSString> linkDestinationName(PDFDocument *document, PDFDestina
     scaledPrintingRect.scale(1 / _totalScaleFactorForPrinting);
     WebCore::IntSize imageSize(nsRect.size);
     imageSize.scale(page->deviceScaleFactor());
-    HashMap<WebCore::IntRect, RefPtr<WebCore::ShareableBitmap>>::iterator pagePreviewIterator = _pagePreviews.find(scaledPrintingRect);
-    if (pagePreviewIterator == _pagePreviews.end())  {
+    RefPtr bitmap = _pagePreviews.get(scaledPrintingRect);
+    if (!bitmap) {
         // It's too early to ask for page preview if we don't even know page size and scale.
         if ([self _hasPageRects]) {
             if (auto existingCallback = [self _expectedPreviewCallbackForRect:scaledPrintingRect]) {
@@ -554,9 +552,9 @@ static RetainPtr<NSString> linkDestinationName(PDFDocument *document, PDFDestina
                 IPCCallbackContext* context = new IPCCallbackContext;
                 auto callback = [context](std::optional<WebCore::ShareableBitmap::Handle>&& imageHandle) {
                     std::unique_ptr<IPCCallbackContext> contextDeleter(context);
-                    pageDidDrawToImage(WTFMove(imageHandle), context);
+                    pageDidDrawToImage(WTF::move(imageHandle), context);
                 };
-                _latestExpectedPreviewCallback = page->drawRectToImage(*webFrame, WebKit::PrintInfo([_printOperation.get() printInfo]), scaledPrintingRect, imageSize, WTFMove(callback));
+                _latestExpectedPreviewCallback = page->drawRectToImage(*webFrame, WebKit::PrintInfo([_printOperation.get() printInfo]), scaledPrintingRect, imageSize, WTF::move(callback));
                 _expectedPreviewCallbacks.add(*_latestExpectedPreviewCallback, scaledPrintingRect);
 
                 context->view = self;
@@ -569,12 +567,10 @@ static RetainPtr<NSString> linkDestinationName(PDFDocument *document, PDFDestina
         return;
     }
 
-    RefPtr<WebCore::ShareableBitmap> bitmap = pagePreviewIterator->value;
-
     WebCore::GraphicsContextCG context([[NSGraphicsContext currentContext] CGContext]);
     WebCore::GraphicsContextStateSaver stateSaver(context);
 
-    bitmap->paint(context, protectedWebFrame(self)->protectedPage()->deviceScaleFactor(), WebCore::IntPoint(nsRect.origin), bitmap->bounds());
+    bitmap->paint(context, protect(protectedWebFrame(self)->page())->deviceScaleFactor(), WebCore::IntPoint(nsRect.origin), bitmap->bounds());
 }
 
 - (void)drawRect:(NSRect)nsRect
@@ -618,7 +614,7 @@ static RetainPtr<NSString> linkDestinationName(PDFDocument *document, PDFDestina
                     continue;
 
                 unsigned destinationPageIndex = [_printedPagesPDFDocument indexForPage:retainPtr(destination.get().page).get()];
-                _linkDestinationsPerPage[destinationPageIndex].append(WTFMove(destination));
+                _linkDestinationsPerPage[destinationPageIndex].append(WTF::move(destination));
             }
         }
     }

@@ -29,7 +29,7 @@ class SVGFontElement;
 class StyleRuleFontFace;
 
 class SVGFontFaceElement final : public SVGElement {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(SVGFontFaceElement);
+    WTF_MAKE_TZONE_ALLOCATED(SVGFontFaceElement);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(SVGFontFaceElement);
 public:
     static Ref<SVGFontFaceElement> create(const QualifiedName&, Document&);
@@ -48,11 +48,9 @@ public:
     String fontFamily() const;
 
     SVGFontElement* associatedFontElement() const;
-    RefPtr<SVGFontElement> protectedFontElement() const;
     void rebuildFontFace();
-    
-    StyleRuleFontFace& fontFaceRule() { return m_fontFaceRule.get(); }
-    Ref<StyleRuleFontFace> protectedFontFaceRule() const;
+
+    StyleRuleFontFace& fontFaceRule() const { return m_fontFaceRule.get(); }
 
 private:
     SVGFontFaceElement(const QualifiedName&, Document&);

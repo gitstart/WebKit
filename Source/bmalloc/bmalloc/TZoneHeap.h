@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023-2024 Apple Inc. All rights reserved.
+ * Copyright (C) 2023-2024, 2026 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,6 +25,8 @@
 
 #pragma once
 
+#ifdef __cplusplus
+
 #include "BPlatform.h"
 
 #if BUSE(TZONE)
@@ -39,43 +41,27 @@
 
 #define BUSE_TZONE_SPEC_NAME_ARG 0
 #if BUSE_TZONE_SPEC_NAME_ARG
-#define TZONE_SPEC_NAME_ARG(x)  , x
+#define TZONE_SPEC_NAME_ARG(x)  x, __FILE__, __LINE__,
 #else
 #define TZONE_SPEC_NAME_ARG(x)
 #endif
 
-#if BUSE_DYNAMIC_TZONE_COMPACTION
-#define TZONE_DYNAMIC_COMPACTION_ARG(x) , ::bmalloc::api::encodeTZoneDynamicCompactModeKey<x>()
-#else
-#define TZONE_DYNAMIC_COMPACTION_ARG(x)
-#endif
-
 namespace bmalloc {
 
-namespace api {
-
-enum class TZoneMallocFallback : uint8_t {
-    Undecided,
-    ForceDebugMalloc,
-    DoNotFallBack
-};
-
-extern BEXPORT TZoneMallocFallback tzoneMallocFallback;
-
-using HeapRef = void*;
+namespace TZone {
 
 static constexpr size_t sizeClassFor(size_t size)
 {
-    constexpr unsigned tzoneSmallSizeThreshold = 512;
+    constexpr size_t tzoneSmallSizeThreshold = 512;
     constexpr double tzoneMidSizeGrowthRate = 1.05;
-    constexpr unsigned tzoneMidSizeThreshold = 7872;
+    constexpr size_t tzoneMidSizeThreshold = 7872;
     constexpr double tzoneLargeSizeGrowthRate = 1.3;
 
     if (size <= tzoneSmallSizeThreshold)
         return roundUpToMultipleOf<16>(size);
     double nextSize = tzoneSmallSizeThreshold;
     size_t previousRoundedNextSize = 0;
-    size_t roundedNextSize = tzoneSmallSizeThreshold;
+    size_t roundedNextSize = roundUpToMultipleOf<16>(tzoneSmallSizeThreshold);
     do {
         previousRoundedNextSize = roundedNextSize;
         nextSize = nextSize * tzoneMidSizeGrowthRate;
@@ -95,85 +81,112 @@ static constexpr size_t sizeClassFor(size_t size)
     return roundedNextSize;
 }
 
-struct SizeAndAlignment {
-    using Value = uint64_t;
+template<typename T>
+static constexpr size_t sizeClass()
+{
+    return sizeClassFor(sizeof(T));
+}
 
-    static constexpr Value encode(unsigned size, unsigned alignment)
+template<typename T>
+static constexpr size_t alignment()
+{
+    return roundUpToMultipleOf<16>(alignof(T));
+}
+
+template<typename T>
+inline constexpr unsigned inheritedSizeClass()
+{
+    if constexpr (requires { std::remove_pointer_t<T>::inheritedSizeClass; })
+        return std::remove_pointer_t<T>::inheritedSizeClass();
+    return 0;
+}
+
+template<typename T>
+inline constexpr unsigned inheritedAlignment()
+{
+    if constexpr (requires { std::remove_pointer_t<T>::inheritedAlignment; })
+        return std::remove_pointer_t<T>::inheritedAlignment();
+    return 0;
+}
+
+template<typename T>
+inline constexpr bool usesTZoneHeap()
+{
+    if constexpr (requires { std::remove_pointer_t<T>::usesTZoneHeap; })
+        return std::remove_pointer_t<T>::usesTZoneHeap();
+    return false;
+}
+
+} // namespace TZone
+
+namespace api {
+
+enum class TZoneMallocFallback : uint8_t {
+    Undecided,
+    ForceDebugMalloc,
+    DoNotFallBack
+};
+
+extern BEXPORT TZoneMallocFallback tzoneMallocFallback;
+
+using HeapRef = void*;
+using TZoneDescriptor = uint64_t;
+
+struct TZoneDescriptorHashTrait {
+    static constexpr unsigned long hash(TZoneDescriptor descriptor)
     {
-        return (static_cast<uint64_t>(alignment) << 32) | size;
-    }
-
-    template<typename T>
-    static constexpr Value encode()
-    {
-        size_t size = roundUpToMultipleOf<16>(::bmalloc::api::sizeClassFor(sizeof(T)));
-        size_t alignment = roundUpToMultipleOf<16>(alignof(T));
-        return encode(size, alignment);
-    }
-
-    static unsigned decodeSize(Value value) { return value; }
-    static unsigned decodeAlignment(Value value) { return value >> 32; }
-
-    static constexpr unsigned long hash(Value value)
-    {
-        return (decodeSize(value) ^ decodeAlignment(value)) >> 3;
+        return (descriptor >> 32) ^ descriptor;
     }
 };
 
 struct TZoneSpecification {
+
+    constexpr unsigned sizeClass() const { return TZone::sizeClassFor(size); }
+
+    template<typename T>
+    static constexpr unsigned encodeSize()
+    {
+        // This tracks the actual size (not sizeClass) of the TZone type.
+        constexpr size_t size = sizeof(T);
+        static_assert(size <= UINT32_MAX);
+        return size;
+    }
+
+    template<typename T>
+    static constexpr uint16_t encodeAlignment()
+    {
+        constexpr size_t alignment = TZone::alignment<T>();
+        static_assert(alignment <= UINT16_MAX);
+        static_assert(isPowerOfTwo(alignment));
+        return alignment;
+    }
+
+    template<typename T>
+    static constexpr TZoneDescriptor encodeDescriptor()
+    {
+        size_t sizeClass = TZone::sizeClass<T>();
+        size_t alignment = TZone::alignment<T>();
+        return encodeDescriptor(sizeClass, alignment);
+    }
+
+    static constexpr TZoneDescriptor encodeDescriptor(unsigned sizeClass, uint16_t alignment)
+    {
+        return (static_cast<uint64_t>(alignment) << 32) | sizeClass;
+    }
+
     HeapRef* addressOfHeapRef;
     unsigned size;
+    uint16_t alignment;
     CompactAllocationMode allocationMode;
-    SizeAndAlignment::Value sizeAndAlignment;
+    TZoneDescriptor descriptor;
 #if BUSE_TZONE_SPEC_NAME_ARG
     const char* name;
+    const char* file;
+    unsigned line;
 #endif
-#if BUSE_DYNAMIC_TZONE_COMPACTION
-    uint64_t dynamicCompactionKey;
-#endif
+
+    friend class TZoneDescriptorDecoder;
 };
-
-#if BUSE_DYNAMIC_TZONE_COMPACTION
-
-BALLOW_UNSAFE_BUFFER_USAGE_BEGIN
-template<size_t N>
-constexpr uint64_t fnv1aHash(const char (&name)[N])
-{
-    uint64_t hash = 14695981039346656037ull;
-    for (size_t i = 0; i < N - 1; ++i)
-        hash = (hash ^ static_cast<uint64_t>(name[i])) * 1099511628211ull;
-    return hash;
-}
-BALLOW_UNSAFE_BUFFER_USAGE_END
-
-template<typename T>
-inline constexpr uint64_t encodeTZoneDynamicCompactModeKey()
-{
-    // Use __PRETTY_FUNCTION__ instead of passing in #_type from
-    // MAKE_BTZONE_MALLOCED_COMMON_INLINE because #_type could collide across
-    // namespaces, while __PRETTY_FUNCTION__ will include the namespace in
-    // the signature.
-    return fnv1aHash(__PRETTY_FUNCTION__);
-}
-
-BEXPORT bool shouldDynamicallyCompactImpl(const TZoneSpecification& spec);
-
-extern bool g_tzoneDynamicCompactModeEnabled;
-inline bool shouldDynamicallyCompact(const TZoneSpecification& spec)
-{
-    if (!g_tzoneDynamicCompactModeEnabled)
-        return false;
-    return shouldDynamicallyCompactImpl(spec);
-}
-
-#else // !BUSE_DYNAMIC_TZONE_COMPACTION
-
-inline constexpr bool shouldDynamicallyCompact(const TZoneSpecification&)
-{
-    return false;
-}
-
-#endif // BUSE_DYNAMIC_TZONE_COMPACTION
 
 template<typename T>
 inline constexpr CompactAllocationMode compactAllocationMode()
@@ -195,7 +208,7 @@ BEXPORT void tzoneFree(void*);
 #define MAKE_BTZONE_MALLOCED_COMMON(_type, _compactMode, _exportMacro) \
 public: \
     using HeapRef = ::bmalloc::api::HeapRef; \
-    using SizeAndAlignment = ::bmalloc::api::SizeAndAlignment; \
+    using TZoneDescriptor = ::bmalloc::api::TZoneDescriptor; \
     using TZoneMallocFallback = ::bmalloc::api::TZoneMallocFallback; \
     using CompactAllocationMode = ::bmalloc::CompactAllocationMode; \
 private: \
@@ -203,6 +216,10 @@ private: \
     static _exportMacro const TZoneSpecification s_heapSpec; \
     \
 public: \
+    static constexpr bool usesTZoneHeap() { return true; } \
+    static constexpr unsigned inheritedSizeClass() { return ::bmalloc::TZone::sizeClass<_type>(); } \
+    static constexpr unsigned inheritedAlignment() { return ::bmalloc::TZone::alignment<_type>(); } \
+    \
     BINLINE void* operator new(size_t, void* p) { return p; } \
     BINLINE void* operator new[](size_t, void* p) { return p; } \
     \
@@ -217,14 +234,10 @@ public: \
     \
     void* operator new(size_t size) \
     { \
-        static const TZoneSpecification s_heapSpec = { &s_heapRef, sizeof(_type), CompactAllocationMode:: _compactMode, SizeAndAlignment::encode<_type>() TZONE_SPEC_NAME_ARG(#_type) TZONE_DYNAMIC_COMPACTION_ARG(_type) }; \
-        \
         if (!s_heapRef || size != sizeof(_type)) [[unlikely]] \
             BMUST_TAIL_CALL return operatorNewSlow(size); \
         BASSERT(::bmalloc::api::tzoneMallocFallback > TZoneMallocFallback::ForceDebugMalloc); \
         if constexpr (::bmalloc::api::compactAllocationMode<_type>() == CompactAllocationMode::Compact) \
-            return ::bmalloc::api::tzoneAllocateCompact(s_heapRef); \
-        if (::bmalloc::api::shouldDynamicallyCompact(s_heapSpec)) \
             return ::bmalloc::api::tzoneAllocateCompact(s_heapRef); \
         return ::bmalloc::api::tzoneAllocate ## _compactMode(s_heapRef); \
     } \
@@ -249,10 +262,15 @@ private: \
 private: \
     static _exportMacro BNO_INLINE void* operatorNewSlow(size_t size) \
     { \
-        static const TZoneSpecification s_heapSpec = { &s_heapRef, sizeof(_type), ::bmalloc::api::compactAllocationMode<_type>(), SizeAndAlignment::encode<_type>() TZONE_SPEC_NAME_ARG(#_type) TZONE_DYNAMIC_COMPACTION_ARG(_type) }; \
+        static const TZoneSpecification s_heapSpec = { \
+            &s_heapRef, \
+            TZoneSpecification::encodeSize<_type>(), \
+            TZoneSpecification::encodeAlignment<_type>(), \
+            ::bmalloc::api::compactAllocationMode<_type>(), \
+            TZoneSpecification::encodeDescriptor<_type>(), \
+            TZONE_SPEC_NAME_ARG(#_type) \
+        }; \
         if constexpr (::bmalloc::api::compactAllocationMode<_type>() == CompactAllocationMode::Compact) \
-            return ::bmalloc::api::tzoneAllocateCompactSlow(size, s_heapSpec); \
-        if (::bmalloc::api::shouldDynamicallyCompact(s_heapSpec)) \
             return ::bmalloc::api::tzoneAllocateCompactSlow(size, s_heapSpec); \
         return ::bmalloc::api::tzoneAllocate ## _compactMode ## Slow(size, s_heapSpec); \
     }
@@ -290,3 +308,5 @@ private: \
 using TZoneSpecification = ::bmalloc::api::TZoneSpecification;
 
 #endif // BUSE(TZONE)
+
+#endif // __cplusplus

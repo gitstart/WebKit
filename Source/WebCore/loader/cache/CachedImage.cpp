@@ -41,7 +41,7 @@
 #include "MemoryCache.h"
 #include "RenderElement.h"
 #include "RenderImage.h"
-#include "RenderStyleInlines.h"
+#include "RenderStyle+GettersInlines.h"
 #include "SVGElementTypeHelpers.h"
 #include "SVGImage.h"
 #include "SecurityOrigin.h"
@@ -66,7 +66,7 @@
 namespace WebCore {
 
 CachedImage::CachedImage(CachedResourceRequest&& request, PAL::SessionID sessionID, const CookieJar* cookieJar)
-    : CachedResource(WTFMove(request), Type::ImageResource, sessionID, cookieJar)
+    : CachedResource(WTF::move(request), Type::ImageResource, sessionID, cookieJar)
     , m_updateImageDataCount(0)
     , m_isManuallyCached(false)
     , m_shouldPaintBrokenImage(true)
@@ -140,7 +140,7 @@ void CachedImage::didAddClient(CachedResourceClient& client)
 {
     if (m_data && !m_image && !errorOccurred()) {
         createImage();
-        protectedImage()->setData(m_data.copyRef(), true);
+        protect(m_image)->setData(m_data.copyRef(), true);
     }
 
     ASSERT(client.resourceClientType() == CachedImageClient::expectedType());
@@ -270,11 +270,6 @@ Image* CachedImage::image() const
     return &Image::nullImage();
 }
 
-RefPtr<Image> CachedImage::protectedImage() const
-{
-    return image();
-}
-
 Image* CachedImage::imageForRenderer(const RenderObject* renderer)
 {
     if (errorOccurred() && m_shouldPaintBrokenImage) {
@@ -288,11 +283,10 @@ Image* CachedImage::imageForRenderer(const RenderObject* renderer)
         return &Image::nullImage();
 
     if (m_image->drawsSVGImage()) {
-        RefPtr image = m_svgImageCache->imageForRenderer(renderer);
-        if (image != &Image::nullImage())
-            return image.unsafeGet();
+        SUPPRESS_UNCOUNTED_LOCAL if (auto* image = m_svgImageCache->imageForRenderer(renderer); image != &Image::nullImage())
+            return image;
     }
-    return m_image.unsafeGet();
+    return m_image.get();
 }
 
 void CachedImage::setContainerContextForClient(const CachedImageClient& client, const LayoutSize& containerSize, float containerZoom, const URL& imageURL)
@@ -501,7 +495,7 @@ inline void CachedImage::clearImage()
 
         if (imageObserver->cachedImages().isEmptyIgnoringNullReferences()) {
             ASSERT(imageObserver->hasOneRef());
-            protectedImage()->setImageObserver(nullptr);
+            protect(m_image)->setImageObserver(nullptr);
         }
     }
 
@@ -623,7 +617,12 @@ void CachedImage::didReplaceSharedBufferContents()
     if (RefPtr image = m_image) {
         // Let the Image know that the FragmentedSharedBuffer has been rejigged, so it can let go of any references to the heap-allocated resource buffer.
         // FIXME(rdar://problem/24275617): It would be better if we could somehow tell the Image's decoder to swap in the new contents without destroying anything.
-        image->destroyDecodedData(true);
+        RefPtr data = m_data;
+        if (!image->tryReplaceData(data.releaseNonNull())) {
+            // If the image doesn't support replacing encoded data and re-decoding, then just
+            // destroy decoded data.
+            image->destroyDecodedData(true);
+        }
     }
     CachedResource::didReplaceSharedBufferContents();
 }
@@ -640,7 +639,7 @@ void CachedImage::responseReceived(ResourceResponse&& newResponse)
 {
     if (!response().isNull())
         clear();
-    CachedResource::responseReceived(WTFMove(newResponse));
+    CachedResource::responseReceived(WTF::move(newResponse));
 }
 
 void CachedImage::destroyDecodedData()
@@ -713,7 +712,7 @@ void CachedImage::imageFrameAvailable(const Image& image, ImageAnimatingState an
     }
 
     if (visibleState == VisibleInViewportState::No && animatingState == ImageAnimatingState::Yes)
-        protectedImage()->stopAnimation();
+        protect(m_image)->stopAnimation();
 
     if (decodingStatus != DecodingStatus::Partial)
         m_clientsWaitingForAsyncDecoding.clear();
@@ -744,6 +743,14 @@ void CachedImage::scheduleRenderingUpdate(const Image& image)
     CachedResourceClientWalker<CachedImageClient> walker(*this);
     while (RefPtr client = walker.next())
         client->scheduleRenderingUpdateForImage(*this);
+}
+
+bool CachedImage::useSystemDarkAppearance() const
+{
+    CachedResourceClientWalker<CachedImageClient> walker(*this);
+    if (RefPtr client = walker.next())
+        return client->useSystemDarkAppearance();
+    return false;
 }
 
 bool CachedImage::allowsAnimation(const Image& image) const

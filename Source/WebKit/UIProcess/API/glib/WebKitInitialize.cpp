@@ -32,12 +32,9 @@
 #include <JavaScriptCore/RemoteInspectorServer.h>
 #include <limits>
 #include <mutex>
+#include <skia/core/SkGraphics.h>
 #include <wtf/glib/GRefPtr.h>
 #include <wtf/glib/GUniquePtr.h>
-
-#if USE(SKIA)
-#include <skia/core/SkGraphics.h>
-#endif
 
 #if USE(SYSPROF_CAPTURE)
 #include <wtf/SystemTracing.h>
@@ -95,11 +92,11 @@ static void initializeRemoteInspectorServer()
         return;
     }
 
-    if (!Inspector::RemoteInspectorServer::singleton().start(WTFMove(inspectorAddress)))
+    if (!Inspector::RemoteInspectorServer::singleton().start(WTF::move(inspectorAddress)))
         return;
 
     if (inspectorHTTPAddress) {
-        if (RemoteInspectorHTTPServer::singleton().start(WTFMove(inspectorHTTPAddress), Inspector::RemoteInspectorServer::singleton().port()))
+        if (RemoteInspectorHTTPServer::singleton().start(WTF::move(inspectorHTTPAddress), Inspector::RemoteInspectorServer::singleton().port()))
             Inspector::RemoteInspector::setInspectorServerAddress(RemoteInspectorHTTPServer::singleton().inspectorServerAddress().utf8());
     } else
         Inspector::RemoteInspector::setInspectorServerAddress(address);
@@ -115,9 +112,9 @@ void webkitInitialize()
         SysprofAnnotator::createIfNeeded("WebKit (UI)"_s);
 #endif
         InitializeWebKit2();
-#if USE(SKIA)
+
         SkGraphics::Init();
-#endif
+
 #if ENABLE(REMOTE_INSPECTOR)
         initializeRemoteInspectorServer();
 #endif

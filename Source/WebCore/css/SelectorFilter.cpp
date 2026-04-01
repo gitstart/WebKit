@@ -81,8 +81,8 @@ bool SelectorFilter::parentStackIsConsistent(const ContainerNode* parentNode) co
 void SelectorFilter::initializeParentStack(Element& parent)
 {
     Vector<Element*, 20> ancestors;
-    for (auto* ancestor = &parent; ancestor; ancestor = ancestor->parentElement())
-        ancestors.append(ancestor);
+    for (CheckedPtr ancestor = &parent; ancestor; ancestor = ancestor->parentElement())
+        ancestors.append(ancestor.get());
     m_parentStack.reserveCapacity(m_parentStack.capacity() + ancestors.size());
     for (unsigned i = ancestors.size(); i--;)
         pushParent(ancestors[i]);
@@ -169,8 +169,8 @@ void SelectorFilter::collectSimpleSelectorHash(CollectedSelectorHashes& collecte
         case CSSSelector::PseudoClass::Where:
             // We can use the filter in the trivial case of single argument :is()/:where().
             // Supporting the multiargument case would require more than one hash.
-            if (selector.selectorList()->listSize() == 1)
-                collectSelectorHashes(collectedHashes, *selector.selectorList()->first(), IncludeRightmost::Yes);
+            if (selector.selectorList()->size() == 1)
+                collectSelectorHashes(collectedHashes, selector.selectorList()->first(), IncludeRightmost::Yes);
             break;
         default:
             break;

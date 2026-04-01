@@ -24,7 +24,7 @@
  */
 #pragma once
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 
 #import "WKIdentityDocumentPresentmentDelegate.h"
 
@@ -46,7 +46,6 @@ namespace WebCore {
 struct DigitalCredentialsRequestData;
 struct DigitalCredentialsResponseData;
 struct ExceptionData;
-struct OpenID4VPRequest;
 }
 
 @protocol WKDigitalCredentialsPickerDelegate <NSObject>
@@ -65,4 +64,4 @@ struct OpenID4VPRequest;
 - (void)dismissWithCompletionHandler:(CompletionHandler<void(bool)>&&)completionHandler;
 @end
 
-#endif // HAVE(DIGITAL_CREDENTIALS_UI)
+#endif // ENABLE(WEB_AUTHN)

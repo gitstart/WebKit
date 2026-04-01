@@ -47,7 +47,7 @@ class InternalObserverReduce final : public InternalObserver {
 public:
     static Ref<InternalObserverReduce> create(ScriptExecutionContext& context, Ref<AbortSignal>&& signal, Ref<ReducerCallback>&& callback, JSC::JSValue initialValue, Ref<DeferredPromise>&& promise)
     {
-        Ref internalObserver = adoptRef(*new InternalObserverReduce(context, WTFMove(signal), WTFMove(callback), initialValue, WTFMove(promise)));
+        Ref internalObserver = adoptRef(*new InternalObserverReduce(context, WTF::move(signal), WTF::move(callback), initialValue, WTF::move(promise)));
         internalObserver->suspendIfNeeded();
         return internalObserver;
     }
@@ -67,7 +67,7 @@ private:
         Ref vm = globalObject->vm();
 
         JSC::JSLockHolder lock(vm);
-        auto scope = DECLARE_CATCH_SCOPE(vm);
+        auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
         auto result = protectedCallback()->invokeRethrowingException(m_accumulator.getValue(), value, m_index++);
 
@@ -111,9 +111,9 @@ private:
 
     InternalObserverReduce(ScriptExecutionContext& context, Ref<AbortSignal>&& signal, Ref<ReducerCallback>&& callback, JSC::JSValue initialValue, Ref<DeferredPromise>&& promise)
         : InternalObserver(context)
-        , m_signal(WTFMove(signal))
-        , m_callback(WTFMove(callback))
-        , m_promise(WTFMove(promise))
+        , m_signal(WTF::move(signal))
+        , m_callback(WTF::move(callback))
+        , m_promise(WTF::move(promise))
     {
         if (!initialValue.isUndefined()) [[unlikely]]
             m_accumulator.setWeakly(initialValue);
@@ -126,13 +126,13 @@ private:
     const Ref<DeferredPromise> m_promise;
 };
 
-void createInternalObserverOperatorReduce(ScriptExecutionContext& context, Observable& observable, Ref<ReducerCallback>&& callback, JSC::JSValue initialValue, const SubscribeOptions& options, Ref<DeferredPromise>&& promise)
+void createInternalObserverOperatorReduce(ScriptExecutionContext& context, Observable& observable, Ref<ReducerCallback>&& callback, JSC::JSValue initialValue, SubscribeOptions&& options, Ref<DeferredPromise>&& promise)
 {
     Ref signal = AbortSignal::create(&context);
 
     Vector<Ref<AbortSignal>> dependentSignals = { signal };
     if (options.signal)
-        dependentSignals.append(Ref { *options.signal });
+        dependentSignals.append(options.signal.releaseNonNull());
     Ref dependentSignal = AbortSignal::any(context, dependentSignals);
 
     if (dependentSignal->aborted())
@@ -142,8 +142,8 @@ void createInternalObserverOperatorReduce(ScriptExecutionContext& context, Obser
         promise->reject<IDLAny>(reason);
     });
 
-    Ref observer = InternalObserverReduce::create(context, WTFMove(signal), WTFMove(callback), initialValue, WTFMove(promise));
-    observable.subscribeInternal(context, WTFMove(observer), SubscribeOptions { .signal = WTFMove(dependentSignal) });
+    Ref observer = InternalObserverReduce::create(context, WTF::move(signal), WTF::move(callback), initialValue, WTF::move(promise));
+    observable.subscribeInternal(context, WTF::move(observer), SubscribeOptions { .signal = WTF::move(dependentSignal) });
 }
 
 } // namespace WebCore

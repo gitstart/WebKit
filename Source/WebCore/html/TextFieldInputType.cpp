@@ -214,7 +214,7 @@ auto TextFieldInputType::handleKeydownEvent(KeyboardEvent& event) -> ShouldCallB
         event.setDefaultHandled();
     }
     RefPtr frame = element->document().frame();
-    if (frame && frame->protectedEditor()->doTextFieldCommandFromEvent(element.get(), &event))
+    if (frame && protect(frame->editor())->doTextFieldCommandFromEvent(element.get(), &event))
         event.setDefaultHandled();
     return ShouldCallBaseEventHandler::Yes;
 }
@@ -279,7 +279,7 @@ void TextFieldInputType::handleFocusEvent(Node* oldFocusedNode, FocusDirection)
     ASSERT_UNUSED(oldFocusedNode, oldFocusedNode != element());
     Ref element = *this->element();
     if (RefPtr frame = element->document().frame())
-        frame->protectedEditor()->textFieldDidBeginEditing(element.get());
+        protect(frame->editor())->textFieldDidBeginEditing(element.get());
 }
 
 void TextFieldInputType::handleBlurEvent()
@@ -300,7 +300,7 @@ RenderPtr<RenderElement> TextFieldInputType::createInputRenderer(RenderStyle&& s
 {
     ASSERT(element());
     // FIXME: https://github.com/llvm/llvm-project/pull/142471 Moving style is not unsafe.
-    SUPPRESS_UNCOUNTED_ARG return createRenderer<RenderTextControlSingleLine>(RenderObject::Type::TextControlSingleLine, *protectedElement(), WTFMove(style));
+    SUPPRESS_UNCOUNTED_ARG return createRenderer<RenderTextControlSingleLine>(RenderObject::Type::TextControlSingleLine, *protectedElement(), WTF::move(style));
 }
 
 bool TextFieldInputType::needsContainer() const
@@ -474,7 +474,7 @@ void TextFieldInputType::createDataListDropdownIndicator()
         return;
     
     ScriptDisallowedScope::EventAllowedScope allowedScope(*m_container);
-    Ref dataListDropdownIndicator = DataListButtonElement::create(element()->protectedDocument().get(), *this);
+    Ref dataListDropdownIndicator = DataListButtonElement::create(protect(element()->document()).get(), *this);
     m_dataListDropdownIndicator = dataListDropdownIndicator.copyRef();
     RefPtr { m_container }->appendChild(dataListDropdownIndicator);
     dataListDropdownIndicator->setUserAgentPart(UserAgentParts::webkitListButton());
@@ -645,14 +645,14 @@ void TextFieldInputType::updatePlaceholderText()
         return;
     }
     if (!m_placeholder) {
-        Ref placeholder = TextControlPlaceholderElement::create(element->protectedDocument());
+        Ref placeholder = TextControlPlaceholderElement::create(protect(element->document()));
         m_placeholder = placeholder.copyRef();
         if (RefPtr container = m_container)
-            element->protectedUserAgentShadowRoot()->insertBefore(placeholder, container);
+            protect(element->userAgentShadowRoot())->insertBefore(placeholder, container);
         else
-            element->protectedUserAgentShadowRoot()->insertBefore(placeholder, innerTextElement());
+            protect(element->userAgentShadowRoot())->insertBefore(placeholder, innerTextElement());
     }
-    RefPtr { m_placeholder }->setInnerText(WTFMove(placeholderText));
+    RefPtr { m_placeholder }->setInnerText(WTF::move(placeholderText));
 }
 
 bool TextFieldInputType::appendFormData(DOMFormData& formData) const
@@ -707,7 +707,7 @@ void TextFieldInputType::didSetValueByUserEdit()
     if (!element->focused())
         return;
     if (RefPtr frame = element->document().frame())
-        frame->protectedEditor()->textDidChangeInTextField(element.get());
+        protect(frame->editor())->textDidChangeInTextField(element.get());
     if (element->hasDataList())
         displaySuggestions(DataListSuggestionActivationType::TextChanged);
 }
@@ -796,9 +796,9 @@ void TextFieldInputType::autoFillButtonElementWasClicked()
     if (!page)
         return;
 
-    auto event = Event::create(eventNames().webkitautofillrequestEvent, Event::CanBubble::No, Event::IsCancelable::No);
+    auto event = Event::create(eventNames().webkitautofillrequestEvent, Event::CanBubble::No, Event::IsCancelable::No, Event::IsComposed::Yes);
     event->setIsAutofillEvent();
-    element->dispatchEvent(WTFMove(event));
+    element->dispatchEvent(WTF::move(event));
 
     page->chrome().client().handleAutoFillButtonClick(*element);
 }
@@ -851,7 +851,7 @@ void TextFieldInputType::createAutoFillButton(AutoFillButtonType autoFillButtonT
         return;
 
     ASSERT(element());
-    Ref autoFillButton = AutoFillButtonElement::create(element()->protectedDocument().get(), *this);
+    Ref autoFillButton = AutoFillButtonElement::create(protect(element()->document()).get(), *this);
     m_autoFillButton = autoFillButton.copyRef();
     RefPtr { m_container }->appendChild(autoFillButton);
 
@@ -934,7 +934,7 @@ IntRect TextFieldInputType::elementRectInRootViewCoordinates() const
     if (!element()->renderer())
         return IntRect();
     Ref element = *this->element();
-    return element->protectedDocument()->protectedView()->contentsToRootView(element->checkedRenderer()->absoluteBoundingBoxRect());
+    return protect(protect(element->document())->view())->contentsToRootView(element->checkedRenderer()->absoluteBoundingBoxRect());
 }
 
 Vector<DataListSuggestion> TextFieldInputType::suggestions()
@@ -964,13 +964,13 @@ Vector<DataListSuggestion> TextFieldInputType::suggestions()
                 suggestion.label = { };
 
             if (elementValue.isEmpty() || suggestion.value.startsWithIgnoringASCIICase(elementValue))
-                suggestions.append(WTFMove(suggestion));
+                suggestions.append(WTF::move(suggestion));
             else if (suggestion.value.containsIgnoringASCIICase(elementValue) || (canShowLabels && suggestion.label.containsIgnoringASCIICase(elementValue)))
-                matchesContainingValue.append(WTFMove(suggestion));
+                matchesContainingValue.append(WTF::move(suggestion));
         }
     }
 
-    suggestions.appendVector(WTFMove(matchesContainingValue));
+    suggestions.appendVector(WTF::move(matchesContainingValue));
     m_cachedSuggestions = std::make_pair(elementValue, suggestions);
 
     return suggestions;

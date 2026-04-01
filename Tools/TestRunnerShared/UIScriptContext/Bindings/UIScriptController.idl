@@ -47,6 +47,7 @@ dictionary TextExtractionTestOptions {
     boolean clipToBounds = false;
     boolean includeRects = false;
     boolean includeURLs = false;
+    boolean shortenURLs = false;
     DOMString nodeIdentifierInclusion = "none";
     boolean includeEventListeners = false;
     boolean includeAccessibilityAttributes = false;
@@ -54,6 +55,7 @@ dictionary TextExtractionTestOptions {
     boolean mergeParagraphs = false;
     boolean skipNearlyTransparentContent = false;
     DOMString outputFormat;
+    object dataDetectorTypes;
 };
 
 dictionary TextExtractionInteractionOptions {
@@ -465,5 +467,6 @@ interface UIScriptController {
 
 #if defined(ENABLE_THREADED_ANIMATIONS) && ENABLE_THREADED_ANIMATIONS
     DOMString animationStackForLayerWithID(unsigned long long layerID);
+    DOMString progressBasedTimelinesForScrollingNodeID(unsigned long long scrollingNodeID, unsigned long long processID);
 #endif
 };

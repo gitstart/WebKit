@@ -27,6 +27,7 @@
 #include "MatchResultCache.h"
 
 #include "MatchResult.h"
+#include "RenderStyle+SettersInlines.h"
 #include "ResolvedStyle.h"
 #include "StyleProperties.h"
 #include "StyledElement.h"
@@ -54,7 +55,7 @@ struct MatchResultCache::Entry : CanMakeCheckedPtr<MatchResultCache::Entry> {
     Vector<OriginalInlineProperty> originalInlineProperties;
 
     Entry(UnadjustedStyle&& unadjustedStyle, const MutableStyleProperties& inlineStyle)
-        : unadjustedStyle(WTFMove(unadjustedStyle))
+        : unadjustedStyle(WTF::move(unadjustedStyle))
         , inlineStyle(inlineStyle)
     {
         originalInlineProperties.reserveInitialCapacity(inlineStyle.size());
@@ -107,13 +108,13 @@ bool MatchResultCache::isUsableAfterInlineStyleChange(const MatchResultCache::En
 PropertyCascade::IncludedProperties MatchResultCache::computeAndUpdateChangedProperties(MatchResultCache::Entry& entry)
 {
     auto& originalProperties = entry.originalInlineProperties;
-    auto& inlineStyle = entry.inlineStyle.get();
+    Ref inlineStyle = entry.inlineStyle.get();
 
     PropertyCascade::IncludedProperties result;
 
     auto size = originalProperties.size();
     for (size_t index = 0; index < size; ++index) {
-        auto currentProperty = inlineStyle.propertyAt(index);
+        auto currentProperty = inlineStyle->propertyAt(index);
         auto propertyID = currentProperty.id();
 
         ASSERT(originalProperties[index].propertyID == propertyID);
@@ -134,7 +135,7 @@ PropertyCascade::IncludedProperties MatchResultCache::computeAndUpdateChangedPro
         if (propertyID < firstLowPriorityProperty || propertyID == CSSPropertyLineHeight)
             return PropertyCascade::normalProperties();
 
-        result.ids.append(propertyID);
+        result.ids.append(cascadeAliasProperty(propertyID));
     }
 
     return result;
@@ -160,7 +161,7 @@ const std::optional<CachedMatchResult> MatchResultCache::resultWithCurrentInline
 
     return CachedMatchResult {
         .unadjustedStyle = copy(entry->unadjustedStyle),
-        .changedProperties = WTFMove(changedProperties),
+        .changedProperties = WTF::move(changedProperties),
         .styleToUpdate = *entry->unadjustedStyle.style
     };
 }
@@ -183,7 +184,7 @@ void MatchResultCache::set(const Element& element, const UnadjustedStyle& unadju
     // For now we cache match results if there is mutable inline style. This way we can avoid
     // selector matching when it gets mutated again.
     auto* styledElement = dynamicDowncast<StyledElement>(element);
-    auto* inlineStyle = styledElement ? dynamicDowncast<MutableStyleProperties>(styledElement->inlineStyle()) : nullptr;
+    RefPtr inlineStyle = styledElement ? dynamicDowncast<MutableStyleProperties>(styledElement->inlineStyle()) : nullptr;
 
     if (inlineStyle)
         m_entries.set(element, makeUniqueRef<Entry>(copy(unadjustedStyle), *inlineStyle));

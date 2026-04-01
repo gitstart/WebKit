@@ -27,10 +27,8 @@
 #include "config.h"
 #include "ReferencedSVGResources.h"
 
-#include "FilterOperations.h"
 #include "LegacyRenderSVGResourceClipper.h"
 #include "PathOperation.h"
-#include "ReferenceFilterOperation.h"
 #include "RenderLayer.h"
 #include "RenderObjectInlines.h"
 #include "RenderSVGPath.h"
@@ -42,12 +40,13 @@
 #include "SVGMaskElement.h"
 #include "SVGResourceElementClient.h"
 #include "Settings.h"
+#include "StyleFilterReference.h"
 #include <wtf/TZoneMallocInlines.h>
 
 namespace WebCore {
 
 class CSSSVGResourceElementClient final : public SVGResourceElementClient {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(CSSSVGResourceElementClient);
+    WTF_MAKE_TZONE_ALLOCATED(CSSSVGResourceElementClient);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(CSSSVGResourceElementClient);
 public:
     CSSSVGResourceElementClient(RenderElement& clientRenderer)
@@ -63,7 +62,7 @@ private:
     const CheckedRef<RenderElement> m_clientRenderer;
 };
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(CSSSVGResourceElementClient);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(CSSSVGResourceElementClient);
 
 void CSSSVGResourceElementClient::resourceChanged(SVGElement& element)
 {
@@ -75,6 +74,9 @@ void CSSSVGResourceElementClient::resourceChanged(SVGElement& element)
         return;
     }
 
+    if (m_clientRenderer->needsLayout())
+        return;
+
     // Special case for markers. Markers can be attached to RenderSVGPath object. Marker positions are computed
     // once during layout, or if the shape itself changes. Here we manually update the marker positions without
     // requiring a relayout. Instead we can simply repaint the path - via the updateLayerPosition() logic, properly
@@ -85,7 +87,7 @@ void CSSSVGResourceElementClient::resourceChanged(SVGElement& element)
     m_clientRenderer->repaintOldAndNewPositionsForSVGRenderer();
 }
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(ReferencedSVGResources);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(ReferencedSVGResources);
 
 ReferencedSVGResources::ReferencedSVGResources(RenderElement& renderer)
     : m_renderer(renderer)
@@ -127,14 +129,14 @@ ReferencedSVGResources::SVGElementIdentifierAndTagPairs ReferencedSVGResources::
         [](const auto&) { }
     );
 
-    if (style.hasFilter()) {
-        const auto& filter = style.filter();
-        for (auto& value : filter) {
-            if (RefPtr referenceFilterOperation = dynamicDowncast<Style::ReferenceFilterOperation>(value.get())) {
-                if (!referenceFilterOperation->fragment().isEmpty())
-                    referencedResources.append({ referenceFilterOperation->fragment(), { SVGNames::filterTag } });
-            }
-        }
+    for (auto& value : style.filter()) {
+        WTF::switchOn(value,
+            [&](const Style::FilterReference& filterReference) {
+                if (!filterReference.cachedFragment.isEmpty())
+                    referencedResources.append({ filterReference.cachedFragment, { SVGNames::filterTag } });
+            },
+            []<CSSValueID C, typename T>(const FunctionNotation<C, T>&) { }
+        );
     }
 
     if (!document.settings().layerBasedSVGEngineEnabled())
@@ -268,12 +270,12 @@ RefPtr<SVGElement> ReferencedSVGResources::referencedPaintServerElement(TreeScop
     return elementForResourceIDs(treeScope, resourceID, { SVGNames::linearGradientTag, SVGNames::radialGradientTag, SVGNames::patternTag });
 }
 
-RefPtr<SVGFilterElement> ReferencedSVGResources::referencedFilterElement(TreeScope& treeScope, const Style::ReferenceFilterOperation& referenceFilter)
+RefPtr<SVGFilterElement> ReferencedSVGResources::referencedFilterElement(TreeScope& treeScope, const Style::FilterReference& filterReference)
 {
-    if (referenceFilter.fragment().isEmpty())
+    if (filterReference.cachedFragment.isEmpty())
         return nullptr;
 
-    return downcast<SVGFilterElement>(elementForResourceID(treeScope, referenceFilter.fragment(), SVGNames::filterTag));
+    return downcast<SVGFilterElement>(elementForResourceID(treeScope, filterReference.cachedFragment, SVGNames::filterTag));
 }
 
 LegacyRenderSVGResourceClipper* ReferencedSVGResources::referencedClipperRenderer(TreeScope& treeScope, const Style::ReferencePath& clipPath)

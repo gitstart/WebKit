@@ -34,7 +34,6 @@
 #include <atomic>
 #include <wtf/AbstractRefCountedAndCanMakeWeakPtr.h>
 #include <wtf/HashSet.h>
-#include <wtf/TypeCasts.h>
 #include <wtf/WeakHashSet.h>
 
 namespace WebCore {
@@ -46,7 +45,6 @@ class CanvasRenderingContext;
 class Element;
 class Event;
 class GraphicsContext;
-class GraphicsContextStateSaver;
 class Image;
 class ImageBuffer;
 class IntRect;
@@ -80,11 +78,6 @@ public:
     virtual void setImageBufferAndMarkDirty(RefPtr<ImageBuffer>&&) { }
 
     RefPtr<ImageBuffer> makeRenderingResultsAvailable(ShouldApplyPostProcessingToDirtyRect = ShouldApplyPostProcessingToDirtyRect::Yes);
-
-    size_t memoryCost() const;
-#if ENABLE(RESOURCE_USAGE)
-    size_t externalMemoryCost() const;
-#endif
 
     void setOriginClean() { m_originClean = true; }
     void setOriginTainted() { m_originClean = false; }
@@ -130,8 +123,6 @@ public:
     bool postProcessPixelBufferResults(Ref<PixelBuffer>&&) const;
     void recordLastFillText(const String&);
 
-    void resetGraphicsContextState() const;
-
     void setNoiseInjectionSalt(NoiseInjectionHashSalt salt) { m_canvasNoiseHashSalt = salt; }
     bool havePendingCanvasNoiseInjection() const { return m_canvasNoiseInjection.haveDirtyRects(); }
 
@@ -164,8 +155,6 @@ private:
 
     mutable IntSize m_size;
     mutable RefPtr<ImageBuffer> m_imageBuffer;
-    mutable std::atomic<size_t> m_imageBufferMemoryCost { 0 };
-    mutable std::unique_ptr<GraphicsContextStateSaver> m_contextStateSaver;
     mutable std::unique_ptr<CSSParserContext> m_cssParserContext;
 
     String m_lastFillText;
@@ -195,8 +184,3 @@ inline const CSSParserContext& CanvasBase::cssParserContext() const
 }
 
 } // namespace WebCore
-
-#define SPECIALIZE_TYPE_TRAITS_CANVAS(ToValueTypeName, predicate) \
-SPECIALIZE_TYPE_TRAITS_BEGIN(ToValueTypeName) \
-static bool isType(const WebCore::CanvasBase& canvas) { return canvas.predicate; } \
-SPECIALIZE_TYPE_TRAITS_END()

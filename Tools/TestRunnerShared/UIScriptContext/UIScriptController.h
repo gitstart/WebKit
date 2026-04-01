@@ -62,6 +62,7 @@ struct TextExtractionTestOptions {
     bool clipToBounds { false };
     bool includeRects { false };
     bool includeURLs { false };
+    bool shortenURLs { false };
     JSRetainPtr<JSStringRef> nodeIdentifierInclusion;
     bool includeEventListeners { false };
     bool includeAccessibilityAttributes { false };
@@ -69,6 +70,7 @@ struct TextExtractionTestOptions {
     bool mergeParagraphs { false };
     bool skipNearlyTransparentContent { false };
     JSRetainPtr<JSStringRef> outputFormat;
+    JSValueRef dataDetectorTypes { nullptr };
 };
 
 TextExtractionTestOptions* toTextExtractionTestOptions(JSContextRef, JSValueRef);
@@ -475,6 +477,7 @@ public:
 #if ENABLE(THREADED_ANIMATIONS)
     // Animations
     virtual JSRetainPtr<JSStringRef> animationStackForLayerWithID(uint64_t) const { notImplemented(); return nullptr; }
+    virtual JSRetainPtr<JSStringRef> progressBasedTimelinesForScrollingNodeID(unsigned long long, unsigned long long) const { notImplemented(); return nullptr; }
 #endif
 
 protected:

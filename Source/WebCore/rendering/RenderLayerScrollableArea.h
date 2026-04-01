@@ -142,8 +142,8 @@ public:
     bool hitTestResizerInFragments(const LayerFragments&, const HitTestLocation&, LayoutPoint& pointInFragment) const;
 
     void paintOverflowControls(GraphicsContext&, OptionSet<PaintBehavior>, const IntPoint&, const IntRect& damageRect, bool paintingOverlayControls = false);
-    void paintScrollCorner(GraphicsContext&, const IntPoint&, const IntRect& damageRect);
-    void paintResizer(GraphicsContext&, const LayoutPoint&, const LayoutRect& damageRect);
+    void paintScrollCorner(GraphicsContext&, const IntPoint&, const IntRect& scrollCornerRect, const IntRect& damageRect);
+    void paintResizer(GraphicsContext&, const LayoutPoint&, const IntRect& resizerRect, const LayoutRect& damageRect);
     void paintOverlayScrollbars(GraphicsContext&, const LayoutRect& damageRect, OptionSet<PaintBehavior>, RenderObject* subtreePaintRoot = nullptr);
 
     void updateScrollInfoAfterLayout();
@@ -260,10 +260,8 @@ public:
     void animatedScrollDidEnd() final;
     LayoutRect scrollRectToVisible(const LayoutRect& absoluteRect, const ScrollRectToVisibleOptions&);
     std::optional<LayoutRect> updateScrollPositionForScrollIntoView(const ScrollPositionChangeOptions&, const LayoutRect& revealRect, const LayoutRect& localExposeRect);
-    void updateScrollAnchoringElement() final;
-    void updateScrollPositionForScrollAnchoringController() final;
-    void invalidateScrollAnchoringElement() final;
-    ScrollAnchoringController* scrollAnchoringController() { return m_scrollAnchoringController.get(); }
+
+    ScrollAnchoringController* scrollAnchoringController() const final { return m_scrollAnchoringController.get(); }
 
     void updateAnchorPositionedAfterScroll() final;
 
@@ -340,7 +338,7 @@ private:
     RenderPtr<RenderScrollbarPart> m_scrollCorner;
     RenderPtr<RenderScrollbarPart> m_resizer;
 
-    std::unique_ptr<RenderMarquee> m_marquee; // Used for <marquee>.
+    std::unique_ptr<RenderMarquee> m_marquee;
 
     std::unique_ptr<ScrollAnchoringController> m_scrollAnchoringController;
 };

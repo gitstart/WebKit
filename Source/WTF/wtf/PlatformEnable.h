@@ -73,7 +73,15 @@
 /* ==== Platform additions: additions to PlatformEnable.h from outside the main repository ==== */
 
 #if USE(APPLE_INTERNAL_SDK) && __has_include(<WebKitAdditions/AdditionalFeatureDefines.h>)
+/* FIXME: Properly support using WKA in modules. */
+#if defined(__clang__) && defined(__has_feature) && __has_feature(modules)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnon-modular-include-in-module"
+#endif
 #include <WebKitAdditions/AdditionalFeatureDefines.h>
+#if defined(__clang__) && defined(__has_feature) && __has_feature(modules)
+#pragma clang diagnostic pop
+#endif
 #endif
 
 
@@ -300,6 +308,10 @@
 #define ENABLE_IOS_TOUCH_EVENTS 0
 #endif
 
+#if !defined(ENABLE_ISO18013_DOCUMENT_REQUEST_INFO)
+#define ENABLE_ISO18013_DOCUMENT_REQUEST_INFO 0
+#endif
+
 #if !defined(ENABLE_IPC_TESTING_API)
 /* Enable IPC testing on all ASAN builds and debug builds. */
 #if (ASAN_ENABLED || !defined(NDEBUG)) && PLATFORM(COCOA)
@@ -413,6 +425,10 @@
 
 #if !defined(ENABLE_MODEL_PROCESS)
 #define ENABLE_MODEL_PROCESS 0
+#endif
+
+#if !defined(ENABLE_SCENE_GEOMETRY_UPDATE)
+#define ENABLE_SCENE_GEOMETRY_UPDATE 0
 #endif
 
 #if !defined(ENABLE_MONOSPACE_FONT_EXCEPTION)
@@ -585,10 +601,6 @@
 #define ENABLE_WEBGL 0
 #endif
 
-#if !defined(ENABLE_WEBPROCESS_NSRUNLOOP)
-#define ENABLE_WEBPROCESS_NSRUNLOOP 0
-#endif
-
 #if !defined(ENABLE_WEB_ARCHIVE)
 #define ENABLE_WEB_ARCHIVE 0
 #endif
@@ -623,6 +635,10 @@
 
 #if !defined(ENABLE_WEBGPU)
 #define ENABLE_WEBGPU PLATFORM(COCOA)
+#endif
+
+#if !defined(ENABLE_WEBGPU_BY_DEFAULT) && ((PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 260000) || (PLATFORM(IOS)) || (PLATFORM(VISION)))
+#define ENABLE_WEBGPU_BY_DEFAULT 1
 #endif
 
 #if !defined(ENABLE_WEBXR_HIT_TEST)
@@ -822,13 +838,15 @@
 #define ENABLE_B3_JIT 1
 #endif
 
-#if ENABLE(WEBASSEMBLY) && ENABLE(JIT) && CPU(ARM)
+#if CPU(ARM)
+#undef ENABLE_WEBASSEMBLY
+#define ENABLE_WEBASSEMBLY 0
 #undef ENABLE_B3_JIT
-#define ENABLE_B3_JIT 1
+#define ENABLE_B3_JIT 0
 #undef ENABLE_WEBASSEMBLY_OMGJIT
-#define ENABLE_WEBASSEMBLY_OMGJIT 1
+#define ENABLE_WEBASSEMBLY_OMGJIT 0
 #undef ENABLE_WEBASSEMBLY_BBQJIT
-#define ENABLE_WEBASSEMBLY_BBQJIT 1
+#define ENABLE_WEBASSEMBLY_BBQJIT 0
 #endif
 
 #if !defined(ENABLE_WEBASSEMBLY) && (ENABLE(B3_JIT) && PLATFORM(COCOA) && CPU(ADDRESS64))
@@ -839,6 +857,12 @@
 
 #if !defined(ENABLE_WEBASSEMBLY) && CPU(ADDRESS64) && PLATFORM(COCOA) && !ENABLE(C_LOOP)
 #define ENABLE_WEBASSEMBLY 1
+#endif
+
+/* WebAssembly Debugger - GDB Remote Protocol debugging for WebAssembly.
+ * Restricted to macOS ARM64 only. Supports JSC shell TCP socket mode and WebKit RWI integration. */
+#if !defined(ENABLE_WEBASSEMBLY_DEBUGGER) && PLATFORM(MAC) && CPU(ARM64) && ENABLE(WEBASSEMBLY)
+#define ENABLE_WEBASSEMBLY_DEBUGGER 1
 #endif
 
 /* The SamplingProfiler is the probabilistic and low-overhead profiler used by
@@ -1104,4 +1128,13 @@
 
 #if !defined(ENABLE_ALLOW_MULTIPLE_COMMIT_LAYER_TREE_PENDING)
 #define ENABLE_ALLOW_MULTIPLE_COMMIT_LAYER_TREE_PENDING 0
+#endif
+
+#if !defined(ENABLE_TLS_1_2_DEFAULT_MINIMUM) \
+    && ((PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 260000) \
+    || ((PLATFORM(IOS) || PLATFORM(MACCATALYST)) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 260000) \
+    || (PLATFORM(VISION) && __VISION_OS_VERSION_MIN_REQUIRED >= 260000) \
+    || (PLATFORM(WATCHOS) && __WATCH_OS_VERSION_MIN_REQUIRED >= 260000) \
+    || (PLATFORM(APPLETV) && __TV_OS_VERSION_MIN_REQUIRED >= 260000))
+#define ENABLE_TLS_1_2_DEFAULT_MINIMUM 1
 #endif

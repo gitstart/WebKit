@@ -74,12 +74,20 @@ TextExtractionTestOptions* toTextExtractionTestOptions(JSContextRef context, JSV
     options.clipToBounds = booleanProperty(context, (JSObjectRef)argument, "clipToBounds", false);
     options.includeRects = booleanProperty(context, (JSObjectRef)argument, "includeRects", false);
     options.includeURLs = booleanProperty(context, (JSObjectRef)argument, "includeURLs", false);
+    options.shortenURLs = booleanProperty(context, (JSObjectRef)argument, "shortenURLs", false);
     options.includeEventListeners = booleanProperty(context, (JSObjectRef)argument, "includeEventListeners", false);
     options.includeAccessibilityAttributes = booleanProperty(context, (JSObjectRef)argument, "includeAccessibilityAttributes", false);
     options.includeTextInAutoFilledControls = booleanProperty(context, (JSObjectRef)argument, "includeTextInAutoFilledControls", false);
     options.wordLimit = static_cast<unsigned>(numericProperty(context, (JSObjectRef)argument, "wordLimit"));
     options.mergeParagraphs = booleanProperty(context, (JSObjectRef)argument, "mergeParagraphs", false);
     options.skipNearlyTransparentContent = booleanProperty(context, (JSObjectRef)argument, "skipNearlyTransparentContent", false);
+    options.dataDetectorTypes = [&] -> JSValueRef {
+        auto value = property(context, (JSObjectRef)argument, "dataDetectorTypes");
+        if (isValidValue(context, value))
+            return value;
+
+        return nullptr;
+    }();
     options.nodeIdentifierInclusion = stringProperty(context, (JSObjectRef)argument, "nodeIdentifierInclusion");
     options.outputFormat = stringProperty(context, (JSObjectRef)argument, "outputFormat");
     return &options;

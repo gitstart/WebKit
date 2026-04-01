@@ -60,11 +60,17 @@ public:
     double connectEnd() const;
     double secureConnectionStart() const;
     double requestStart() const;
+    double finalResponseHeadersStart() const;
+    double firstInterimResponseStart() const;
     double responseStart() const;
     double responseEnd() const;
     uint64_t transferSize() const;
     uint64_t encodedBodySize() const;
     uint64_t decodedBodySize() const;
+    double workerRouterEvaluationStart() const;
+    double workerCacheLookupStart() const;
+    const String& workerMatchedRouterSource() const;
+    const String& workerFinalRouterSource() const;
 
     const Vector<Ref<PerformanceServerTiming>>& serverTiming() const { return m_serverTiming; }
     ResourceTiming& resourceTiming() { return m_resourceTiming; }

@@ -194,7 +194,7 @@ set(WebKit_MESSAGES_IN_FILES
     GPUProcess/graphics/RemoteImageBufferSet
     GPUProcess/graphics/RemoteRenderingBackend
 
-    GPUProcess/graphics/Model/RemoteDDMesh
+    GPUProcess/graphics/Model/RemoteMesh
 
     GPUProcess/graphics/WebGPU/RemoteAdapter
     GPUProcess/graphics/WebGPU/RemoteBindGroup
@@ -238,7 +238,7 @@ set(WebKit_MESSAGES_IN_FILES
     GPUProcess/media/RemoteMediaEngineConfigurationFactoryProxy
     GPUProcess/media/RemoteMediaPlayerManagerProxy
     GPUProcess/media/RemoteMediaPlayerProxy
-    GPUProcess/media/RemoteMediaResourceManager
+    GPUProcess/media/RemoteMediaResourceLoader
     GPUProcess/media/RemoteMediaSourceProxy
     GPUProcess/media/RemoteRemoteCommandListenerProxy
     GPUProcess/media/RemoteSourceBufferProxy
@@ -354,6 +354,7 @@ set(WebKit_MESSAGES_IN_FILES
 
     WebProcess/GPU/media/AudioVideoRendererRemoteMessageReceiver
     WebProcess/GPU/media/RemoteAudioHardwareListener
+    WebProcess/GPU/media/RemoteMediaResourceLoaderProxy
     WebProcess/GPU/media/MediaPlayerPrivateRemote
     WebProcess/GPU/media/MediaSourcePrivateRemoteMessageReceiver
     WebProcess/GPU/media/RemoteAudioSession
@@ -468,6 +469,7 @@ set(WebKit_SERIALIZATION_IN_FILES
     Platform/IPC/SharedBufferReference.serialization.in
     Platform/IPC/SharedFileHandle.serialization.in
     Platform/IPC/StreamServerConnection.serialization.in
+    Platform/IPC/TransferString.serialization.in
 
     Shared/AccessibilityPreferences.serialization.in
     Shared/AuxiliaryProcessCreationParameters.serialization.in
@@ -481,6 +483,7 @@ set(WebKit_SERIALIZATION_IN_FILES
     Shared/DebuggableInfoData.serialization.in
     Shared/DocumentEditingContext.serialization.in
     Shared/DragControllerAction.serialization.in
+    Shared/DragEventForwardingData.serialization.in
     Shared/DrawingAreaInfo.serialization.in
     Shared/EditingRange.serialization.in
     Shared/EditorState.serialization.in
@@ -519,11 +522,13 @@ set(WebKit_SERIALIZATION_IN_FILES
     Shared/RemoteWorkerType.serialization.in
     Shared/ResourceLoadInfo.serialization.in
     Shared/ResourceLoadStatisticsParameters.serialization.in
+    Shared/RunJavaScriptParameters.serialization.in
     Shared/SameDocumentNavigationType.serialization.in
     Shared/SandboxExtension.serialization.in
     Shared/ScriptTrackingPrivacyFilter.serialization.in
     Shared/ScrollingAccelerationCurve.serialization.in
     Shared/SerializedNode.serialization.in
+    Shared/ServiceWorkerTimingInfo.serialization.in
     Shared/SessionState.serialization.in
     Shared/SyntheticEditingCommandType.serialization.in
     Shared/TextFlags.serialization.in
@@ -608,8 +613,6 @@ set(WebKit_SERIALIZATION_IN_FILES
     Shared/Extensions/WebExtensionWindow.serialization.in
 
     Shared/Gamepad/GamepadData.serialization.in
-
-    Shared/Model/ModelObjectDescriptorBase.serialization.in
 
     Shared/WebGPU/WebGPUBindGroupDescriptor.serialization.in
     Shared/WebGPU/WebGPUBindGroupEntry.serialization.in
@@ -726,7 +729,7 @@ set(WebCore_GENERATED_SERIALIZATION_IN_FILES
 
 set(WebCore_SERIALIZATION_IN_FILES
     ActivityState.serialization.in
-    DDModel.serialization.in
+    WebModel.serialization.in
     DocumentSyncData.serialization.in
     DragActions.serialization.in
     FrameTreeSyncData.serialization.in
@@ -749,10 +752,8 @@ set(WebKit_FRAMEWORKS
     PAL
     WTF
     WebCore
+    bmalloc
 )
-if (NOT USE_SYSTEM_MALLOC)
-    list(APPEND WebKit_FRAMEWORKS bmalloc)
-endif ()
 
 set(WebProcess_LIBRARIES WebKit)
 set(NetworkProcess_LIBRARIES WebKit)
@@ -786,7 +787,7 @@ if (USE_LIBWEBRTC)
     list(APPEND WebKit_LIBRARIES webrtc)
 endif ()
 
-if (USE_LIBRICE)
+if (USE_GSTREAMER_WEBRTC AND USE_LIBRICE)
     list(APPEND WebKit_LIBRARIES Rice::Io)
     list(APPEND WebKit_PRIVATE_INCLUDE_DIRECTORIES "${WEBKIT_DIR}/NetworkProcess/webrtc/rice")
 endif ()
@@ -955,6 +956,7 @@ add_custom_command(
         ${WebKit_DERIVED_SOURCES_DIR}/WebKitPlatformGeneratedSerializers.${WebKit_GENERATED_SERIALIZERS_SUFFIX}
     MAIN_DEPENDENCY ${WEBKIT_DIR}/Scripts/generate-serializers.py
     DEPENDS
+        ${WEBKIT_DIR}/Scripts/webkit/opaque_ipc_types.py
         ${WebKit_SERIALIZATION_DEPENDENCIES}
     COMMAND ${PYTHON_EXECUTABLE} ${WEBKIT_DIR}/Scripts/generate-serializers.py ${WebKit_GENERATED_SERIALIZERS_SUFFIX} ${WebKit_SERIALIZATION_DEPENDENCIES}
     WORKING_DIRECTORY ${WebKit_DERIVED_SOURCES_DIR}

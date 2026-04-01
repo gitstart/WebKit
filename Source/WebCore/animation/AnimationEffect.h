@@ -49,7 +49,7 @@ struct SingleAnimationRange;
 }
 
 class AnimationEffect : public RefCountedAndCanMakeWeakPtr<AnimationEffect> {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(AnimationEffect);
+    WTF_MAKE_TZONE_ALLOCATED(AnimationEffect);
 public:
     virtual ~AnimationEffect();
 
@@ -60,15 +60,15 @@ public:
     BasicEffectTiming getBasicTiming();
     ComputedEffectTiming getBindingsComputedTiming();
     ComputedEffectTiming getComputedTiming(UseCachedCurrentTime = UseCachedCurrentTime::Yes, EndpointInclusiveActiveInterval = EndpointInclusiveActiveInterval::No);
-    ExceptionOr<void> bindingsUpdateTiming(Document&, std::optional<OptionalEffectTiming>);
-    ExceptionOr<void> updateTiming(Document&, std::optional<OptionalEffectTiming>);
+    ExceptionOr<void> bindingsUpdateTiming(Document&, const OptionalEffectTiming&);
+    ExceptionOr<void> updateTiming(Document&, const OptionalEffectTiming&);
 
     virtual void animationDidTick() { };
     virtual void animationBecameReady() { };
     virtual void animationDidChangeTimingProperties() { };
     virtual void animationWasCanceled() { };
     virtual void animationSuspensionStateDidChange(bool) { };
-    virtual void animationTimelineDidChange(const AnimationTimeline*);
+    virtual void animationTimelineDidChange();
     virtual void animationDidFinish() { };
     virtual void animationPlaybackRateDidChange();
     virtual void animationProgressBasedTimelineSourceDidChangeMetrics(const Style::SingleAnimationRange&);

@@ -39,12 +39,17 @@
 #import <WebCore/TouchAction.h>
 #import <WebCore/TransformationMatrix.h>
 #import <WebCore/WebCoreCALayerExtras.h>
-#import <pal/cocoa/CoreMaterialSoftLink.h>
 #import <pal/spi/cocoa/QuartzCoreSPI.h>
 #import <ranges>
 #import <wtf/SoftLinking.h>
 #import <wtf/cocoa/TypeCastsCocoa.h>
 #import <wtf/cocoa/VectorCocoa.h>
+
+#if HAVE(CORE_ANIMATION_SEPARATED_LAYERS)
+#import "WKSeparatedImageView.h"
+#endif
+
+#import <pal/cocoa/CoreMaterialSoftLink.h>
 
 namespace WTF {
 
@@ -211,7 +216,7 @@ OptionSet<WebCore::TouchAction> touchActionsForPoint(UIView *rootView, const Web
             return WebCore::TouchAction::Auto;
 
         if ([view isKindOfClass:[WKCompositingView class]]) {
-            hitView = WTFMove(view);
+            hitView = WTF::move(view);
             break;
         }
     }
@@ -240,7 +245,7 @@ OptionSet<WebCore::EventListenerRegionType> eventListenerTypesAtPoint(UIView *ro
     RetainPtr<UIView> hitView;
     for (RetainPtr view : viewsAtPoint | std::views::reverse) {
         if ([view isKindOfClass:[WKCompositingView class]]) {
-            hitView = WTFMove(view);
+            hitView = WTF::move(view);
             break;
         }
     }
@@ -310,14 +315,14 @@ static Class scrollViewScrollIndicatorClassSingleton()
         if ([view isKindOfClass:[WKChildScrollView class]]) {
             if (WebKit::isScrolledBy((WKChildScrollView *)view.get(), viewsAtPoint.last().get())) {
                 LOG_WITH_STREAM(UIHitTesting, stream << " " << (void*)view.get() << " is child scroll view and scrolled by " << (void*)viewsAtPoint.last().get());
-                return view.unsafeGet();
+                return view.autorelease();
             }
         }
 
         if ([view isKindOfClass:WebKit::scrollViewScrollIndicatorClassSingleton()] && [[view superview] isKindOfClass:WKChildScrollView.class]) {
             if (WebKit::isScrolledBy((WKChildScrollView *)[view superview], viewsAtPoint.last().get())) {
                 LOG_WITH_STREAM(UIHitTesting, stream << " " << (void*)view.get() << " is the scroll indicator of child scroll view, which is scrolled by " << (void*)viewsAtPoint.last().get());
-                return view.unsafeGet();
+                return view.autorelease();
             }
         }
 
@@ -429,6 +434,13 @@ static Class scrollViewScrollIndicatorClassSingleton()
 
 #endif
 
+#if HAVE(CORE_ANIMATION_SEPARATED_LAYERS)
+@interface WKSeparatedImageView (WKContentControlled) <WKContentControlled>
+@end
+@implementation WKSeparatedImageView (WKContentControlled)
+@end
+#endif
+
 @implementation WKUIRemoteView
 
 - (instancetype)initWithFrame:(CGRect)frame pid:(pid_t)pid contextID:(uint32_t)contextID
@@ -477,16 +489,16 @@ static Class scrollViewScrollIndicatorClassSingleton()
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRequireFailureOfGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
 {
-    if ([otherGestureRecognizer isKindOfClass:WKDeferringGestureRecognizer.class])
-        return [(WKDeferringGestureRecognizer *)otherGestureRecognizer shouldDeferGestureRecognizer:gestureRecognizer];
+    if (RetainPtr otherDeferringGestureRecognizer = dynamic_objc_cast<WKDeferringGestureRecognizer>(otherGestureRecognizer))
+        return [otherDeferringGestureRecognizer shouldDeferGestureRecognizer:gestureRecognizer];
 
     return NO;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldBeRequiredToFailByGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
 {
-    if ([gestureRecognizer isKindOfClass:WKDeferringGestureRecognizer.class])
-        return [(WKDeferringGestureRecognizer *)gestureRecognizer shouldDeferGestureRecognizer:otherGestureRecognizer];
+    if (RetainPtr deferringGestureRecognizer = dynamic_objc_cast<WKDeferringGestureRecognizer>(gestureRecognizer))
+        return [deferringGestureRecognizer shouldDeferGestureRecognizer:otherGestureRecognizer];
 
     return NO;
 }

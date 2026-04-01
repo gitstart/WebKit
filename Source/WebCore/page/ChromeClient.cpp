@@ -61,7 +61,7 @@ RefPtr<GraphicsContextGL> ChromeClient::createGraphicsContextGL(const GraphicsCo
 
 RefPtr<ImageBuffer> ChromeClient::sinkIntoImageBuffer(std::unique_ptr<WebCore::SerializedImageBuffer> imageBuffer)
 {
-    return SerializedImageBuffer::sinkIntoImageBuffer(WTFMove(imageBuffer));
+    return SerializedImageBuffer::sinkIntoImageBuffer(WTF::move(imageBuffer));
 }
 
 void ChromeClient::ensureScrollbarsController(Page&, ScrollableArea& area, bool update) const
@@ -97,7 +97,7 @@ RefPtr<ShapeDetection::TextDetector> ChromeClient::createTextDetector() const
     return nullptr;
 }
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 ExceptionOr<Vector<ValidatedDigitalCredentialRequest>> ChromeClient::validateAndParseDigitalCredentialRequests(const SecurityOrigin&, const Document&, const Vector<UnvalidatedDigitalCredentialRequest>&)
 {
     return Exception { ExceptionCode::NotSupportedError, "Digital credentials are not supported."_s };

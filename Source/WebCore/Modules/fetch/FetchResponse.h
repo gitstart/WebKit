@@ -167,8 +167,8 @@ private:
         bool hasLoader() const { return !!m_loader; }
 
         RefPtr<FragmentedSharedBuffer> startStreaming();
-        NotificationCallback takeNotificationCallback() { return WTFMove(m_responseCallback); }
-        ConsumeDataByChunkCallback takeConsumeDataCallback() { return WTFMove(m_consumeDataCallback); }
+        NotificationCallback takeNotificationCallback() { return WTF::move(m_responseCallback); }
+        ConsumeDataByChunkCallback takeConsumeDataCallback() { return WTF::move(m_consumeDataCallback); }
 
     private:
         Loader(FetchResponse&, NotificationCallback&&);
@@ -188,7 +188,7 @@ private:
         bool m_shouldStartStreaming { false };
     };
 
-    RefPtr<Loader> protectedLoader() { return m_loader.get(); }
+    Loader* loader() const { return m_loader.get(); }
 
     mutable std::optional<ResourceResponse> m_filteredResponse;
     ResourceResponse m_internalResponse;

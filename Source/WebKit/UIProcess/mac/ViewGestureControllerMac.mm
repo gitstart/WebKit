@@ -26,6 +26,11 @@
 #import "config.h"
 #import "ViewGestureController.h"
 
+// FIXME: https://bugs.webkit.org/show_bug.cgi?id=306415
+#if ENABLE(BACK_FORWARD_LIST_SWIFT)
+#import "WebKit-Swift.h"
+#endif
+
 #if PLATFORM(MAC)
 
 #import "APINavigation.h"
@@ -168,7 +173,7 @@ void ViewGestureController::handleSmartMagnificationGesture(FloatPoint gestureLo
     LOG_WITH_STREAM(ViewGestures, stream << "ViewGestureController::handleSmartMagnificationGesture - gesture location " << gestureLocationInViewCoordinates);
 
     if (RefPtr page = m_webPageProxy.get())
-        page->protectedLegacyMainFrameProcess()->send(Messages::ViewGestureGeometryCollector::CollectGeometryForSmartMagnificationGesture(gestureLocationInViewCoordinates), page->webPageIDInMainFrameProcess());
+        protect(page->legacyMainFrameProcess())->send(Messages::ViewGestureGeometryCollector::CollectGeometryForSmartMagnificationGesture(gestureLocationInViewCoordinates), page->webPageIDInMainFrameProcess());
 }
 
 static float maximumRectangleComponentDelta(FloatRect a, FloatRect b)
@@ -470,7 +475,7 @@ void ViewGestureController::beginSwipeGesture(WebBackForwardListItem* targetItem
 
     [m_swipeLayer addSublayer:m_swipeSnapshotLayer.get()];
 
-    if (page->protectedPreferences()->viewGestureDebuggingEnabled())
+    if (protect(page->preferences())->viewGestureDebuggingEnabled())
         applyDebuggingPropertiesToSwipeViews();
 
     m_didCallEndSwipeGesture = false;

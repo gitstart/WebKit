@@ -47,7 +47,7 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(HTMLFrameElementBase);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(HTMLFrameElementBase);
 
 using namespace HTMLNames;
 
@@ -70,7 +70,7 @@ bool HTMLFrameElementBase::canLoad() const
 
 bool HTMLFrameElementBase::canLoadURL(const String& relativeURL) const
 {
-    return canLoadURL(protectedDocument()->completeURL(relativeURL));
+    return canLoadURL(protect(document())->completeURL(relativeURL));
 }
 
 // Note that unlike HTMLPlugInElement::canLoadURL this uses ScriptController::canAccessFromCurrentOrigin.
@@ -78,7 +78,7 @@ bool HTMLFrameElementBase::canLoadURL(const URL& completeURL) const
 {
     if (completeURL.protocolIsJavaScript()) {
         RefPtr contentDocument = this->contentDocument();
-        if (contentDocument && !ScriptController::canAccessFromCurrentOrigin(contentDocument->protectedFrame().get(), protectedDocument().get()))
+        if (contentDocument && !ScriptController::canAccessFromCurrentOrigin(contentDocument->protectedFrame().get(), protect(document()).get()))
             return false;
     }
 
@@ -105,7 +105,7 @@ void HTMLFrameElementBase::openURL(LockHistory lockHistory, LockBackForwardList 
     }
 
     auto completeURL = document->completeURL(m_frameURL);
-    auto finishOpeningURL = [weakThis = WeakPtr { *this }, frameName, lockHistory, lockBackForwardList, parentFrame = WTFMove(parentFrame), completeURL] {
+    auto finishOpeningURL = [weakThis = WeakPtr { *this }, frameName, lockHistory, lockBackForwardList, parentFrame = WTF::move(parentFrame), completeURL] {
         RefPtr protectedThis = weakThis.get();
         if (!protectedThis)
             return;
@@ -114,11 +114,11 @@ void HTMLFrameElementBase::openURL(LockHistory lockHistory, LockBackForwardList 
             return;
         }
 
-        protectedThis->protectedDocument()->willLoadFrameElement(completeURL);
+        protect(protectedThis->document())->willLoadFrameElement(completeURL);
         parentFrame->loader().subframeLoader().requestFrame(*protectedThis, protectedThis->m_frameURL, frameName, lockHistory, lockBackForwardList);
     };
 
-    document->quirks().triggerOptionalStorageAccessIframeQuirk(completeURL, WTFMove(finishOpeningURL));
+    document->quirks().triggerOptionalStorageAccessIframeQuirk(completeURL, WTF::move(finishOpeningURL));
 }
 
 void HTMLFrameElementBase::attributeChanged(const QualifiedName& name, const AtomString& oldValue, const AtomString& newValue, AttributeModificationReason attributeModificationReason)
@@ -173,7 +173,7 @@ void HTMLFrameElementBase::didFinishInsertingNode()
     if (!m_openingURLAfterInserting)
         work();
     else
-        document->checkedEventLoop()->queueTask(TaskSource::DOMManipulation, WTFMove(work));
+        document->checkedEventLoop()->queueTask(TaskSource::DOMManipulation, WTF::move(work));
 }
 
 void HTMLFrameElementBase::didAttachRenderers()

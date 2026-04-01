@@ -59,7 +59,7 @@
 #import "NodeName.h"
 #import "RenderImage.h"
 #import "RenderObjectStyle.h"
-#import "RenderStyleInlines.h"
+#import "RenderStyle+GettersInlines.h"
 #import "RenderText.h"
 #import "StyleExtractor.h"
 #import "StyleProperties.h"
@@ -236,7 +236,7 @@ static bool hasAncestorQualifyingForWritingToolsPreservation(Element* ancestor, 
 
     auto entry = cache.find(*ancestor);
     if (entry == cache.end()) {
-        auto result = elementQualifiesForWritingToolsPreservation(ancestor) || hasAncestorQualifyingForWritingToolsPreservation(ancestor->protectedParentElement().get(), cache);
+        auto result = elementQualifiesForWritingToolsPreservation(ancestor) || hasAncestorQualifyingForWritingToolsPreservation(protect(ancestor->parentElement()).get(), cache);
 
         cache.set(*ancestor, result);
         return result;
@@ -336,7 +336,7 @@ static void updateAttributes(const Node* node, const RenderStyle& style, OptionS
 {
 #if ENABLE(WRITING_TOOLS)
     if (includedElements.contains(IncludedElement::PreservedContent)) {
-        if (hasAncestorQualifyingForWritingToolsPreservation(node->protectedParentElement().get(), elementQualifiesForWritingToolsPreservationCache))
+        if (hasAncestorQualifyingForWritingToolsPreservation(protect(node->parentElement()).get(), elementQualifiesForWritingToolsPreservationCache))
             [attributes setObject:@(1) forKey:WTWritingToolsPreservedAttributeName];
         else
             [attributes removeObjectForKey:WTWritingToolsPreservedAttributeName];
@@ -405,13 +405,13 @@ static void updateAttributes(const Node* node, const RenderStyle& style, OptionS
         [attributes setObject:paragraphStyle.get() forKey:NSParagraphStyleAttributeName];
     }
 
-    Color foregroundColor = style.visitedDependentColorWithColorFilter(CSSPropertyColor);
+    auto foregroundColor = style.visitedDependentColorApplyingColorFilter();
     if (foregroundColor.isVisible())
         [attributes setObject:cocoaColor(foregroundColor).get() forKey:NSForegroundColorAttributeName];
     else
         [attributes removeObjectForKey:NSForegroundColorAttributeName];
 
-    Color backgroundColor = style.visitedDependentColorWithColorFilter(CSSPropertyBackgroundColor);
+    auto backgroundColor = style.visitedDependentBackgroundColorApplyingColorFilter();
     if (backgroundColor.isVisible())
         [attributes setObject:cocoaColor(backgroundColor).get() forKey:NSBackgroundColorAttributeName];
     else
@@ -506,7 +506,7 @@ static AttributedString editingAttributedStringInternal(const SimpleRange& range
         stringLength += currentTextLength;
     }
 
-    return AttributedString::fromNSAttributedString(WTFMove(string));
+    return AttributedString::fromNSAttributedString(WTF::move(string));
 }
 
 AttributedString editingAttributedString(const SimpleRange& range, OptionSet<IncludedElement> includedElements)

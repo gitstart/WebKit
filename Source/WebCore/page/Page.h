@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <JavaScriptCore/Debugger.h>
 #include <WebCore/ActivityState.h>
 #include <WebCore/AnimationFrameRate.h>
 #include <WebCore/BackForwardItemIdentifier.h>
@@ -75,8 +76,11 @@
 #include <WebCore/ShouldRequireExplicitConsentForGamepadAccess.h>
 #endif
 
+#if ENABLE(THREADED_ANIMATIONS)
+#include <WebCore/AcceleratedTimelinesUpdater.h>
+#endif
+
 namespace JSC {
-class Debugger;
 class JSGlobalObject;
 }
 
@@ -154,7 +158,6 @@ class MediaSessionCoordinatorPrivate;
 class MediaSessionManagerInterface;
 class ModelPlayerProvider;
 class PageConfiguration;
-class PageDebuggable;
 class PageGroup;
 class PageInspectorController;
 class PageOverlayController;
@@ -284,7 +287,6 @@ enum class CompositingPolicy : bool {
 
 enum class FinalizeRenderingUpdateFlags : uint8_t {
     ApplyScrollingTreeLayerPositions    = 1 << 0,
-    InvalidateImagesWithAsyncDecodes    = 1 << 1,
 };
 
 enum class RenderingUpdateStep : uint32_t {
@@ -419,18 +421,16 @@ public:
 
     EditorClient& editorClient() { return m_editorClient.get(); }
 
-    WEBCORE_EXPORT RefPtr<LocalFrame> localMainFrame();
-    WEBCORE_EXPORT RefPtr<const LocalFrame> localMainFrame() const;
-    WEBCORE_EXPORT RefPtr<Document> localTopDocument();
-    WEBCORE_EXPORT RefPtr<Document> localTopDocument() const;
+    WEBCORE_EXPORT LocalFrame* localMainFrame() const;
+    WEBCORE_EXPORT Document* localTopDocument() const;
 
-    Frame& mainFrame() { return m_mainFrame.get(); }
-    const Frame& mainFrame() const { return m_mainFrame.get(); }
+    Frame& mainFrame() const { return m_mainFrame.get(); }
     WEBCORE_EXPORT Ref<Frame> protectedMainFrame() const;
     WEBCORE_EXPORT void setMainFrame(Ref<Frame>&&);
     WEBCORE_EXPORT const URL& mainFrameURL() const;
     SecurityOrigin& mainFrameOrigin() const;
     Ref<SecurityOrigin> protectedMainFrameOrigin() const;
+    WEBCORE_EXPORT RefPtr<Frame> findFrameByPath(const Vector<uint64_t>& path) const;
 
     WEBCORE_EXPORT void setMainFrameURLAndOrigin(const URL&, RefPtr<SecurityOrigin>&&);
 #if ENABLE(DOM_AUDIO_SESSION)
@@ -459,7 +459,7 @@ public:
     void setOpenedByDOMWithOpener(bool value) { m_openedByDOMWithOpener = value; }
 
     const RegistrableDomain& openedByScriptDomain() const { return m_openedByScriptDomain; }
-    void setOpenedByScriptDomain(RegistrableDomain&& domain) { m_openedByScriptDomain = WTFMove(domain); }
+    void setOpenedByScriptDomain(RegistrableDomain&& domain) { m_openedByScriptDomain = WTF::move(domain); }
 
     WEBCORE_EXPORT void goToItem(LocalFrame& rootFrame, HistoryItem&, FrameLoadType, ShouldTreatAsContinuingLoad, ProcessSwapDisposition processSwapDisposition = ProcessSwapDisposition::None);
     void goToItemForNavigationAPI(LocalFrame& rootFrame, HistoryItem&, FrameLoadType, LocalFrame& triggeringFrame, NavigationAPIMethodTracker*);
@@ -486,14 +486,6 @@ public:
     bool shouldApplyScreenFingerprintingProtections(Document&) const;
 
     OptionSet<AdvancedPrivacyProtections> advancedPrivacyProtections() const;
-
-#if ENABLE(REMOTE_INSPECTOR)
-    WEBCORE_EXPORT bool inspectable() const;
-    WEBCORE_EXPORT void setInspectable(bool);
-    WEBCORE_EXPORT String remoteInspectionNameOverride() const;
-    WEBCORE_EXPORT void setRemoteInspectionNameOverride(const String&);
-    void remoteInspectorInformationDidChange();
-#endif
 
     Chrome& chrome() { return m_chrome.get(); }
     const Chrome& chrome() const { return m_chrome.get(); }
@@ -788,9 +780,7 @@ public:
 
 #if ENABLE(WEB_AUTHN)
     AuthenticatorCoordinator& authenticatorCoordinator() { return m_authenticatorCoordinator.get(); }
-#if HAVE(DIGITAL_CREDENTIALS_UI)
     CredentialRequestCoordinator& credentialRequestCoordinator() { return m_credentialRequestCoordinator.get(); }
-#endif
 #endif
 
 #if ENABLE(APPLICATION_MANIFEST)
@@ -984,11 +974,6 @@ public:
     void sawMediaEngine(const String& engineName);
     void resetSeenMediaEngines();
 
-#if ENABLE(REMOTE_INSPECTOR)
-    PageDebuggable& inspectorDebuggable() { return m_inspectorDebuggable.get(); }
-    const PageDebuggable& inspectorDebuggable() const { return m_inspectorDebuggable.get(); }
-#endif
-
     void hiddenPageCSSAnimationSuspensionStateChanged();
 
 #if ENABLE(VIDEO)
@@ -1020,6 +1005,7 @@ public:
     PluginInfoProvider& pluginInfoProvider();
     Ref<PluginInfoProvider> protectedPluginInfoProvider() const;
 
+    UserContentProvider& userContentProviderForFrame() { return m_userContentProvider; }
     WEBCORE_EXPORT Ref<UserContentProvider> protectedUserContentProviderForFrame();
     WEBCORE_EXPORT void setUserContentProviderForWebKitLegacy(Ref<UserContentProvider>&&);
 
@@ -1198,6 +1184,7 @@ public:
 
     MonotonicTime lastRenderingUpdateTimestamp() const { return m_lastRenderingUpdateTimestamp; }
     std::optional<MonotonicTime> nextRenderingUpdateTimestamp() const;
+    WEBCORE_EXPORT std::optional<Seconds> timeToNextRenderingUpdateForTesting() const;
 
     bool httpsUpgradeEnabled() const { return m_httpsUpgradeEnabled; }
 
@@ -1410,6 +1397,13 @@ public:
     WEBCORE_EXPORT void clearCaptionDisplaySettingsClientForTesting();
     void showCaptionDisplaySettings(HTMLMediaElement&, const ResolvedCaptionDisplaySettingsOptions&, CompletionHandler<void(ExceptionOr<void>)>&&);
 #endif
+
+#if ENABLE(THREADED_ANIMATIONS)
+    AcceleratedTimelinesUpdater* acceleratedTimelinesUpdater() const { return m_acceleratedTimelinesUpdater.get(); }
+    AcceleratedTimelinesUpdater& ensureAcceleratedTimelinesUpdater();
+#endif
+
+    void syncLocalFrameInfoToRemote();
 
 private:
     explicit Page(PageConfiguration&&);
@@ -1634,10 +1628,6 @@ private:
 
     bool m_scriptedAnimationsSuspended { false };
 
-#if ENABLE(REMOTE_INSPECTOR)
-    const Ref<PageDebuggable> m_inspectorDebuggable;
-#endif
-
     RefPtr<IDBClient::IDBConnectionToServer> m_idbConnectionToServer;
 
     MemoryCompactRobinHoodHashSet<String> m_seenPlugins;
@@ -1745,11 +1735,7 @@ private:
 
 #if ENABLE(WEB_AUTHN)
     const UniqueRef<AuthenticatorCoordinator> m_authenticatorCoordinator;
-
-#if HAVE(DIGITAL_CREDENTIALS_UI)
     const Ref<CredentialRequestCoordinator> m_credentialRequestCoordinator;
-#endif
-
 #endif // ENABLE(WEB_AUTHN)
 
 #if ENABLE(APPLICATION_MANIFEST)
@@ -1894,6 +1880,11 @@ private:
 #if ENABLE(VIDEO)
     RefPtr<CaptionDisplaySettingsClient> m_captionDisplaySettingsClientForTesting;
 #endif
+
+#if ENABLE(THREADED_ANIMATIONS)
+    const std::unique_ptr<AcceleratedTimelinesUpdater> m_acceleratedTimelinesUpdater;
+#endif
+
 }; // class Page
 
 WTF::TextStream& operator<<(WTF::TextStream&, RenderingUpdateStep);

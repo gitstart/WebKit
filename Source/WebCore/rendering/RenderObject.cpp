@@ -85,6 +85,8 @@
 #include "RenderWidget.h"
 #include "RenderedPosition.h"
 #include "SVGRenderSupport.h"
+#include "ScrollAnchoringController.h"
+#include "SelectionGeometry.h"
 #include "Settings.h"
 #include "StyleResolver.h"
 #include "TransformState.h"
@@ -95,15 +97,11 @@
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/text/TextStream.h>
 
-#if PLATFORM(IOS_FAMILY)
-#include "SelectionGeometry.h"
-#endif
-
 namespace WebCore {
 
 using namespace HTMLNames;
 
-WTF_MAKE_PREFERABLY_COMPACT_TZONE_OR_ISO_ALLOCATED_IMPL(RenderObject);
+WTF_MAKE_PREFERABLY_COMPACT_TZONE_ALLOCATED_IMPL(RenderObject);
 WTF_MAKE_PREFERABLY_COMPACT_TZONE_ALLOCATED_IMPL(RenderObject::RenderObjectRareData);
 WTF_MAKE_TZONE_ALLOCATED_IMPL(RenderObject::CachedImageListener);
 
@@ -656,7 +654,7 @@ RenderElement* RenderObject::markContainingBlocksForLayout(RenderElement* layout
             simplifiedNormalFlowLayout = true;
 
         hasOutOfFlowPosition = ancestor->isOutOfFlowPositioned();
-        ancestor = WTFMove(container);
+        ancestor = WTF::move(container);
     }
     return { };
 }
@@ -704,7 +702,7 @@ void RenderObject::invalidateContainerPreferredLogicalWidths()
             // We can optimize this case and not go up any further.
             break;
         }
-        ancestor = WTFMove(container);
+        ancestor = WTF::move(container);
     }
 }
 
@@ -799,7 +797,6 @@ CheckedPtr<RenderBlock> RenderObject::checkedContainingBlock() const
     return containingBlock();
 }
 
-#if PLATFORM(IOS_FAMILY)
 // This function is similar in spirit to RenderText::absoluteRectsForRange, but returns rectangles
 // which are annotated with additional state which helps iOS draw selections in its unique way.
 // No annotations are added in this class.
@@ -827,7 +824,6 @@ void RenderObject::collectSelectionGeometries(Vector<SelectionGeometry>& geometr
     for (auto& quad : quads)
         geometries.append(SelectionGeometry(quad, HTMLElement::selectionRenderingBehavior(protectedNode().get()), isHorizontalWritingMode(), checkedView()->pageNumberForBlockProgressionOffset(quad.enclosingBoundingBox().x())));
 }
-#endif
 
 IntRect RenderObject::absoluteBoundingBoxRect(bool useTransforms, bool* wasFixed) const
 {
@@ -932,9 +928,9 @@ RenderObject::RepaintContainerStatus RenderObject::containerForRepaint() const
         // flow thread. Otherwise we will need to catch the repaint call and send it to the flow thread.
         CheckedPtr repaintContainerFragmentedFlow = repaintContainer ? repaintContainer->enclosingFragmentedFlow() : nullptr;
         if (!repaintContainerFragmentedFlow || repaintContainerFragmentedFlow != parentRenderFragmentedFlow)
-            repaintContainer = WTFMove(parentRenderFragmentedFlow);
+            repaintContainer = WTF::move(parentRenderFragmentedFlow);
     }
-    return { fullRepaintAlreadyScheduled, WTFMove(repaintContainer) };
+    return { fullRepaintAlreadyScheduled, WTF::move(repaintContainer) };
 }
 
 void RenderObject::propagateRepaintToParentWithOutlineAutoIfNeeded(const RenderLayerModelObject& repaintContainer, const LayoutRect& repaintRect) const
@@ -951,7 +947,7 @@ void RenderObject::propagateRepaintToParentWithOutlineAutoIfNeeded(const RenderL
             CheckedPtr enclosingMultiColumnFlow = previousMultiColumnSet->multiColumnFlow();
             CheckedPtr renderMultiColumnPlaceholder = enclosingMultiColumnFlow->findColumnSpannerPlaceholder(downcast<RenderBox>(*renderer));
             ASSERT(renderMultiColumnPlaceholder);
-            renderer = WTFMove(renderMultiColumnPlaceholder);
+            renderer = WTF::move(renderMultiColumnPlaceholder);
         }
 
         bool rendererHasOutlineAutoAncestor = renderer->hasOutlineAutoAncestor() || originalRenderer->hasOutlineAutoAncestor();
@@ -964,10 +960,10 @@ void RenderObject::propagateRepaintToParentWithOutlineAutoIfNeeded(const RenderL
             continue;
         // Issue repaint on the correct repaint container.
         LayoutRect adjustedRepaintRect = repaintRect;
-        adjustedRepaintRect.inflate(originalRenderer->outlineStyleForRepaint().outlineSize());
+        adjustedRepaintRect.inflate(originalRenderer->outlineStyleForRepaint().usedOutlineSize());
         if (!repaintRectNeedsConverting)
             repaintContainer.repaintRectangle(adjustedRepaintRect);
-        else if (CheckedPtr rendererWithOutline = dynamicDowncast<RenderLayerModelObject>(originalRenderer.get())) {
+        else if (CheckedPtr rendererWithOutline = dynamicDowncast<RenderLayerModelObject>(*originalRenderer)) {
             adjustedRepaintRect = LayoutRect(repaintContainer.localToContainerQuad(FloatRect(adjustedRepaintRect), rendererWithOutline.get()).boundingBox());
             rendererWithOutline->repaintRectangle(adjustedRepaintRect);
         }
@@ -1628,7 +1624,7 @@ LayoutSize RenderObject::offsetFromAncestorContainer(const RenderElement& contai
         LayoutSize currentOffset = currentContainer->offsetFromContainer(*nextContainer, referencePoint);
         offset += currentOffset;
         referencePoint.move(currentOffset);
-        currentContainer = WTFMove(nextContainer);
+        currentContainer = WTF::move(nextContainer);
     } while (currentContainer != &container);
 
     return offset;
@@ -1887,8 +1883,8 @@ void RenderObject::updateHitTestResult(HitTestResult& result, const LayoutPoint&
         result.setInnerNode(node.get());
         if (!result.innerNonSharedNode())
             result.setInnerNonSharedNode(node.get());
-        result.setLocalPoint(point);
         result.setPseudoElementIdentifier(style().pseudoElementIdentifier());
+        result.setLocalPoint(point);
     }
 }
 
@@ -1973,7 +1969,7 @@ PositionWithAffinity RenderObject::createPositionWithAffinity(int offset, Affini
             return PositionWithAffinity(firstPositionInOrBeforeNode(element.get()));
 
         // Repeat at the next level up.
-        child = WTFMove(parent);
+        child = WTF::move(parent);
     }
 
     // Everything was anonymous. Give up.
@@ -2066,6 +2062,12 @@ FloatRect RenderObject::repaintRectInLocalCoordinates(RepaintRectCalculation) co
     return FloatRect();
 }
 
+FloatRect RenderObject::decoratedBoundingBox() const
+{
+    ASSERT_NOT_REACHED();
+    return { };
+}
+
 AffineTransform RenderObject::localTransform() const
 {
     return AffineTransform();
@@ -2137,7 +2139,7 @@ RenderObject::RenderObjectRareData::~RenderObjectRareData() = default;
 bool RenderObject::hasEmptyVisibleRectRespectingParentFrames() const
 {
     auto enclosingFrameRenderer = [] (const RenderObject& renderer) {
-        auto* ownerElement = renderer.document().ownerElement();
+        RefPtr ownerElement = renderer.document().ownerElement();
         return ownerElement ? ownerElement->renderer() : nullptr;
     };
 
@@ -2241,21 +2243,21 @@ static Vector<FloatRect> borderAndTextRects(const SimpleRange& range, Coordinate
 {
     Vector<FloatRect> rects;
 
-    range.start.protectedDocument()->updateLayoutIgnorePendingStylesheets();
+    protect(range.start.document())->updateLayoutIgnorePendingStylesheets();
 
     bool useVisibleBounds = behavior.contains(RenderObject::BoundingRectBehavior::UseVisibleBounds);
 
-    HashSet<RefPtr<Element>> selectedElementsSet;
+    HashSet<Ref<Element>> selectedElementsSet;
     for (Ref node : intersectingNodesWithDeprecatedZeroOffsetStartQuirk(range)) {
-        if (RefPtr element = dynamicDowncast<Element>(WTFMove(node)))
+        if (RefPtr element = dynamicDowncast<Element>(WTF::move(node)))
             selectedElementsSet.add(element.releaseNonNull());
     }
 
     // Don't include elements at the end of the range that are only partially selected.
     // FIXME: What about the start of the range? The asymmetry here does not make sense. Seems likely this logic is not quite right in other respects, too.
     if (RefPtr lastNode = nodeAfter(range.end)) {
-        for (auto& ancestor : lineageOfType<Element>(*lastNode))
-            selectedElementsSet.remove(&ancestor);
+        for (CheckedRef ancestor : lineageOfType<Element>(*lastNode))
+            selectedElementsSet.remove(ancestor);
     }
 
     for (Ref node : intersectingNodesWithDeprecatedZeroOffsetStartQuirk(range)) {
@@ -2283,7 +2285,7 @@ static Vector<FloatRect> borderAndTextRects(const SimpleRange& range, Coordinate
                         continue;
                     auto snappedBounds = snapRectToDevicePixels(rootClippedBounds->clippedOverflowRect, node->document().deviceScaleFactor());
                     if (space == CoordinateSpace::Client)
-                        node->protectedDocument()->convertAbsoluteToClientRect(snappedBounds, renderer->style());
+                        protect(node->document())->convertAbsoluteToClientRect(snappedBounds, renderer->style());
                     rects.append(snappedBounds);
                     continue;
                 }
@@ -2291,14 +2293,14 @@ static Vector<FloatRect> borderAndTextRects(const SimpleRange& range, Coordinate
                 Vector<FloatQuad> elementQuads;
                 renderer->absoluteQuads(elementQuads);
                 if (space == CoordinateSpace::Client)
-                    node->protectedDocument()->convertAbsoluteToClientQuads(elementQuads, renderer->style());
+                    protect(node->document())->convertAbsoluteToClientQuads(elementQuads, renderer->style());
                 rects.appendVector(boundingBoxes(elementQuads));
             }
         } else if (auto* textNode = dynamicDowncast<Text>(node.get())) {
             if (CheckedPtr renderer = textNode->renderer()) {
                 auto clippedRects = absoluteRectsForRangeInText(range, *textNode, behavior);
                 if (space == CoordinateSpace::Client)
-                    node->protectedDocument()->convertAbsoluteToClientRects(clippedRects, renderer->style());
+                    protect(node->document())->convertAbsoluteToClientRects(clippedRects, renderer->style());
                 rects.appendVector(clippedRects);
             }
         }
@@ -2327,15 +2329,15 @@ ScrollAnchoringController* RenderObject::searchParentChainForScrollAnchoringCont
 {
     if (renderer.hasLayer()) {
         if (auto* scrollableArea = downcast<RenderLayerModelObject>(renderer).layer()->scrollableArea()) {
-            auto controller = scrollableArea->scrollAnchoringController();
-            if (controller && controller->anchorElement())
+            auto* controller = scrollableArea->scrollAnchoringController();
+            if (controller && controller->hasAnchorElement())
                 return controller;
         }
     }
-    for (auto* enclosingLayer = renderer.enclosingLayer(); enclosingLayer; enclosingLayer = enclosingLayer->parent()) {
+    for (CheckedPtr enclosingLayer = renderer.enclosingLayer(); enclosingLayer; enclosingLayer = enclosingLayer->parent()) {
         if (RenderLayerScrollableArea* scrollableArea = enclosingLayer->scrollableArea()) {
-            auto controller = scrollableArea->scrollAnchoringController();
-            if (controller && controller->anchorElement())
+            auto* controller = scrollableArea->scrollAnchoringController();
+            if (controller && controller->hasAnchorElement())
                 return controller;
         }
     }
@@ -2374,8 +2376,6 @@ PointerEvents RenderObject::usedPointerEvents() const
         return PointerEvents::None;
     return style().usedPointerEvents();
 }
-
-#if PLATFORM(IOS_FAMILY)
 
 static bool intervalsSufficientlyOverlap(int startA, int endA, int startB, int endB)
 {
@@ -2427,6 +2427,7 @@ Vector<SelectionGeometry> RenderObject::collectSelectionGeometriesWithoutUnionIn
     return collectSelectionGeometriesInternal(range).geometries;
 }
 
+#if PLATFORM(IOS_FAMILY)
 static bool areOnSameLine(const SelectionGeometry& a, const SelectionGeometry& b)
 {
     if (a.lineNumber() && a.lineNumber() == b.lineNumber())
@@ -2437,10 +2438,16 @@ static bool areOnSameLine(const SelectionGeometry& a, const SelectionGeometry& b
     return FloatQuad { quadA.p1(), quadA.p2(), quadB.p2(), quadB.p1() }.isEmpty()
         && FloatQuad { quadA.p4(), quadA.p3(), quadB.p3(), quadB.p4() }.isEmpty();
 }
+#endif // PLATFORM(IOS_FAMILY)
 
 static bool usesVisuallyContiguousBidiTextSelection(const SimpleRange& range)
 {
-    return range.protectedStartContainer()->protectedDocument()->settings().visuallyContiguousBidiTextSelectionEnabled();
+#if !PLATFORM(IOS_FAMILY)
+    UNUSED_PARAM(range);
+    return false;
+#else
+    return protect(range.protectedStartContainer()->document())->settings().visuallyContiguousBidiTextSelectionEnabled();
+#endif
 }
 
 struct SelectionEndpointDirections {
@@ -2461,6 +2468,11 @@ static SelectionEndpointDirections computeSelectionEndpointDirections(const Simp
 
 static void makeBidiSelectionVisuallyContiguousIfNeeded(const SelectionEndpointDirections directions, const SimpleRange& range, Vector<SelectionGeometry>& geometries)
 {
+#if !PLATFORM(IOS_FAMILY)
+    UNUSED_PARAM(directions);
+    UNUSED_PARAM(range);
+    UNUSED_PARAM(geometries);
+#else
     if (!range.startContainer().document().editor().shouldDrawVisuallyContiguousBidiSelection())
         return;
 
@@ -2537,7 +2549,7 @@ static void makeBidiSelectionVisuallyContiguousIfNeeded(const SelectionEndpointD
         // For a single line selection, simply merge the end into the start and remove other selection geometries on the same line.
         startGeometry->setQuad({ selectionStartTop, selectionEndTop, selectionEndBottom, selectionStartBottom });
         startGeometry->setContainsEnd(true);
-        geometries.append(WTFMove(*startGeometry));
+        geometries.append(WTF::move(*startGeometry));
         return;
     }
 
@@ -2563,7 +2575,8 @@ static void makeBidiSelectionVisuallyContiguousIfNeeded(const SelectionEndpointD
     startGeometry->setQuad(makeSelectionQuad(start, selectionBoundsOnFirstLine, directions.firstLine == TextDirection::LTR));
     endGeometry->setDirection(directions.lastLine);
     endGeometry->setQuad(makeSelectionQuad(end, selectionBoundsOnLastLine, directions.lastLine == TextDirection::RTL));
-    geometries.appendList({ WTFMove(*startGeometry), WTFMove(*endGeometry) });
+    geometries.appendList({ WTF::move(*startGeometry), WTF::move(*endGeometry) });
+#endif
 }
 
 static void adjustTextDirectionForCoalescedGeometries(const SelectionEndpointDirections& directions, const SimpleRange& range, Vector<SelectionGeometry>& geometries)
@@ -2651,7 +2664,7 @@ auto RenderObject::collectSelectionGeometriesInternal(const SimpleRange& range) 
             continue;
 
         if (auto layerID = primaryLayerID(*renderer))
-            intersectingLayerIDs.append(WTFMove(*layerID));
+            intersectingLayerIDs.append(WTF::move(*layerID));
 
         if (!separateFromPreviousLine)
             separateFromPreviousLine = shouldRenderSelectionOnSeparateLine(renderer.get()) || shouldRenderPreviousSelectionOnSeparateLine(previousRenderer.get(), renderer->previousSibling());
@@ -2821,7 +2834,7 @@ auto RenderObject::collectSelectionGeometriesInternal(const SimpleRange& range) 
             selectionGeometry.setLogicalWidth(selectionGeometry.maxX() - selectionGeometry.logicalLeft());
     }
 
-    return { WTFMove(geometries), maxLineNumber, hasRightToLeftText && hasLeftToRightText, WTFMove(intersectingLayerIDs) };
+    return { WTF::move(geometries), maxLineNumber, hasRightToLeftText && hasLeftToRightText, WTF::move(intersectingLayerIDs) };
 }
 
 static bool coalesceSelectionGeometryWithAdjacentQuadsIfPossible(SelectionGeometry& current, const SelectionGeometry& next)
@@ -2945,10 +2958,8 @@ auto RenderObject::collectSelectionGeometries(const SimpleRange& range) -> Selec
         adjustTextDirectionForCoalescedGeometries(directions, range, coalescedGeometries);
     }
 
-    return { WTFMove(coalescedGeometries), WTFMove(intersectingLayerIDs) };
+    return { WTF::move(coalescedGeometries), WTF::move(intersectingLayerIDs) };
 }
-
-#endif
 
 String RenderObject::description() const
 {
@@ -3026,6 +3037,13 @@ bool RenderObject::CachedImageListener::allowsAnimation() const
     if (CheckedPtr renderer = m_renderer.get())
         return renderer->allowsAnimation();
     return true;
+}
+
+bool RenderObject::CachedImageListener::useSystemDarkAppearance() const
+{
+    if (CheckedPtr renderer = m_renderer.get())
+        return renderer->useSystemDarkAppearance();
+    return false;
 }
 
 bool RenderObject::CachedImageListener::canDestroyDecodedData() const

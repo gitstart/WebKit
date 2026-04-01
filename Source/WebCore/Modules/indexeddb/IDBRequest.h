@@ -66,7 +66,7 @@ class IDBConnectionToServer;
 }
 
 class IDBRequest : public EventTarget, public IDBActiveDOMObject, public ThreadSafeRefCounted<IDBRequest> {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(IDBRequest);
+    WTF_MAKE_TZONE_ALLOCATED(IDBRequest);
 public:
     enum class NullResultType {
         Empty,
@@ -94,7 +94,8 @@ public:
 
     ExceptionOr<DOMException*> error() const;
 
-    RefPtr<IDBTransaction> transaction() const;
+    IDBTransaction* transaction() const;
+    IDBTransaction* transactionForBindings() const;
     
     enum class ReadyState { Pending, Done };
     ReadyState readyState() const { return m_readyState; }
@@ -178,8 +179,6 @@ private:
     void clearWrappers();
 
 protected:
-    RefPtr<IDBTransaction> protectedTransaction() const;
-
     // FIXME: Protected data members aren't great for maintainability.
     // Consider adding protected helper functions and making these private.
     RefPtr<IDBTransaction> m_transaction;
@@ -218,6 +217,4 @@ WebCoreOpaqueRoot root(IDBRequest*);
 
 } // namespace WebCore
 
-SPECIALIZE_TYPE_TRAITS_BEGIN(WebCore::IDBRequest)
-    static bool isType(const WebCore::EventTarget& eventTarget) { return eventTarget.eventTargetInterface() == WebCore::EventTargetInterfaceType::IDBRequest; }
-SPECIALIZE_TYPE_TRAITS_END()
+SPECIALIZE_TYPE_TRAITS_EVENTTARGET(IDBRequest)

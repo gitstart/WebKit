@@ -103,13 +103,11 @@ public:
     static bool isAccessibilityIsolatedTreeEnabled() { return singleton().m_accessibilityIsolatedTree; }
 #endif
 
-#if ENABLE(AX_THREAD_TEXT_APIS)
-    static void setAccessibilityThreadTextApisEnabled(bool isEnabled) { singleton().m_accessibilityThreadTextApis = isEnabled; }
-    static bool accessibilityThreadTextApisEnabled() { return singleton().m_accessibilityThreadTextApis; }
-#endif
-
     static void setAccessibilityTextStitchingEnabled(bool isEnabled) { singleton().m_accessibilityTextStitchingEnabled = isEnabled; }
     static bool accessibilityTextStitchingEnabled() { return singleton().m_accessibilityTextStitchingEnabled; }
+
+    static void setAccessibilityThreadHitTestingEnabled(bool isEnabled) { singleton().m_accessibilityThreadHitTestingEnabled = isEnabled; }
+    static bool accessibilityThreadHitTestingEnabled() { return singleton().m_accessibilityThreadHitTestingEnabled; }
 
     static void setArePDFImagesEnabled(bool isEnabled) { singleton().m_arePDFImagesEnabled = isEnabled; }
     static bool arePDFImagesEnabled() { return singleton().m_arePDFImagesEnabled; }
@@ -122,11 +120,6 @@ public:
 #if ENABLE(MODEL_ELEMENT)
     static void setModelDocumentEnabled(bool isEnabled) { singleton().m_modelDocumentEnabled = isEnabled; }
     static bool modelDocumentEnabled() { return singleton().m_modelDocumentEnabled; }
-#endif
-
-#if ENABLE(WIRELESS_PLAYBACK_MEDIA_PLAYER)
-    static void setWirelessPlaybackMediaPlayerEnabled(bool isEnabled) { singleton().m_wirelessPlaybackMediaPlayerEnabled = isEnabled; }
-    static bool isWirelessPlaybackMediaPlayerEnabled() { return singleton().m_wirelessPlaybackMediaPlayerEnabled; }
 #endif
 
 private:
@@ -171,10 +164,8 @@ private:
     bool m_accessibilityIsolatedTree { false };
 #endif
 
-#if ENABLE(AX_THREAD_TEXT_APIS)
-    bool m_accessibilityThreadTextApis { false };
-#endif
     bool m_accessibilityTextStitchingEnabled { false };
+    bool m_accessibilityThreadHitTestingEnabled { false };
 
     bool m_arePDFImagesEnabled { true };
 
@@ -184,10 +175,6 @@ private:
 
 #if ENABLE(MODEL_ELEMENT)
     bool m_modelDocumentEnabled { false };
-#endif
-
-#if ENABLE(WIRELESS_PLAYBACK_MEDIA_PLAYER)
-    bool m_wirelessPlaybackMediaPlayerEnabled { false };
 #endif
 
     friend class NeverDestroyed<DeprecatedGlobalSettings>;

@@ -219,7 +219,7 @@ WK_OBJECT_DISABLE_DISABLE_KVC_IVAR_ACCESS;
         exceptions.add(identifier);
 
     auto defaultEnablement = enabled ? WebCore::ContentExtensionDefaultEnablement::Enabled : WebCore::ContentExtensionDefaultEnablement::Disabled;
-    protectedWebsitePolicies(self)->setContentExtensionEnablement({ defaultEnablement, WTFMove(exceptions) });
+    protectedWebsitePolicies(self)->setContentExtensionEnablement({ defaultEnablement, WTF::move(exceptions) });
 }
 
 - (void)_setActiveContentRuleListActionPatterns:(NSDictionary<NSString *, NSSet<NSString *> *> *)patterns
@@ -230,9 +230,9 @@ WK_OBJECT_DISABLE_DISABLE_KVC_IVAR_ACCESS;
         vector.reserveInitialCapacity(value.count);
         for (NSString *pattern in value)
             vector.append(pattern);
-        map.add(key, WTFMove(vector));
+        map.add(key, WTF::move(vector));
     }];
-    protectedWebsitePolicies(self)->setActiveContentRuleListActionPatterns(WTFMove(map));
+    protectedWebsitePolicies(self)->setActiveContentRuleListActionPatterns(WTF::move(map));
 }
 
 - (NSDictionary<NSString *, NSSet<NSString *> *> *)_activeContentRuleListActionPatterns
@@ -406,7 +406,7 @@ static _WKWebsiteDeviceOrientationAndMotionAccessPolicy toWKWebsiteDeviceOrienta
         RetainPtr<_WKCustomHeaderFields> element = fields[i];
         return downcast<API::CustomHeaderFields>([element _apiObject]).coreFields();
     });
-    protectedWebsitePolicies(self)->setCustomHeaderFields(WTFMove(vector));
+    protectedWebsitePolicies(self)->setCustomHeaderFields(WTF::move(vector));
 }
 
 - (WKWebsiteDataStore *)_websiteDataStore
@@ -499,25 +499,35 @@ static _WKWebsiteDeviceOrientationAndMotionAccessPolicy toWKWebsiteDeviceOrienta
     }
 }
 
-- (void)_setOverrideReferrerForAllRequests:(NSString *)referrer
+- (void)setOverrideReferrer:(NSString *)referrer
 {
     _websitePolicies->setOverrideReferrerForAllRequests(referrer);
 }
 
+- (void)_setOverrideReferrerForAllRequests:(NSString *)referrer
+{
+    [self setOverrideReferrer:referrer];
+}
+
+- (NSString *)overrideReferrer
+{
+    return nsStringNilIfNull(_websitePolicies->overrideReferrerForAllRequests()).autorelease();
+}
+
 - (NSString *)_overrideReferrerForAllRequests
 {
-    return _websitePolicies->overrideReferrerForAllRequests().createNSString().autorelease();
+    return [self overrideReferrer];
 }
 
 ALLOW_DEPRECATED_IMPLEMENTATIONS_BEGIN
-- (void)_setEnhancedSecurityEnabled:(BOOL)enhancedSecurityEnabled
+- (void)_setEnhancedSecurityEnabled:(BOOL)isEnhancedSecurityEnabled
 {
-    _websitePolicies->setEnhancedSecurityEnabled(enhancedSecurityEnabled ? true : false);
+    _websitePolicies->setIsEnhancedSecurityEnabled(isEnhancedSecurityEnabled);
 }
 
 - (BOOL)_enhancedSecurityEnabled
 {
-    return _websitePolicies->enhancedSecurityEnabled();
+    return _websitePolicies->isEnhancedSecurityEnabled();
 }
 ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 
@@ -753,11 +763,11 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
             selectors.reserveInitialCapacity(nsSelectors.count);
             for (NSString *selector in nsSelectors)
                 selectors.add(selector);
-            selectorsForElement.append(WTFMove(selectors));
+            selectorsForElement.append(WTF::move(selectors));
         }
-        result.append(WTFMove(selectorsForElement));
+        result.append(WTF::move(selectorsForElement));
     }
-    protectedWebsitePolicies(self)->setVisibilityAdjustmentSelectors(WTFMove(result));
+    protectedWebsitePolicies(self)->setVisibilityAdjustmentSelectors(WTF::move(result));
 }
 
 - (NSArray<NSArray<NSSet<NSString *> *> *> *)_visibilityAdjustmentSelectorsIncludingShadowHosts
@@ -819,16 +829,25 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
     _websitePolicies->setPushAndNotificationsEnabledPolicy(enabled ? WebKit::WebsitePushAndNotificationsEnabledPolicy::Yes : WebKit::WebsitePushAndNotificationsEnabledPolicy::No);
 }
 
-- (void)_setAlternateRequest:(NSURLRequest *)request
+- (void)setAlternateRequest:(NSURLRequest *)request
 {
     protectedWebsitePolicies(self)->setAlternateRequest(request);
 }
 
-- (NSURLRequest *)_alternateRequest
+- (NSURLRequest *)alternateRequest
 {
     return protectedWebsitePolicies(self)->alternateRequest().protectedNSURLRequest(WebCore::HTTPBodyUpdatePolicy::UpdateHTTPBody).autorelease();
 }
 
+- (NSURLRequest *)_alternateRequest
+{
+    return [self alternateRequest];
+}
+
+- (void)_setAlternateRequest:(NSURLRequest *)request
+{
+    [self setAlternateRequest:request];
+}
 
 - (void)_setAllowsJSHandleCreationInPageWorld:(BOOL)allows
 {
@@ -844,15 +863,15 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 {
     switch (mode) {
     case WKSecurityRestrictionModeNone:
-        _websitePolicies->setEnhancedSecurityEnabled(false);
+        _websitePolicies->setIsEnhancedSecurityEnabled(false);
         _websitePolicies->setLockdownModeEnabled(false);
         break;
     case WKSecurityRestrictionModeMaximizeCompatibility:
-        _websitePolicies->setEnhancedSecurityEnabled(true);
+        _websitePolicies->setIsEnhancedSecurityEnabled(true);
         _websitePolicies->setLockdownModeEnabled(false);
         break;
     case WKSecurityRestrictionModeLockdown:
-        _websitePolicies->setEnhancedSecurityEnabled(false);
+        _websitePolicies->setIsEnhancedSecurityEnabled(false);
         _websitePolicies->setLockdownModeEnabled(true);
         break;
     }
@@ -862,7 +881,7 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 {
     if (Ref { *_websitePolicies }->lockdownModeEnabled())
         return WKSecurityRestrictionModeLockdown;
-    if (_websitePolicies->enhancedSecurityEnabled())
+    if (_websitePolicies->isEnhancedSecurityEnabled())
         return WKSecurityRestrictionModeMaximizeCompatibility;
     return WKSecurityRestrictionModeNone;
 }

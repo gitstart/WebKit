@@ -126,7 +126,7 @@ public:
     WEBCORE_EXPORT FontCascade(FontCascadeDescription&&);
     WEBCORE_EXPORT FontCascade(FontCascadeDescription&&, const FontCascade&);
     // This constructor is only used if the platform wants to start with a native font.
-    WEBCORE_EXPORT FontCascade(const FontPlatformData&, FontSmoothingMode = FontSmoothingMode::AutoSmoothing);
+    WEBCORE_EXPORT FontCascade(const FontPlatformData&, FontSmoothingMode = FontSmoothingMode::Auto);
 
     WEBCORE_EXPORT FontCascade(const FontCascade&);
     WEBCORE_EXPORT FontCascade& operator=(const FontCascade&);
@@ -228,8 +228,7 @@ public:
     WEBCORE_EXPORT static void setDisableFontSubpixelAntialiasingForTesting(bool);
     WEBCORE_EXPORT static bool shouldDisableFontSubpixelAntialiasingForTesting();
 
-    // Keep this in sync with RenderText's m_fontCodePath
-    enum class CodePath : uint8_t { Auto, Simple, Complex, SimpleWithGlyphOverflow };
+    enum class CodePath : uint8_t { Simple, Complex, SimpleWithGlyphOverflow };
     WEBCORE_EXPORT CodePath codePath(const TextRun&, std::optional<unsigned> from = std::nullopt, std::optional<unsigned> to = std::nullopt) const;
 
     static CodePath characterRangeCodePath(std::span<const Latin1Character>) { return CodePath::Simple; }
@@ -283,12 +282,11 @@ public:
 #endif
 
     // Useful for debugging the different font rendering code paths.
-    WEBCORE_EXPORT static void setCodePath(CodePath);
-    static CodePath codePath();
-    static CodePath s_codePath;
+    WEBCORE_EXPORT static void setForcedCodePath(Markable<CodePath>);
+    static Markable<CodePath> forcedCodePath();
+    static Markable<CodePath> s_forcedCodePath;
 
     FontSelector* fontSelector() const;
-    RefPtr<FontSelector> protectedFontSelector() const;
 
     static bool isInvisibleReplacementObjectCharacter(char32_t character)
     {
@@ -391,8 +389,6 @@ private:
 #else
             return false;
 #endif
-        case CodePath::Auto:
-            break;
         }
         RELEASE_ASSERT_NOT_REACHED();
     }
@@ -419,7 +415,7 @@ private:
 inline Ref<const Font> FontCascade::primaryFont() const
 {
     ASSERT(m_fonts);
-    Ref font = protectedFonts()->primaryFont(m_fontDescription, protectedFontSelector().get());
+    Ref font = protectedFonts()->primaryFont(m_fontDescription, protect(fontSelector()).get());
     m_fontDescription.resolveFontSizeAdjustFromFontIfNeeded(font);
     return font;
 }
@@ -427,29 +423,24 @@ inline Ref<const Font> FontCascade::primaryFont() const
 inline const FontRanges& FontCascade::fallbackRangesAt(unsigned index) const
 {
     ASSERT(m_fonts);
-    return protectedFonts()->realizeFallbackRangesAt(m_fontDescription, protectedFontSelector().get(), index);
+    return protectedFonts()->realizeFallbackRangesAt(m_fontDescription, protect(fontSelector()).get(), index);
 }
 
 inline bool FontCascade::isFixedPitch() const
 {
     ASSERT(m_fonts);
-    return protectedFonts()->isFixedPitch(m_fontDescription, protectedFontSelector().get());
+    return protectedFonts()->isFixedPitch(m_fontDescription, protect(fontSelector()).get());
 }
 
 inline bool FontCascade::canTakeFixedPitchFastContentMeasuring() const
 {
     ASSERT(m_fonts);
-    return protectedFonts()->canTakeFixedPitchFastContentMeasuring(m_fontDescription, protectedFontSelector().get());
+    return protectedFonts()->canTakeFixedPitchFastContentMeasuring(m_fontDescription, protect(fontSelector()).get());
 }
 
 inline FontSelector* FontCascade::fontSelector() const
 {
     return m_fontSelector.get();
-}
-
-inline RefPtr<FontSelector> FontCascade::protectedFontSelector() const
-{
-    return m_fontSelector;
 }
 
 inline float FontCascade::tabWidth(const Font& font, const TabSize& tabSize, float position, Font::SyntheticBoldInclusion syntheticBoldInclusion) const

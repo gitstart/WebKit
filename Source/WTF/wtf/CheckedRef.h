@@ -31,6 +31,7 @@
 #include <wtf/HashTraits.h>
 #include <wtf/RawPtrTraits.h>
 #include <wtf/SingleThreadIntegralWrapper.h>
+#include <wtf/TypeTraits.h>
 
 #if ASSERT_ENABLED
 #include <wtf/Threading.h>
@@ -157,7 +158,7 @@ public:
     CheckedRef& operator=(CheckedRef&& other)
     {
         unpoison(*this);
-        CheckedRef moved { WTFMove(other) };
+        CheckedRef moved { WTF::move(other) };
         PtrTraits::swap(m_ptr, moved.m_ptr);
         return *this;
     }
@@ -165,7 +166,7 @@ public:
     template<typename OtherType, typename OtherPtrTraits> CheckedRef& operator=(CheckedRef<OtherType, OtherPtrTraits>&& other)
     {
         unpoison(*this);
-        CheckedRef moved { WTFMove(other) };
+        CheckedRef moved { WTF::move(other) };
         PtrTraits::swap(m_ptr, moved.m_ptr);
         return *this;
     }
@@ -245,6 +246,37 @@ inline const ExpectedType& downcast(CheckedRef<const ArgType, ArgPtrTraits>& sou
     return downcast<ExpectedType>(source.get());
 }
 
+template<typename ExpectedType, typename ArgType, typename ArgPtrTraits>
+inline CheckedPtr<match_constness_t<ArgType, ExpectedType>> dynamicDowncast(CheckedRef<ArgType, ArgPtrTraits>& source)
+{
+    return dynamicDowncast<ExpectedType>(source.get());
+}
+
+template<typename ExpectedType, typename ArgType, typename ArgPtrTraits>
+inline CheckedPtr<match_constness_t<ArgType, ExpectedType>> dynamicDowncast(const CheckedRef<ArgType, ArgPtrTraits>& source)
+{
+    return dynamicDowncast<ExpectedType>(source.get());
+}
+
+template<typename ExpectedType, typename ArgType, typename ArgPtrTraits>
+inline const CheckedPtr<match_constness_t<ArgType, ExpectedType>> dynamicDowncast(CheckedRef<const ArgType, ArgPtrTraits>& source)
+{
+    return dynamicDowncast<ExpectedType>(source.get());
+}
+
+template<typename T, typename PtrTraits = RawPtrTraits<T>>
+    requires (HasCheckedPtrMemberFunctions<T>::value && !HasRefPtrMemberFunctions<T>::value)
+ALWAYS_INLINE CLANG_POINTER_CONVERSION CheckedRef<T, PtrTraits> protect(T& reference)
+{
+    return CheckedRef<T, PtrTraits>(reference);
+}
+
+template<typename T, typename PtrTraits>
+ALWAYS_INLINE CLANG_POINTER_CONVERSION CheckedRef<T, PtrTraits> protect(const CheckedRef<T, PtrTraits>& reference)
+{
+    return reference;
+}
+
 template<typename P> struct CheckedRefHashTraits : SimpleClassHashTraits<CheckedRef<P>> {
     static constexpr bool emptyValueIsZero = true;
     static CheckedRef<P> emptyValue() { return HashTableEmptyValue; }
@@ -263,7 +295,7 @@ template<typename P> struct CheckedRefHashTraits : SimpleClassHashTraits<Checked
     static PeekType peek(P* value) { return value; }
 
     using TakeType = CheckedPtr<P>;
-    static TakeType take(CheckedRef<P>&& value) { return isEmptyValue(value) ? nullptr : CheckedPtr<P>(WTFMove(value)); }
+    static TakeType take(CheckedRef<P>&& value) { return isEmptyValue(value) ? nullptr : CheckedPtr<P>(WTF::move(value)); }
 };
 
 template<typename P> struct HashTraits<CheckedRef<P>> : CheckedRefHashTraits<P> { };
@@ -299,7 +331,8 @@ public:
         // In normal execution, a CheckedPtr always points to an object with a non-zero checkedPtrCount().
         // When it detects a dangling pointer, WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR scribbles an object with zeroes and then leaks it.
         // When we check checkedPtrCountWithoutThreadCheck() here, we're checking for a scribbled object.
-        RELEASE_ASSERT(checkedPtrCountWithoutThreadCheck());
+        if (!checkedPtrCountWithoutThreadCheck()) [[unlikely]]
+            crashDueToCheckedPtrToDeadObject();
         --m_checkedPtrCount;
     }
 
@@ -319,6 +352,11 @@ public:
     }
 
 private:
+    static NO_RETURN_DUE_TO_CRASH NEVER_INLINE void crashDueToCheckedPtrToDeadObject()
+    {
+        CRASH();
+    }
+
     mutable StorageType m_checkedPtrCount { 0 };
 #if ASSERT_ENABLED || ENABLE(SECURITY_ASSERTIONS)
     DeletionFlagType m_didBeginDeletion { false };
@@ -362,3 +400,4 @@ public:
 using WTF::CanMakeCheckedPtr;
 using WTF::CanMakeThreadSafeCheckedPtr;
 using WTF::CheckedRef;
+using WTF::protect;

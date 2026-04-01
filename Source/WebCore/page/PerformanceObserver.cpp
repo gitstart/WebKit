@@ -38,11 +38,11 @@
 namespace WebCore {
 
 PerformanceObserver::PerformanceObserver(ScriptExecutionContext& scriptExecutionContext, Ref<PerformanceObserverCallback>&& callback)
-    : m_callback(WTFMove(callback))
+    : m_callback(WTF::move(callback))
     , m_durationThreshold(PerformanceEventTiming::defaultDurationThreshold)
 {
     if (RefPtr document = dynamicDowncast<Document>(scriptExecutionContext)) {
-        if (auto* window = document->window())
+        if (RefPtr window = document->window())
             m_performance = window->performance();
     } else if (RefPtr workerGlobalScope = dynamicDowncast<WorkerGlobalScope>(scriptExecutionContext))
         m_performance = workerGlobalScope->performance();
@@ -69,7 +69,7 @@ ExceptionOr<void> PerformanceObserver::observe(Init&& init)
     bool isBuffered = false;
     OptionSet<PerformanceEntry::Type> filter;
     if (init.entryTypes) {
-        if (init.type)
+        if (!init.type.isNull())
             return Exception { ExceptionCode::TypeError, "either entryTypes or type must be provided"_s };
         if (m_registered && m_isTypeObserver)
             return Exception { ExceptionCode::InvalidModificationError, "observer type can't be changed once registered"_s };
@@ -81,19 +81,19 @@ ExceptionOr<void> PerformanceObserver::observe(Init&& init)
             return { };
         m_typeFilter = filter;
     } else {
-        if (!init.type)
+        if (init.type.isNull())
             return Exception { ExceptionCode::TypeError, "no type or entryTypes were provided"_s };
         if (m_registered && !m_isTypeObserver)
             return Exception { ExceptionCode::InvalidModificationError, "observer type can't be changed once registered"_s };
         m_isTypeObserver = true;
-        if (auto type = PerformanceEntry::parseEntryTypeString(*init.type))
+        if (auto type = PerformanceEntry::parseEntryTypeString(init.type))
             filter.add(*type);
         else
             return { };
         if (init.buffered) {
             isBuffered = true;
             auto oldSize = m_entriesToDeliver.size();
-            protectedPerformance()->appendBufferedEntriesByType(*init.type, m_entriesToDeliver, *this);
+            protectedPerformance()->appendBufferedEntriesByType(init.type, m_entriesToDeliver, *this);
             auto entriesToDeliver = m_entriesToDeliver.mutableSpan();
             auto begin = entriesToDeliver.begin();
             auto oldEnd = entriesToDeliver.subspan(oldSize).begin();
@@ -148,7 +148,7 @@ void PerformanceObserver::deliver()
         return;
 
     Vector<Ref<PerformanceEntry>> entries = std::exchange(m_entriesToDeliver, { });
-    auto list = PerformanceObserverEntryList::create(WTFMove(entries));
+    auto list = PerformanceObserverEntryList::create(WTF::move(entries));
 
     InspectorInstrumentation::willFireObserverCallback(*context, "PerformanceObserver"_s);
     m_callback->invoke(*this, list, *this);

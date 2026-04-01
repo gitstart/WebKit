@@ -55,7 +55,7 @@ QueuedTaskResult DebuggableMicrotaskDispatcher::run(QueuedTask& task)
 {
     auto* globalObject = task.globalObject();
     VM& vm = globalObject->vm();
-    auto catchScope = DECLARE_CATCH_SCOPE(vm);
+    auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     auto identifier = task.identifier();
 
     if (auto* debugger = globalObject->debugger(); debugger && identifier) [[unlikely]] {
@@ -65,7 +65,7 @@ QueuedTaskResult DebuggableMicrotaskDispatcher::run(QueuedTask& task)
             return QueuedTask::Result::Executed;
     }
 
-    runInternalMicrotask(globalObject, task.job(), task.arguments());
+    runInternalMicrotask(globalObject, task.job(), task.payload(), task.arguments());
     if (!catchScope.clearExceptionExceptTermination()) [[unlikely]]
         return QueuedTask::Result::Executed;
 
@@ -107,7 +107,7 @@ void MicrotaskQueue::enqueue(QueuedTask&& task)
 {
     auto* globalObject = task.globalObject();
     auto identifier = task.identifier();
-    m_queue.enqueue(WTFMove(task));
+    m_queue.enqueue(WTF::move(task));
     if (globalObject) {
         if (auto* debugger = globalObject->debugger(); debugger && identifier) [[unlikely]]
             debugger->didQueueMicrotask(globalObject, identifier.value());

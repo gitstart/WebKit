@@ -39,7 +39,7 @@ struct MaskBorderSource {
     }
 
     MaskBorderSource(ImageWrapper&& image)
-        : m_image { WTFMove(image.value) }
+        : m_image { WTF::move(image.value) }
     {
     }
 
@@ -75,7 +75,7 @@ template<> struct CSSValueConversion<MaskBorderSource> { auto operator()(Builder
 
 template<> struct Blending<MaskBorderSource> {
     auto canBlend(const MaskBorderSource&, const MaskBorderSource&) -> bool;
-    auto blend(const MaskBorderSource&, const MaskBorderSource&, const BlendingContext&) -> MaskBorderSource;
+    auto blend(const MaskBorderSource&, const MaskBorderSource&, const RenderStyle&, const RenderStyle&, const BlendingContext&) -> MaskBorderSource;
 };
 
 } // namespace Style

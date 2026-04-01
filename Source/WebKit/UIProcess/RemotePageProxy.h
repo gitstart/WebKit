@@ -74,6 +74,10 @@ class WebProcessActivityState;
 class WebProcessProxy;
 class WebScreenOrientationManagerProxy;
 
+#if PLATFORM(IOS_FAMILY) && ENABLE(DEVICE_ORIENTATION)
+class RemotePageWebDeviceOrientationUpdateProviderProxy;
+#endif
+
 struct FrameInfoData;
 struct FrameTreeCreationParameters;
 struct NavigationActionData;
@@ -90,7 +94,6 @@ public:
     void deref() const final { RefCounted::deref(); }
 
     WebPageProxy* page() const;
-    RefPtr<WebPageProxy> protectedPage() const;
 
     void injectPageIntoNewProcess();
     void processDidTerminate(WebProcessProxy&, ProcessTerminationReason);
@@ -110,11 +113,17 @@ public:
 
     void setCurrentOrientation(WebCore::ScreenOrientationType);
 
+    bool hasNetworkRequestsInProgress() const { return m_hasNetworkRequestsInProgress; }
+
+    void disconnect();
+
 private:
     RemotePageProxy(WebPageProxy&, WebProcessProxy&, const WebCore::Site&, WebPageProxyMessageReceiverRegistration*, std::optional<WebCore::PageIdentifier>);
     void didReceiveMessage(IPC::Connection&, IPC::Decoder&) final;
     void didReceiveSyncMessage(IPC::Connection&, IPC::Decoder&, UniqueRef<IPC::Encoder>&) final;
     void isPlayingMediaDidChange(WebCore::MediaProducerMediaStateFlags);
+
+    void setNetworkRequestsInProgress(bool);
 
     const WebCore::PageIdentifier m_webPageID;
     const Ref<WebProcessProxy> m_process;
@@ -128,6 +137,9 @@ private:
 #if ENABLE(VIDEO_PRESENTATION_MODE)
     RefPtr<RemotePageVideoPresentationManagerProxy> m_videoPresentationManager;
 #endif
+#if PLATFORM(IOS_FAMILY) && ENABLE(DEVICE_ORIENTATION)
+    RefPtr<RemotePageWebDeviceOrientationUpdateProviderProxy> m_webDeviceOrientationUpdateProvider;
+#endif
 #if PLATFORM(IOS_FAMILY) || (PLATFORM(MAC) && ENABLE(VIDEO_PRESENTATION_MODE))
     RefPtr<RemotePagePlaybackSessionManagerProxy> m_playbackSessionManager;
 #endif
@@ -135,6 +147,10 @@ private:
     WebPageProxyMessageReceiverRegistration m_messageReceiverRegistration;
     WebCore::MediaProducerMediaStateFlags m_mediaState;
     RefPtr<RemotePageScreenOrientationManagerProxy> m_screenOrientationManager;
+    bool m_hasNetworkRequestsInProgress { false };
+#if ASSERT_ENABLED
+    bool m_disconnected { false };
+#endif
 };
 
 }

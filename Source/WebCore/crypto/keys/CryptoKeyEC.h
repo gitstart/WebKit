@@ -31,20 +31,17 @@
 #include <wtf/Platform.h>
 #if OS(DARWIN) && !PLATFORM(GTK)
 #include <WebCore/CommonCryptoUtilities.h>
-#if HAVE(SWIFT_CPP_INTEROP)
-namespace PAL {
+#if !defined(CLANG_WEBKIT_BRANCH)
+namespace pal {
 class ECKey;
 }
 
 namespace WebCore {
-using PlatformECKeyContainer = UniqueRef<PAL::ECKey>;
+using PlatformECKeyContainer = UniqueRef<pal::ECKey>;
 }
 #else
 namespace WebCore {
-struct CCECCryptorRefDeleter {
-    void operator()(CCECCryptorRef key) const { CCECCryptorRelease(key); }
-};
-typedef std::unique_ptr<typename std::remove_pointer<CCECCryptorRef>::type, WebCore::CCECCryptorRefDeleter> PlatformECKeyContainer;
+using PlatformECKeyContainer = std::unique_ptr<std::monostate>;
 }
 #endif
 #endif
@@ -78,7 +75,7 @@ public:
 
     static Ref<CryptoKeyEC> create(CryptoAlgorithmIdentifier identifier, NamedCurve curve, CryptoKeyType type, PlatformECKeyContainer&& platformKey, bool extractable, CryptoKeyUsageBitmap usages)
     {
-        return adoptRef(*new CryptoKeyEC(identifier, curve, type, WTFMove(platformKey), extractable, usages));
+        return adoptRef(*new CryptoKeyEC(identifier, curve, type, WTF::move(platformKey), extractable, usages));
     }
     virtual ~CryptoKeyEC();
 

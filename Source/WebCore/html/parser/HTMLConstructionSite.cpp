@@ -226,13 +226,13 @@ void HTMLConstructionSite::attachLater(Ref<ContainerNode>&& parent, Ref<Node>&& 
     ASSERT(scriptingContentIsAllowed(m_parserContentPolicy) || !is<Element>(child) || !isScriptElement(downcast<Element>(child.get())));
 
     if (shouldFosterParent()) {
-        fosterParent(WTFMove(child));
+        fosterParent(WTF::move(child));
         return;
     }
 
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Insert);
-    task.parent = WTFMove(parent);
-    task.child = WTFMove(child);
+    task.parent = WTF::move(parent);
+    task.child = WTF::move(child);
     task.selfClosing = selfClosing;
 
     // Close the last open tag and add as a sibling of the parent if we have reached the maximum depth allowed.
@@ -242,7 +242,7 @@ void HTMLConstructionSite::attachLater(Ref<ContainerNode>&& parent, Ref<Node>&& 
     }
 
     ASSERT(task.parent);
-    m_taskQueue.append(WTFMove(task));
+    m_taskQueue.append(WTF::move(task));
 }
 
 void HTMLConstructionSite::executeQueuedTasks()
@@ -252,7 +252,7 @@ void HTMLConstructionSite::executeQueuedTasks()
 
     // Copy the task queue into a local variable in case executeTask
     // re-enters the parser.
-    TaskQueue queue = WTFMove(m_taskQueue);
+    TaskQueue queue = WTF::move(m_taskQueue);
 
     for (auto& task : queue)
         executeTask(task);
@@ -304,7 +304,7 @@ void HTMLConstructionSite::setForm(HTMLFormElement* form)
 
 RefPtr<HTMLFormElement> HTMLConstructionSite::takeForm()
 {
-    return WTFMove(m_form);
+    return WTF::move(m_form);
 }
 
 void HTMLConstructionSite::dispatchDocumentElementAvailableIfNeeded()
@@ -321,7 +321,7 @@ void HTMLConstructionSite::insertHTMLHtmlStartTagBeforeHTML(AtomHTMLToken&& toke
     auto element = HTMLHtmlElement::create(protectedDocument());
     setAttributes(element, token, m_parserContentPolicy);
     attachLater(protectedAttachmentRoot(), element.copyRef());
-    m_openElements.pushHTMLHtmlElement(HTMLStackItem(element.copyRef(), WTFMove(token)));
+    m_openElements.pushHTMLHtmlElement(HTMLStackItem(element.copyRef(), WTF::move(token)));
 
     executeQueuedTasks();
     dispatchDocumentElementAvailableIfNeeded();
@@ -352,12 +352,12 @@ void HTMLConstructionSite::insertHTMLHtmlStartTagInBody(AtomHTMLToken&& token)
     if (m_isParsingFragment)
         return;
 
-    mergeAttributesFromTokenIntoElement(WTFMove(token), m_openElements.htmlElement());
+    mergeAttributesFromTokenIntoElement(WTF::move(token), m_openElements.htmlElement());
 }
 
 void HTMLConstructionSite::insertHTMLBodyStartTagInBody(AtomHTMLToken&& token)
 {
-    mergeAttributesFromTokenIntoElement(WTFMove(token), m_openElements.bodyElement());
+    mergeAttributesFromTokenIntoElement(WTF::move(token), m_openElements.bodyElement());
 }
 
 void HTMLConstructionSite::setDefaultCompatibilityMode()
@@ -502,13 +502,13 @@ void HTMLConstructionSite::insertDoctype(AtomHTMLToken&& token)
 void HTMLConstructionSite::insertComment(AtomHTMLToken&& token)
 {
     ASSERT(token.type() == HTMLToken::Type::Comment);
-    attachLater(protectedCurrentNode(), Comment::create(protectedOwnerDocumentForCurrentNode(), WTFMove(token.comment())));
+    attachLater(protectedCurrentNode(), Comment::create(protectedOwnerDocumentForCurrentNode(), WTF::move(token.comment())));
 }
 
 void HTMLConstructionSite::insertCommentOnDocument(AtomHTMLToken&& token)
 {
     ASSERT(token.type() == HTMLToken::Type::Comment);
-    attachLater(protectedAttachmentRoot(), Comment::create(protectedDocument(), WTFMove(token.comment())));
+    attachLater(protectedAttachmentRoot(), Comment::create(protectedDocument(), WTF::move(token.comment())));
 }
 
 void HTMLConstructionSite::insertCommentOnHTMLHtmlElement(AtomHTMLToken&& token)
@@ -516,13 +516,13 @@ void HTMLConstructionSite::insertCommentOnHTMLHtmlElement(AtomHTMLToken&& token)
     ASSERT(token.type() == HTMLToken::Type::Comment);
     Ref parent = m_openElements.rootNode();
     Ref parentDocument = parent->document();
-    attachLater(WTFMove(parent), Comment::create(parentDocument, WTFMove(token.comment())));
+    attachLater(WTF::move(parent), Comment::create(parentDocument, WTF::move(token.comment())));
 }
 
 void HTMLConstructionSite::insertHTMLHeadElement(AtomHTMLToken&& token)
 {
     ASSERT(!shouldFosterParent());
-    m_head = HTMLStackItem(createHTMLElement(token), WTFMove(token));
+    m_head = HTMLStackItem(createHTMLElement(token), WTF::move(token));
     attachLater(protectedCurrentNode(), m_head.element());
     m_openElements.pushHTMLHeadElement(HTMLStackItem(m_head));
 }
@@ -532,7 +532,7 @@ void HTMLConstructionSite::insertHTMLBodyElement(AtomHTMLToken&& token)
     ASSERT(!shouldFosterParent());
     auto body = createHTMLElement(token);
     attachLater(protectedCurrentNode(), body.copyRef());
-    m_openElements.pushHTMLBodyElement(HTMLStackItem(WTFMove(body), WTFMove(token)));
+    m_openElements.pushHTMLBodyElement(HTMLStackItem(WTF::move(body), WTF::move(token)));
 }
 
 void HTMLConstructionSite::insertHTMLFormElement(AtomHTMLToken&& token)
@@ -543,14 +543,14 @@ void HTMLConstructionSite::insertHTMLFormElement(AtomHTMLToken&& token)
     if (!openElements().hasTemplateInHTMLScope())
         m_form = formElement.ptr();
     attachLater(protectedCurrentNode(), formElement.copyRef());
-    m_openElements.push(HTMLStackItem(WTFMove(formElement), WTFMove(token)));
+    m_openElements.push(HTMLStackItem(WTF::move(formElement), WTF::move(token)));
 }
 
 void HTMLConstructionSite::insertHTMLElement(AtomHTMLToken&& token)
 {
     auto element = createHTMLElement(token);
     attachLater(protectedCurrentNode(), element.copyRef());
-    m_openElements.push(HTMLStackItem(WTFMove(element), WTFMove(token)));
+    m_openElements.push(HTMLStackItem(WTF::move(element), WTF::move(token)));
 }
 
 void HTMLConstructionSite::insertHTMLTemplateElement(AtomHTMLToken&& token)
@@ -585,12 +585,12 @@ void HTMLConstructionSite::insertHTMLTemplateElement(AtomHTMLToken&& token)
                 Ref shadowRoot = exceptionOrShadowRoot.releaseReturnValue();
                 auto element = createHTMLElement(token);
                 downcast<HTMLTemplateElement>(element.get()).setDeclarativeShadowRoot(shadowRoot);
-                m_openElements.push(HTMLStackItem(WTFMove(element), WTFMove(token)));
+                m_openElements.push(HTMLStackItem(WTF::move(element), WTF::move(token)));
                 return;
             }
         }
     }
-    insertHTMLElement(WTFMove(token));
+    insertHTMLElement(WTF::move(token));
 }
 
 std::unique_ptr<CustomElementConstructionData> HTMLConstructionSite::insertHTMLElementOrFindCustomElementInterface(AtomHTMLToken&& token)
@@ -598,10 +598,10 @@ std::unique_ptr<CustomElementConstructionData> HTMLConstructionSite::insertHTMLE
     auto [element, elementInterface, registry] = createHTMLElementOrFindCustomElementInterface(token);
     if (elementInterface) [[unlikely]] {
         RELEASE_ASSERT(registry);
-        return makeUnique<CustomElementConstructionData>(elementInterface.releaseNonNull(), registry.releaseNonNull(), token.name(), WTFMove(token.attributes()));
+        return makeUnique<CustomElementConstructionData>(elementInterface.releaseNonNull(), registry.releaseNonNull(), token.name(), WTF::move(token.attributes()));
     }
     attachLater(protectedCurrentNode(), *element);
-    m_openElements.push(HTMLStackItem(element.releaseNonNull(), WTFMove(token)));
+    m_openElements.push(HTMLStackItem(element.releaseNonNull(), WTF::move(token)));
     return nullptr;
 }
 
@@ -609,7 +609,7 @@ void HTMLConstructionSite::insertCustomElement(Ref<Element>&& element, Vector<At
 {
     setAttributes(element, attributes, HasDuplicateAttribute::No, m_parserContentPolicy);
     attachLater(protectedCurrentNode(), element.copyRef());
-    m_openElements.push(HTMLStackItem(WTFMove(element), WTFMove(attributes)));
+    m_openElements.push(HTMLStackItem(WTF::move(element), WTF::move(attributes)));
     executeQueuedTasks();
 }
 
@@ -630,7 +630,7 @@ void HTMLConstructionSite::insertFormattingElement(AtomHTMLToken&& token)
     // Possible active formatting elements include:
     // a, b, big, code, em, font, i, nobr, s, small, strike, strong, tt, and u.
     ASSERT(isFormattingTag(token.tagName()));
-    insertHTMLElement(WTFMove(token));
+    insertHTMLElement(WTF::move(token));
     m_activeFormattingElements.append(HTMLStackItem(currentStackItem()));
 }
 
@@ -647,7 +647,7 @@ void HTMLConstructionSite::insertScriptElement(AtomHTMLToken&& token)
     setAttributes(element, token, m_parserContentPolicy);
     if (scriptingContentIsAllowed(m_parserContentPolicy))
         attachLater(protectedCurrentNode(), element.copyRef());
-    m_openElements.push(HTMLStackItem(WTFMove(element), WTFMove(token)));
+    m_openElements.push(HTMLStackItem(WTF::move(element), WTF::move(token)));
 }
 
 void HTMLConstructionSite::insertForeignElement(AtomHTMLToken&& token, const AtomString& namespaceURI)
@@ -659,7 +659,7 @@ void HTMLConstructionSite::insertForeignElement(AtomHTMLToken&& token, const Ato
     if (scriptingContentIsAllowed(m_parserContentPolicy) || !isScriptElement(element.get()))
         attachLater(protectedCurrentNode(), element.copyRef(), token.selfClosing());
     if (!token.selfClosing())
-        m_openElements.push(HTMLStackItem(WTFMove(element), WTFMove(token)));
+        m_openElements.push(HTMLStackItem(WTF::move(element), WTF::move(token)));
 }
 
 static NEVER_INLINE unsigned findBreakIndexSlow(const String& string, unsigned currentPosition, unsigned proposedBreakIndex)
@@ -709,13 +709,13 @@ void HTMLConstructionSite::insertTextNode(const String& characters)
     if (task.nextChild)
         previousChild = task.nextChild->previousSibling();
     else {
-        if (auto templateParent = dynamicDowncast<HTMLTemplateElement>(task.parent.get()); templateParent) [[unlikely]] {
-            auto parentNode = templateParent->contentIfAvailable();
+        if (RefPtr templateParent = dynamicDowncast<HTMLTemplateElement>(task.parent.get()); templateParent) [[unlikely]] {
+            RefPtr parentNode = templateParent->contentIfAvailable();
             previousChild = parentNode ? parentNode->lastChild() : nullptr;
         } else
             previousChild = task.parent->lastChild();
     }
-    if (auto* previousTextChild = dynamicDowncast<Text>(previousChild.get()); previousTextChild && previousTextChild->length() < lengthLimit) {
+    if (RefPtr previousTextChild = dynamicDowncast<Text>(previousChild.get()); previousTextChild && previousTextChild->length() < lengthLimit) {
         // FIXME: We're only supposed to append to this text node if it was the last text node inserted by the parser.
         unsigned proposedBreakIndex = std::min(characters.length(), lengthLimit - previousTextChild->length());
         if (unsigned breakIndex = findBreakIndex(characters, 0, proposedBreakIndex)) {
@@ -733,11 +733,11 @@ void HTMLConstructionSite::insertTextNode(const String& characters)
 
         unsigned substringLength = breakIndex - currentPosition;
         auto substring = characters.substring(currentPosition, substringLength);
-        auto textNode = Text::create(task.parent->document(), WTFMove(substring));
+        auto textNode = Text::create(task.parent->document(), WTF::move(substring));
 
         currentPosition += textNode->length();
         ASSERT(currentPosition <= characters.length());
-        task.child = WTFMove(textNode);
+        task.child = WTF::move(textNode);
 
         executeTask(task);
     }
@@ -748,7 +748,7 @@ void HTMLConstructionSite::reparent(HTMLElementStack::ElementRecord& newParent, 
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Reparent);
     task.parent = newParent.node();
     task.child = child.element();
-    m_taskQueue.append(WTFMove(task));
+    m_taskQueue.append(WTF::move(task));
 }
 
 void HTMLConstructionSite::insertAlreadyParsedChild(HTMLStackItem& newParent, HTMLElementStack::ElementRecord& child)
@@ -760,7 +760,7 @@ void HTMLConstructionSite::insertAlreadyParsedChild(HTMLStackItem& newParent, HT
     } else
         task.parent = newParent.node();
     task.child = child.element();
-    m_taskQueue.append(WTFMove(task));
+    m_taskQueue.append(WTF::move(task));
 }
 
 void HTMLConstructionSite::takeAllChildrenAndReparent(HTMLStackItem& newParent, HTMLElementStack::ElementRecord& oldParent)
@@ -768,7 +768,7 @@ void HTMLConstructionSite::takeAllChildrenAndReparent(HTMLStackItem& newParent, 
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::TakeAllChildrenAndReparent);
     task.parent = newParent.node();
     task.child = oldParent.node();
-    m_taskQueue.append(WTFMove(task));
+    m_taskQueue.append(WTF::move(task));
 }
 
 static inline QualifiedName qualifiedNameForTag(AtomHTMLToken& token, const AtomString& namespaceURI)
@@ -797,14 +797,14 @@ Ref<Element> HTMLConstructionSite::createElement(AtomHTMLToken& token, const Ato
 
 inline TreeScope& HTMLConstructionSite::treeScopeForCurrentNode()
 {
-    if (auto* templateElement = dynamicDowncast<HTMLTemplateElement>(currentNode()))
+    if (RefPtr templateElement = dynamicDowncast<HTMLTemplateElement>(currentNode()))
         return templateElement->fragmentForInsertion().treeScope();
     return currentNode().treeScope();
 }
 
 inline Document& HTMLConstructionSite::ownerDocumentForCurrentNode()
 {
-    if (auto* templateElement = dynamicDowncast<HTMLTemplateElement>(currentNode()))
+    if (RefPtr templateElement = dynamicDowncast<HTMLTemplateElement>(currentNode()))
         return templateElement->fragmentForInsertion().document();
     return currentNode().document();
 }
@@ -812,8 +812,8 @@ inline Document& HTMLConstructionSite::ownerDocumentForCurrentNode()
 static CustomElementRegistry* registryForCurrentNode(Node& currentNode, TreeScope& treeScope)
 {
     if (auto* templateElement = dynamicDowncast<HTMLTemplateElement>(currentNode)) {
-        auto& templateFragmentTreeScope = templateElement->fragmentForInsertion().treeScope();
-        if (templateFragmentTreeScope.rootNode().usesNullCustomElementRegistry())
+        Ref templateFragmentTreeScope = templateElement->fragmentForInsertion().treeScope();
+        if (templateFragmentTreeScope->rootNode().usesNullCustomElementRegistry())
             return nullptr;
     }
     return CustomElementRegistry::registryForNodeOrTreeScope(currentNode, treeScope);
@@ -829,9 +829,9 @@ std::tuple<RefPtr<HTMLElement>, RefPtr<JSCustomElementInterface>, RefPtr<CustomE
     Ref ownerDocument = treeScope->documentScope();
     bool insideTemplateElement = m_openElements.containsTemplateElement();
     RefPtr element = HTMLElementFactory::createKnownElement(token.tagName(), ownerDocument, insideTemplateElement ? nullptr : form(), true);
-    RefPtr<CustomElementRegistry> registry = m_openElements.stackDepth() > 1 ? registryForCurrentNode(currentNode(), treeScope) : m_registry;
+    RefPtr<CustomElementRegistry> registry = m_openElements.stackDepth() > 1 ? RefPtr { registryForCurrentNode(currentNode(), treeScope) } : m_registry;
     if (!element) [[unlikely]] {
-        auto* elementInterface = registry ? registry->findInterface(token.name()) : nullptr;
+        RefPtr elementInterface = registry ? registry->findInterface(token.name()) : nullptr;
         if (elementInterface) [[unlikely]] {
             bool shouldUseNullCustomElementRegistry = false;
             for (auto& attribute : token.attributes()) {
@@ -842,7 +842,7 @@ std::tuple<RefPtr<HTMLElement>, RefPtr<JSCustomElementInterface>, RefPtr<CustomE
             }
             if (!shouldUseNullCustomElementRegistry) {
                 if (!m_isParsingFragment)
-                    return { nullptr, elementInterface, WTFMove(registry) };
+                    return { nullptr, elementInterface, WTF::move(registry) };
                 ASSERT(qualifiedNameForHTMLTag(token) == elementInterface->name());
                 element = elementInterface->createElement(ownerDocument);
                 element->setIsCustomElementUpgradeCandidate();
@@ -869,9 +869,9 @@ std::tuple<RefPtr<HTMLElement>, RefPtr<JSCustomElementInterface>, RefPtr<CustomE
     // loading is working. When this hack is removed, the assertion just before
     // the setPictureElement() call in HTMLImageElement::insertedIntoAncestor
     // can be simplified.
-    if (auto* currentPictureElement = dynamicDowncast<HTMLPictureElement>(currentNode())) {
+    if (RefPtr currentPictureElement = dynamicDowncast<HTMLPictureElement>(currentNode())) {
         if (auto* imageElement = dynamicDowncast<HTMLImageElement>(*element))
-            imageElement->setPictureElement(currentPictureElement);
+            imageElement->setPictureElement(currentPictureElement.get());
     }
 
     setAttributes(*element, token, m_parserContentPolicy);
@@ -894,7 +894,7 @@ HTMLStackItem HTMLConstructionSite::createElementFromSavedToken(const HTMLStackI
     AtomHTMLToken fakeToken(HTMLToken::Type::StartTag, tagName, item.localName(), Vector<Attribute>(item.attributes()));
     ASSERT(item.namespaceURI() == HTMLNames::xhtmlNamespaceURI);
     ASSERT(isFormattingTag(tagName));
-    return HTMLStackItem(createHTMLElement(fakeToken), WTFMove(fakeToken));
+    return HTMLStackItem(createHTMLElement(fakeToken), WTF::move(fakeToken));
 }
 
 std::optional<unsigned> HTMLConstructionSite::indexOfFirstUnopenFormattingElement() const
@@ -927,7 +927,7 @@ void HTMLConstructionSite::reconstructTheActiveFormattingElements()
         auto reconstructed = createElementFromSavedToken(unopenedEntry.stackItem());
         attachLater(protectedCurrentNode(), reconstructed.node());
         m_openElements.push(HTMLStackItem(reconstructed));
-        unopenedEntry.replaceElement(WTFMove(reconstructed));
+        unopenedEntry.replaceElement(WTF::move(reconstructed));
     }
 }
 
@@ -968,7 +968,7 @@ void HTMLConstructionSite::findFosterSite(HTMLConstructionSiteTask& task)
         return;
     }
 
-    if (auto* parent = lastTable->element().parentNode()) {
+    if (RefPtr parent = lastTable->element().parentNode()) {
         task.parent = parent;
         task.nextChild = lastTable->element();
         return;
@@ -986,10 +986,10 @@ void HTMLConstructionSite::fosterParent(Ref<Node>&& node)
 {
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Insert);
     findFosterSite(task);
-    task.child = WTFMove(node);
+    task.child = WTF::move(node);
     ASSERT(task.parent);
 
-    m_taskQueue.append(WTFMove(task));
+    m_taskQueue.append(WTF::move(task));
 }
 
 } // namespace WebCore

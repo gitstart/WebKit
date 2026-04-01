@@ -53,7 +53,7 @@ struct BooleanSchema : public FeatureSchema {
 
     BooleanSchema(const AtomString& name, OptionSet<MediaQueryDynamicDependency> dependencies, ValueFunction&& valueFunction)
         : FeatureSchema(name, FeatureSchema::Type::Discrete, FeatureSchema::ValueType::Integer, dependencies)
-        , valueFunction(WTFMove(valueFunction))
+        , valueFunction(WTF::move(valueFunction))
     {
     }
 
@@ -73,7 +73,7 @@ struct IntegerSchema : public FeatureSchema {
 
     IntegerSchema(const AtomString& name, OptionSet<MediaQueryDynamicDependency> dependencies, ValueFunction&& valueFunction)
         : FeatureSchema(name, FeatureSchema::Type::Range, FeatureSchema::ValueType::Integer, dependencies)
-        , valueFunction(WTFMove(valueFunction))
+        , valueFunction(WTF::move(valueFunction))
     {
     }
 
@@ -93,7 +93,7 @@ struct NumberSchema : public FeatureSchema {
 
     NumberSchema(const AtomString& name, OptionSet<MediaQueryDynamicDependency> dependencies, ValueFunction&& valueFunction)
         : FeatureSchema(name, FeatureSchema::Type::Range, FeatureSchema::ValueType::Number, dependencies)
-        , valueFunction(WTFMove(valueFunction))
+        , valueFunction(WTF::move(valueFunction))
     {
     }
 
@@ -113,7 +113,7 @@ struct LengthSchema : public FeatureSchema {
 
     LengthSchema(const AtomString& name, OptionSet<MediaQueryDynamicDependency> dependencies, ValueFunction&& valueFunction)
         : FeatureSchema(name, FeatureSchema::Type::Range, FeatureSchema::ValueType::Length, dependencies)
-        , valueFunction(WTFMove(valueFunction))
+        , valueFunction(WTF::move(valueFunction))
     {
     }
 
@@ -133,7 +133,7 @@ struct RatioSchema : public FeatureSchema {
 
     RatioSchema(const AtomString& name, OptionSet<MediaQueryDynamicDependency> dependencies, ValueFunction&& valueFunction)
         : FeatureSchema(name, FeatureSchema::Type::Range, FeatureSchema::ValueType::Ratio, dependencies)
-        , valueFunction(WTFMove(valueFunction))
+        , valueFunction(WTF::move(valueFunction))
     {
     }
 
@@ -153,7 +153,7 @@ struct ResolutionSchema : public FeatureSchema {
 
     ResolutionSchema(const AtomString& name, OptionSet<MediaQueryDynamicDependency> dependencies, ValueFunction&& valueFunction)
         : FeatureSchema(name, FeatureSchema::Type::Range, FeatureSchema::ValueType::Resolution, dependencies)
-        , valueFunction(WTFMove(valueFunction))
+        , valueFunction(WTF::move(valueFunction))
     {
     }
 
@@ -174,8 +174,8 @@ struct IdentifierSchema : public FeatureSchema {
     using ValueFunction = Function<MatchingIdentifiers(const FeatureEvaluationContext&)>;
 
     IdentifierSchema(const AtomString& name, FixedVector<CSSValueID>&& valueIdentifiers, OptionSet<MediaQueryDynamicDependency> dependencies, ValueFunction&& valueFunction)
-        : FeatureSchema(name, FeatureSchema::Type::Discrete, FeatureSchema::ValueType::Identifier, dependencies, WTFMove(valueIdentifiers))
-        , valueFunction(WTFMove(valueFunction))
+        : FeatureSchema(name, FeatureSchema::Type::Discrete, FeatureSchema::ValueType::Identifier, dependencies, WTF::move(valueIdentifiers))
+        , valueFunction(WTF::move(valueFunction))
     {
     }
 
@@ -196,11 +196,11 @@ private:
 
 static float deviceScaleFactor(const FeatureEvaluationContext& context)
 {
-    auto& frame = *context.document->frame();
-    auto mediaType = frame.view()->mediaType();
+    Ref frame = *context.document->frame();
+    auto mediaType = protect(frame->view())->mediaType();
     
     if (mediaType == screenAtom())
-        return frame.page() ? frame.page()->deviceScaleFactor() : 1;
+        return frame->page() ? frame->page()->deviceScaleFactor() : 1;
 
     if (mediaType == printAtom()) {
         // The resolution of images while printing should not depend on the dpi
@@ -426,7 +426,7 @@ static const LengthSchema& heightFeatureSchema()
         "height"_s,
         MediaQueryDynamicDependency::Viewport,
         [](auto& context) {
-            auto height = context.document->protectedView()->layoutHeight();
+            auto height = protect(context.document->view())->layoutHeight();
             if (CheckedPtr renderView = context.document->renderView())
                 height = adjustForAbsoluteZoom(height, *renderView);
             return height;
@@ -488,11 +488,11 @@ static const IntegerSchema& monochromeFeatureSchema()
                 if (frame->settings().forcedDisplayIsMonochromeAccessibilityValue() == ForcedAccessibilityValue::Off)
                     return false;
                 if (localFrame)
-                    return screenIsMonochrome(localFrame->protectedView().get());
+                    return screenIsMonochrome(protect(localFrame->view()).get());
                 return false;
             }();
 
-            return isMonochrome && localFrame ? screenDepthPerComponent(localFrame->protectedView().get()) : 0;
+            return isMonochrome && localFrame ? screenDepthPerComponent(protect(localFrame->view()).get()) : 0;
         }
     };
     return schema;
@@ -718,7 +718,7 @@ static const LengthSchema& widthFeatureSchema()
         "width"_s,
         MediaQueryDynamicDependency::Viewport,
         [](auto& context) {
-            auto width = context.document->protectedView()->layoutWidth();
+            auto width = protect(context.document->view())->layoutWidth();
             if (CheckedPtr renderView = context.document->renderView())
                 width = adjustForAbsoluteZoom(width, *renderView);
             return width;

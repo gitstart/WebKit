@@ -43,7 +43,7 @@ class IDBTransaction;
 template<typename> class ExceptionOr;
 
 class IDBCursor : public ScriptWrappable, public RefCounted<IDBCursor> {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(IDBCursor);
+    WTF_MAKE_TZONE_ALLOCATED(IDBCursor);
 public:
     static Ref<IDBCursor> create(IDBObjectStore&, const IDBCursorInfo&);
     static Ref<IDBCursor> create(IDBIndex&, const IDBCursorInfo&);
@@ -56,9 +56,7 @@ public:
     IDBCursorDirection direction() const;
 
     IDBKey* key() { return m_key.get(); }
-    RefPtr<IDBKey> protectedKey() { return m_key; }
     IDBKey* primaryKey() { return m_primaryKey.get(); }
-    RefPtr<IDBKey> protectedPrimaryKey() { return m_primaryKey; }
     IDBValue value() { return m_value; }
     const std::optional<IDBKeyPath>& primaryKeyPath() { return m_keyPath; }
     JSValueInWrappedObject& keyWrapper() { return m_keyWrapper; }
@@ -94,9 +92,7 @@ protected:
 private:
     bool sourcesDeleted() const;
     IDBObjectStore& effectiveObjectStore() const;
-    Ref<IDBObjectStore> protectedEffectiveObjectStore() const;
     IDBTransaction& transaction() const;
-    Ref<IDBTransaction> protectedTransaction() const;
 
     void uncheckedIterateCursor(const IDBKeyData&, unsigned count);
     void uncheckedIterateCursor(const IDBKeyData&, const IDBKeyData&);

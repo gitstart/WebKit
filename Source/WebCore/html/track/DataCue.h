@@ -44,7 +44,7 @@ namespace WebCore {
 class ScriptExecutionContext;
 
 class DataCue final : public TextTrackCue {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(DataCue);
+    WTF_MAKE_TZONE_ALLOCATED(DataCue);
 public:
     static Ref<DataCue> create(Document&, double start, double end, ArrayBuffer& data);
     static Ref<DataCue> create(Document&, double start, double end, JSC::JSValue, const String& type);
@@ -54,7 +54,7 @@ public:
     virtual ~DataCue();
 
     RefPtr<JSC::ArrayBuffer> data() const;
-    void setData(JSC::ArrayBuffer&);
+    ExceptionOr<void> setData(JSC::ArrayBuffer*);
 
     const SerializedPlatformDataCue* platformValue() const { return m_platformValue.get(); }
     RefPtr<const SerializedPlatformDataCue> protectedPlatformValue() const { return m_platformValue.get(); }

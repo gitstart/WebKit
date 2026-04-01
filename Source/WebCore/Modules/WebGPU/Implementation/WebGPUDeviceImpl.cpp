@@ -78,7 +78,7 @@ static auto invalidEntryPointName()
 WTF_MAKE_TZONE_ALLOCATED_IMPL(DeviceImpl);
 
 DeviceImpl::DeviceImpl(WebGPUPtr<WGPUDevice>&& device, Ref<SupportedFeatures>&& features, Ref<SupportedLimits>&& limits, ConvertToBackingContext& convertToBackingContext)
-    : Device(WTFMove(features), WTFMove(limits))
+    : Device(WTF::move(features), WTF::move(limits))
     , m_backing(device.copyRef())
     , m_convertToBackingContext(convertToBackingContext)
     , m_queue(QueueImpl::create(WebGPUPtr<WGPUQueue> { wgpuDeviceGetQueue(device.get()) }, convertToBackingContext))
@@ -322,9 +322,9 @@ static auto convertToBacking(const ComputePipelineDescriptor& descriptor, Conver
     auto label = descriptor.label.utf8();
 
     std::optional<CString> entryPoint;
-    if (auto& descriptorEntryPoint = descriptor.compute.entryPoint) {
-        entryPoint = descriptorEntryPoint->utf8();
-        if (descriptorEntryPoint->length() != String::fromUTF8(entryPoint->data()).length())
+    if (!descriptor.compute.entryPoint.isNull()) {
+        entryPoint = descriptor.compute.entryPoint.utf8();
+        if (descriptor.compute.entryPoint.length() != String::fromUTF8(entryPoint->data()).length())
             entryPoint = invalidEntryPointName();
     }
 
@@ -345,7 +345,7 @@ static auto convertToBacking(const ComputePipelineDescriptor& descriptor, Conver
         .label = label.data(),
         .layout = descriptor.layout ? convertToBackingContext.convertToBacking(*descriptor.protectedLayout().get()) : nullptr,
         .compute = WGPUProgrammableStageDescriptor {
-            .module = convertToBackingContext.convertToBacking(descriptor.compute.protectedModule().get()),
+            .module = convertToBackingContext.convertToBacking(protect(descriptor.compute.module.get()).get()),
             .entryPoint = entryPoint ? entryPoint->data() : nullptr,
             .constantCount = backingConstantEntries.size(),
             .constants = backingConstantEntries.size() ? backingConstantEntries.span().data() : nullptr,
@@ -368,9 +368,9 @@ static auto convertToBacking(const RenderPipelineDescriptor& descriptor, Convert
     auto label = descriptor.label.utf8();
 
     std::optional<CString> vertexEntryPoint;
-    if (auto& descriptorEntryPoint = descriptor.vertex.entryPoint) {
-        vertexEntryPoint = descriptorEntryPoint->utf8();
-        if (descriptorEntryPoint->length() != String::fromUTF8(vertexEntryPoint->data()).length())
+    if (!descriptor.vertex.entryPoint.isNull()) {
+        vertexEntryPoint = descriptor.vertex.entryPoint.utf8();
+        if (descriptor.vertex.entryPoint.length() != String::fromUTF8(vertexEntryPoint->data()).length())
             vertexEntryPoint = invalidEntryPointName();
     }
 
@@ -436,9 +436,9 @@ static auto convertToBacking(const RenderPipelineDescriptor& descriptor, Convert
     std::optional<CString> fragmentEntryPoint;
     Vector<CString> fragmentConstantNames;
     if (descriptor.fragment) {
-        if (auto& descriptorEntryPoint = descriptor.fragment->entryPoint) {
-            fragmentEntryPoint = descriptorEntryPoint->utf8();
-            if (descriptorEntryPoint->length() != String::fromUTF8(descriptor.fragment->entryPoint->utf8().data()).length())
+        if (!descriptor.fragment->entryPoint.isNull()) {
+            fragmentEntryPoint = descriptor.fragment->entryPoint.utf8();
+            if (descriptor.fragment->entryPoint.length() != String::fromUTF8(fragmentEntryPoint->data()).length())
                 fragmentEntryPoint = invalidEntryPointName();
         }
 
@@ -498,7 +498,7 @@ static auto convertToBacking(const RenderPipelineDescriptor& descriptor, Convert
     }
 
     WGPUFragmentState fragmentState {
-        .module = descriptor.fragment ? convertToBackingContext.convertToBacking(descriptor.fragment->protectedModule().get()) : nullptr,
+        .module = descriptor.fragment ? convertToBackingContext.convertToBacking(protect(descriptor.fragment->module.get()).get()) : nullptr,
         .entryPoint = fragmentEntryPoint ? fragmentEntryPoint->data() : nullptr,
         .constantCount = fragmentConstantEntries.size(),
         .constants = fragmentConstantEntries.size() ? fragmentConstantEntries.span().data() : nullptr,
@@ -510,7 +510,7 @@ static auto convertToBacking(const RenderPipelineDescriptor& descriptor, Convert
         .label = label.data(),
         .layout = descriptor.layout ? convertToBackingContext.convertToBacking(*descriptor.protectedLayout()) : nullptr,
         .vertex = {
-            .module = convertToBackingContext.convertToBacking(descriptor.vertex.protectedModule().get()),
+            .module = convertToBackingContext.convertToBacking(protect(descriptor.vertex.module.get()).get()),
             .entryPoint = vertexEntryPoint ? vertexEntryPoint->data() : nullptr,
             .constantCount = vertexConstantEntries.size(),
             .constants = vertexConstantEntries.size() ? vertexConstantEntries.span().data() : nullptr,
@@ -546,18 +546,18 @@ RefPtr<RenderPipeline> DeviceImpl::createRenderPipeline(const RenderPipelineDesc
 static void createComputePipelineAsyncCallback(WGPUCreatePipelineAsyncStatus status, WGPUComputePipeline pipeline, String&& message, void* userdata)
 {
     auto block = reinterpret_cast<void(^)(WGPUCreatePipelineAsyncStatus, WGPUComputePipeline, String&&)>(userdata);
-    block(status, pipeline, WTFMove(message));
+    block(status, pipeline, WTF::move(message));
     Block_release(block); // Block_release is matched with Block_copy below in DeviceImpl::createComputePipelineAsync().
 }
 
 void DeviceImpl::createComputePipelineAsync(const ComputePipelineDescriptor& descriptor, CompletionHandler<void(RefPtr<ComputePipeline>&&, String&&)>&& callback)
 {
-    convertToBacking(descriptor, m_convertToBackingContext, [backing = m_backing.copyRef(), &convertToBackingContext = m_convertToBackingContext.get(), callback = WTFMove(callback)](const WGPUComputePipelineDescriptor& backingDescriptor) mutable {
-        auto blockPtr = makeBlockPtr([convertToBackingContext = Ref { convertToBackingContext }, callback = WTFMove(callback)](WGPUCreatePipelineAsyncStatus status, WGPUComputePipeline pipeline, String&& message) mutable {
+    convertToBacking(descriptor, m_convertToBackingContext, [backing = m_backing.copyRef(), &convertToBackingContext = m_convertToBackingContext.get(), callback = WTF::move(callback)](const WGPUComputePipelineDescriptor& backingDescriptor) mutable {
+        auto blockPtr = makeBlockPtr([convertToBackingContext = Ref { convertToBackingContext }, callback = WTF::move(callback)](WGPUCreatePipelineAsyncStatus status, WGPUComputePipeline pipeline, String&& message) mutable {
             if (status == WGPUCreatePipelineAsyncStatus_Success)
                 callback(ComputePipelineImpl::create(adoptWebGPU(pipeline), convertToBackingContext), ""_s);
             else
-                callback(nullptr, WTFMove(message));
+                callback(nullptr, WTF::move(message));
         });
         wgpuDeviceCreateComputePipelineAsync(backing.get(), &backingDescriptor, &createComputePipelineAsyncCallback, Block_copy(blockPtr.get())); // Block_copy is matched with Block_release above in createComputePipelineAsyncCallback().
     });
@@ -566,18 +566,18 @@ void DeviceImpl::createComputePipelineAsync(const ComputePipelineDescriptor& des
 static void createRenderPipelineAsyncCallback(WGPUCreatePipelineAsyncStatus status, WGPURenderPipeline pipeline, String&& message, void* userdata)
 {
     auto block = reinterpret_cast<void(^)(WGPUCreatePipelineAsyncStatus, WGPURenderPipeline, String&&)>(userdata);
-    block(status, pipeline, WTFMove(message));
+    block(status, pipeline, WTF::move(message));
     Block_release(block); // Block_release is matched with Block_copy below in DeviceImpl::createRenderPipelineAsync().
 }
 
 void DeviceImpl::createRenderPipelineAsync(const RenderPipelineDescriptor& descriptor, CompletionHandler<void(RefPtr<RenderPipeline>&&, String&&)>&& callback)
 {
-    convertToBacking(descriptor, m_convertToBackingContext, [backing = m_backing.copyRef(), convertToBackingContext = m_convertToBackingContext.copyRef(), callback = WTFMove(callback)](const WGPURenderPipelineDescriptor& backingDescriptor) mutable {
-        auto blockPtr = makeBlockPtr([convertToBackingContext = convertToBackingContext.copyRef(), callback = WTFMove(callback)](WGPUCreatePipelineAsyncStatus status, WGPURenderPipeline pipeline, String&& message) mutable {
+    convertToBacking(descriptor, m_convertToBackingContext, [backing = m_backing.copyRef(), convertToBackingContext = m_convertToBackingContext.copyRef(), callback = WTF::move(callback)](const WGPURenderPipelineDescriptor& backingDescriptor) mutable {
+        auto blockPtr = makeBlockPtr([convertToBackingContext = convertToBackingContext.copyRef(), callback = WTF::move(callback)](WGPUCreatePipelineAsyncStatus status, WGPURenderPipeline pipeline, String&& message) mutable {
             if (status == WGPUCreatePipelineAsyncStatus_Success)
                 callback(RenderPipelineImpl::create(adoptWebGPU(pipeline), convertToBackingContext), ""_s);
             else
-                callback(nullptr, WTFMove(message));
+                callback(nullptr, WTF::move(message));
         });
         wgpuDeviceCreateRenderPipelineAsync(backing.get(), &backingDescriptor, &createRenderPipelineAsyncCallback, Block_copy(blockPtr.get())); // Block_copy is matched with Block_release above in createRenderPipelineAsyncCallback().
     });
@@ -651,7 +651,7 @@ static void setUncapturedScopeCallback(WGPUErrorType type, const char* message, 
 
 void DeviceImpl::popErrorScope(CompletionHandler<void(bool, std::optional<Error>&&)>&& callback)
 {
-    auto blockPtr = makeBlockPtr([callback = WTFMove(callback)](WGPUErrorType errorType, const char* message) mutable {
+    auto blockPtr = makeBlockPtr([callback = WTF::move(callback)](WGPUErrorType errorType, const char* message) mutable {
         std::optional<Error> error;
         bool succeeded = false;
         switch (errorType) {
@@ -675,14 +675,14 @@ void DeviceImpl::popErrorScope(CompletionHandler<void(bool, std::optional<Error>
             break;
         }
 
-        callback(succeeded, WTFMove(error));
+        callback(succeeded, WTF::move(error));
     });
     wgpuDevicePopErrorScope(m_backing.get(), &popErrorScopeCallback, Block_copy(blockPtr.get())); // Block_copy is matched with Block_release above in popErrorScopeCallback().
 }
 
 void DeviceImpl::resolveUncapturedErrorEvent(CompletionHandler<void(bool, std::optional<Error>&&)>&& callback)
 {
-    auto blockPtr = makeBlockPtr([callback = WTFMove(callback)](WGPUErrorType errorType, const char* message) mutable {
+    auto blockPtr = makeBlockPtr([callback = WTF::move(callback)](WGPUErrorType errorType, const char* message) mutable {
         std::optional<Error> error;
         bool hasUncapturedError = true;
         switch (errorType) {
@@ -706,14 +706,14 @@ void DeviceImpl::resolveUncapturedErrorEvent(CompletionHandler<void(bool, std::o
             break;
         }
 
-        callback(hasUncapturedError, WTFMove(error));
+        callback(hasUncapturedError, WTF::move(error));
     });
     wgpuDeviceSetUncapturedErrorCallback(m_backing.get(), &setUncapturedScopeCallback, Block_copy(blockPtr.get()));
 }
 
 void DeviceImpl::resolveDeviceLostPromise(CompletionHandler<void(WebCore::WebGPU::DeviceLostReason)>&& callback)
 {
-    wgpuDeviceSetDeviceLostCallbackWithBlock(m_backing.get(), makeBlockPtr([callback = WTFMove(callback)](WGPUDeviceLostReason reason, const char*) mutable {
+    wgpuDeviceSetDeviceLostCallbackWithBlock(m_backing.get(), makeBlockPtr([callback = WTF::move(callback)](WGPUDeviceLostReason reason, const char*) mutable {
         switch (reason) {
         case WGPUDeviceLostReason_Undefined:
         case WGPUDeviceLostReason_Force32:

@@ -146,7 +146,7 @@ inline float contentStartInBlockDirection(const LineBox&);
 // -----------------------------------------------
 
 inline LineBox::LineBox(PathVariant&& path)
-    : m_pathVariant(WTFMove(path))
+    : m_pathVariant(WTF::move(path))
 {
 }
 
@@ -325,7 +325,7 @@ inline bool LineBox::isFirst() const
 inline bool LineBox::hasBlockContent() const
 {
     return WTF::switchOn(m_pathVariant, [](const auto& path) {
-        return path.hasBlockContent();
+        return path.hasBlockLevelBox();
     });
 }
 

@@ -42,7 +42,7 @@ class SVGConditionalProcessingAttributes;
 template<typename T>
 concept HasFastPropertyForAttribute = requires(const T& element, const QualifiedName& name)
 {
-    { element.propertyForAttribute(name) } -> std::same_as<SVGAnimatedProperty*>;
+    { element.propertyForAttribute(name) } -> std::same_as<SVGAnimatedPropertyBase*>;
 };
 
 struct SVGAttributeHashTranslator {
@@ -226,7 +226,7 @@ public:
         return attributeName;
     }
 
-    QualifiedName animatedPropertyAttributeName(const SVGAnimatedProperty& animatedProperty) const override
+    QualifiedName animatedPropertyAttributeName(const SVGAnimatedPropertyBase& animatedProperty) const override
     {
         QualifiedName attributeName = nullQName();
         enumerateRecursively([&](const auto& entry) -> bool {
@@ -238,9 +238,9 @@ public:
         return attributeName;
     }
 
-    void setAnimatedPropertyDirty(const QualifiedName& attributeName, SVGAnimatedProperty& animatedProperty) const override
+    void setAnimatedPropertyDirty(const QualifiedName& attributeName, SVGAnimatedPropertyBase& animatedProperty) const override
     {
-        if (auto* property = fastAnimatedPropertyLookup(m_owner, attributeName)) {
+        if (RefPtr property = fastAnimatedPropertyLookup(m_owner, attributeName)) {
             property->setDirty();
             return;
         }
@@ -259,7 +259,7 @@ public:
         });
     }
 
-    static inline SVGAnimatedProperty* fastAnimatedPropertyLookup(OwnerType& owner, const QualifiedName& attributeName)
+    static inline SVGAnimatedPropertyBase* fastAnimatedPropertyLookup(OwnerType& owner, const QualifiedName& attributeName)
     {
         if constexpr (HasFastPropertyForAttribute<OwnerType>)
             return owner.propertyForAttribute(attributeName);
@@ -273,7 +273,7 @@ public:
     // string through the associated SVGMemberAccessor.
     std::optional<String> synchronize(const QualifiedName& attributeName) const override
     {
-        if (auto* property = fastAnimatedPropertyLookup(m_owner, attributeName))
+        if (RefPtr property = fastAnimatedPropertyLookup(m_owner, attributeName))
             return property->synchronize();
 
         std::optional<String> value;

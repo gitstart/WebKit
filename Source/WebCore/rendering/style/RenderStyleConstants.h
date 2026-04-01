@@ -2,9 +2,10 @@
  * Copyright (C) 2000 Lars Knoll (knoll@kde.org)
  *           (C) 2000 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003-2023 Apple Inc. All rights reserved.
+ * Copyright (C) 2003-2026 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Graham Dennis (graham.dennis@gmail.com)
  * Copyright (C) 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
+ * Copyright (C) 2026 Samuel Weinig <sam@webkit.org>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -48,42 +49,6 @@ enum class PrintColorAdjust : bool {
     Exact
 };
 
-// The difference between two styles.  The following values are used:
-// - StyleDifference::Equal - The two styles are identical
-// - StyleDifference::RecompositeLayer - The layer needs its position and transform updated, but no repaint
-// - StyleDifference::Repaint - The object just needs to be repainted.
-// - StyleDifference::RepaintIfText - The object needs to be repainted if it contains text.
-// - StyleDifference::RepaintLayer - The layer and its descendant layers needs to be repainted.
-// - StyleDifference::LayoutOutOfFlowMovementOnly - Only the position of this out-of-flow box has been updated
-// - StyleDifference::Overflow - Only overflow needs to be recomputed
-// - StyleDifference::OverflowAndOutOfFlowMovement - Both out-of-flow movement and overflow updates are required.
-// - StyleDifference::Layout - A full layout is required.
-enum class StyleDifference : uint8_t {
-    Equal,
-    RecompositeLayer,
-    Repaint,
-    RepaintIfText,
-    RepaintLayer,
-    LayoutOutOfFlowMovementOnly,
-    Overflow,
-    OverflowAndOutOfFlowMovement,
-    Layout,
-    NewStyle
-};
-
-// When some style properties change, different amounts of work have to be done depending on
-// context (e.g. whether the property is changing on an element which has a compositing layer).
-// A simple StyleDifference does not provide enough information so we return a bit mask of
-// StyleDifferenceContextSensitiveProperties from RenderStyle::diff() too.
-enum class StyleDifferenceContextSensitiveProperty : uint8_t {
-    Transform   = 1 << 0,
-    Opacity     = 1 << 1,
-    Filter      = 1 << 2,
-    ClipRect    = 1 << 3,
-    ClipPath    = 1 << 4,
-    WillChange  = 1 << 5,
-};
-
 enum class PseudoElementType : uint8_t {
     // Public:
     FirstLine,
@@ -98,6 +63,7 @@ enum class PseudoElementType : uint8_t {
     WebKitScrollbar,
     SpellingError,
     TargetText,
+    Checkmark,
     ViewTransition,
     ViewTransitionGroup,
     ViewTransitionImagePair,
@@ -129,6 +95,7 @@ constexpr auto allPublicPseudoElementTypes = EnumSet {
     PseudoElementType::WebKitScrollbar,
     PseudoElementType::SpellingError,
     PseudoElementType::TargetText,
+    PseudoElementType::Checkmark,
     PseudoElementType::ViewTransition,
     PseudoElementType::ViewTransitionGroup,
     PseudoElementType::ViewTransitionImagePair,
@@ -189,6 +156,11 @@ enum class BorderStyle : uint8_t {
     Solid,
     Double
 };
+
+inline bool isVisibleBorderStyle(BorderStyle value)
+{
+    return value > BorderStyle::Hidden;
+}
 
 enum class BorderPrecedence : uint8_t {
     Off,
@@ -970,43 +942,44 @@ enum class FontLoadingBehavior : uint8_t {
 };
 
 enum class EventListenerRegionType : uint64_t {
-    Wheel                  = 1LLU << 0,
-    NonPassiveWheel        = 1LLU << 1,
-    MouseClick             = 1LLU << 2,
-    TouchStart             = 1LLU << 3,
-    NonPassiveTouchStart   = 1LLU << 4,
-    TouchEnd               = 1LLU << 5,
-    NonPassiveTouchEnd     = 1LLU << 6,
-    TouchCancel            = 1LLU << 7,
-    NonPassiveTouchCancel  = 1LLU << 8,
-    TouchMove              = 1LLU << 9,
-    NonPassiveTouchMove    = 1LLU << 10,
-    PointerDown            = 1LLU << 11,
-    NonPassivePointerDown  = 1LLU << 12,
-    PointerEnter           = 1LLU << 13,
-    NonPassivePointerEnter = 1LLU << 14,
-    PointerLeave           = 1LLU << 15,
-    NonPassivePointerLeave = 1LLU << 16,
-    PointerMove            = 1LLU << 17,
-    NonPassivePointerMove  = 1LLU << 18,
-    PointerOut             = 1LLU << 19,
-    NonPassivePointerOut   = 1LLU << 20,
-    PointerOver            = 1LLU << 21,
-    NonPassivePointerOver  = 1LLU << 22,
-    PointerUp              = 1LLU << 23,
-    NonPassivePointerUp    = 1LLU << 24,
-    MouseDown              = 1LLU << 25,
-    NonPassiveMouseDown    = 1LLU << 26,
-    MouseUp                = 1LLU << 27,
-    NonPassiveMouseUp      = 1LLU << 28,
-    MouseMove              = 1LLU << 29,
-    NonPassiveMouseMove    = 1LLU << 30,
-    GestureChange          = 1LLU << 31,
-    NonPassiveGestureChange= 1LLU << 32,
-    GestureEnd             = 1LLU << 33,
-    NonPassiveGestureEnd   = 1LLU << 34,
-    GestureStart           = 1LLU << 35,
-    NonPassiveGestureStart = 1LLU << 36,
+    Wheel                      = 1LLU << 0,
+    NonPassiveWheel            = 1LLU << 1,
+    MouseClick                 = 1LLU << 2,
+    TouchStart                 = 1LLU << 3,
+    NonPassiveTouchStart       = 1LLU << 4,
+    TouchEnd                   = 1LLU << 5,
+    NonPassiveTouchEnd         = 1LLU << 6,
+    TouchCancel                = 1LLU << 7,
+    TouchMove                  = 1LLU << 8,
+    NonPassiveTouchMove        = 1LLU << 9,
+    TouchForceChange           = 1LLU << 10,
+    NonPassiveTouchForceChange = 1LLU << 11,
+    PointerDown                = 1LLU << 12,
+    NonPassivePointerDown      = 1LLU << 13,
+    PointerEnter               = 1LLU << 14,
+    NonPassivePointerEnter     = 1LLU << 15,
+    PointerLeave               = 1LLU << 16,
+    NonPassivePointerLeave     = 1LLU << 17,
+    PointerMove                = 1LLU << 18,
+    NonPassivePointerMove      = 1LLU << 19,
+    PointerOut                 = 1LLU << 20,
+    NonPassivePointerOut       = 1LLU << 21,
+    PointerOver                = 1LLU << 22,
+    NonPassivePointerOver      = 1LLU << 23,
+    PointerUp                  = 1LLU << 24,
+    NonPassivePointerUp        = 1LLU << 25,
+    MouseDown                  = 1LLU << 26,
+    NonPassiveMouseDown        = 1LLU << 27,
+    MouseUp                    = 1LLU << 28,
+    NonPassiveMouseUp          = 1LLU << 29,
+    MouseMove                  = 1LLU << 30,
+    NonPassiveMouseMove        = 1LLU << 31,
+    GestureChange              = 1LLU << 32,
+    NonPassiveGestureChange    = 1LLU << 33,
+    GestureEnd                 = 1LLU << 34,
+    NonPassiveGestureEnd       = 1LLU << 35,
+    GestureStart               = 1LLU << 36,
+    NonPassiveGestureStart     = 1LLU << 37,
 };
 
 enum class MathShift : bool {
@@ -1249,8 +1222,6 @@ WTF::TextStream& operator<<(WTF::TextStream&, ScrollSnapAxisAlignType);
 WTF::TextStream& operator<<(WTF::TextStream&, ScrollSnapStop);
 WTF::TextStream& operator<<(WTF::TextStream&, ScrollSnapStrictness);
 WTF::TextStream& operator<<(WTF::TextStream&, Scroller);
-WTF::TextStream& operator<<(WTF::TextStream&, StyleDifference);
-WTF::TextStream& operator<<(WTF::TextStream&, StyleDifferenceContextSensitiveProperty);
 WTF::TextStream& operator<<(WTF::TextStream&, TableLayoutType);
 WTF::TextStream& operator<<(WTF::TextStream&, TextCombine);
 WTF::TextStream& operator<<(WTF::TextStream&, TextDecorationSkipInk);

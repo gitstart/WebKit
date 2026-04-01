@@ -40,7 +40,7 @@
 static WebKit::WebURLSchemeTask::ExceptionType getExceptionTypeFromMainRunLoop(Function<WebKit::WebURLSchemeTask::ExceptionType ()>&& function)
 {
     WebKit::WebURLSchemeTask::ExceptionType exceptionType;
-    callOnMainRunLoopAndWait([function = WTFMove(function), &exceptionType] {
+    callOnMainRunLoopAndWait([function = WTF::move(function), &exceptionType] {
         exceptionType = function();
     });
 
@@ -100,18 +100,18 @@ static Ref<WebKit::WebURLSchemeTask> protectedURLSchemeTask(WKURLSchemeTaskImpl 
 
 - (BOOL)_requestOnlyIfCached
 {
-    return protectedURLSchemeTask(self)->protectedNSRequest().get().cachePolicy == NSURLRequestReturnCacheDataDontLoad;
+    return protect(protectedURLSchemeTask(self)->nsRequest()).get().cachePolicy == NSURLRequestReturnCacheDataDontLoad;
 }
 
 - (void)_willPerformRedirection:(NSURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *))completionHandler
 {
     auto function = [strongSelf = retainPtr(self), self, response = retainPtr(response), request = retainPtr(request), handler = makeBlockPtr(completionHandler)] () mutable {
-        return protectedURLSchemeTask(self)->willPerformRedirection(response.get(), request.get(), [handler = WTFMove(handler)] (WebCore::ResourceRequest&& actualNewRequest) {
+        return protectedURLSchemeTask(self)->willPerformRedirection(response.get(), request.get(), [handler = WTF::move(handler)] (WebCore::ResourceRequest&& actualNewRequest) {
             handler.get()(actualNewRequest.protectedNSURLRequest(WebCore::HTTPBodyUpdatePolicy::UpdateHTTPBody).get());
         });
     };
 
-    auto result = getExceptionTypeFromMainRunLoop(WTFMove(function));
+    auto result = getExceptionTypeFromMainRunLoop(WTF::move(function));
     raiseExceptionIfNecessary(result);
 }
 
@@ -121,7 +121,7 @@ static Ref<WebKit::WebURLSchemeTask> protectedURLSchemeTask(WKURLSchemeTaskImpl 
         return protectedURLSchemeTask(self)->didReceiveResponse(response.get());
     };
 
-    auto result = getExceptionTypeFromMainRunLoop(WTFMove(function));
+    auto result = getExceptionTypeFromMainRunLoop(WTF::move(function));
     raiseExceptionIfNecessary(result);
 }
 
@@ -131,7 +131,7 @@ static Ref<WebKit::WebURLSchemeTask> protectedURLSchemeTask(WKURLSchemeTaskImpl 
         return protectedURLSchemeTask(self)->didReceiveData(WebCore::SharedBuffer::create(data.get()));
     };
 
-    auto result = getExceptionTypeFromMainRunLoop(WTFMove(function));
+    auto result = getExceptionTypeFromMainRunLoop(WTF::move(function));
     raiseExceptionIfNecessary(result);
 }
 
@@ -141,7 +141,7 @@ static Ref<WebKit::WebURLSchemeTask> protectedURLSchemeTask(WKURLSchemeTaskImpl 
         return protectedURLSchemeTask(self)->didComplete({ });
     };
 
-    auto result = getExceptionTypeFromMainRunLoop(WTFMove(function));
+    auto result = getExceptionTypeFromMainRunLoop(WTF::move(function));
     raiseExceptionIfNecessary(result);
 }
 
@@ -151,7 +151,7 @@ static Ref<WebKit::WebURLSchemeTask> protectedURLSchemeTask(WKURLSchemeTaskImpl 
         return protectedURLSchemeTask(self)->didComplete(error.get());
     };
 
-    auto result = getExceptionTypeFromMainRunLoop(WTFMove(function));
+    auto result = getExceptionTypeFromMainRunLoop(WTF::move(function));
     raiseExceptionIfNecessary(result);
 }
 
@@ -161,7 +161,7 @@ static Ref<WebKit::WebURLSchemeTask> protectedURLSchemeTask(WKURLSchemeTaskImpl 
         return protectedURLSchemeTask(self)->didPerformRedirection(response.get(), request.get());
     };
 
-    auto result = getExceptionTypeFromMainRunLoop(WTFMove(function));
+    auto result = getExceptionTypeFromMainRunLoop(WTF::move(function));
     raiseExceptionIfNecessary(result);
 }
 

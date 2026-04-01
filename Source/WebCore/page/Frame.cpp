@@ -42,6 +42,7 @@
 #include "ScrollingCoordinator.h"
 #include "Settings.h"
 #include "WindowProxy.h"
+#include <wtf/Assertions.h>
 #include <wtf/NeverDestroyed.h>
 
 namespace WebCore {
@@ -118,7 +119,7 @@ Frame::Frame(Page& page, FrameIdentifier frameID, FrameType frameType, HTMLFrame
     , m_frameType(frameType)
     , m_navigationScheduler(makeUniqueRefWithoutRefCountedCheck<NavigationScheduler>(*this))
     , m_opener(opener)
-    , m_frameTreeSyncData(WTFMove(frameTreeSyncData))
+    , m_frameTreeSyncData(WTF::move(frameTreeSyncData))
 {
     relaxAdoptionRequirement();
     if (parent && addToFrameTree == AddToFrameTree::Yes)
@@ -137,7 +138,7 @@ Frame::Frame(Page& page, FrameIdentifier frameID, FrameType frameType, HTMLFrame
 
 Frame::~Frame()
 {
-    protectedWindowProxy()->detachFromFrame();
+    protect(windowProxy())->detachFromFrame();
     protectedNavigationScheduler()->cancel();
 
 #if ASSERT_ENABLED
@@ -176,10 +177,10 @@ void Frame::takeWindowProxyAndOpenerFrom(Frame& frame)
 {
     ASSERT(is<LocalDOMWindow>(window()) != is<LocalDOMWindow>(frame.window()) || page() != frame.page());
     ASSERT(m_windowProxy->frame() == this);
-    protectedWindowProxy()->detachFromFrame();
+    protect(windowProxy())->detachFromFrame();
     m_windowProxy = frame.windowProxy();
     frame.resetWindowProxy();
-    protectedWindowProxy()->replaceFrame(*this);
+    protect(windowProxy())->replaceFrame(*this);
 
     ASSERT(!m_opener);
     m_opener = frame.m_opener;
@@ -209,6 +210,35 @@ Ref<NavigationScheduler> Frame::protectedNavigationScheduler() const
     return m_navigationScheduler.get();
 }
 
+std::optional<uint64_t> Frame::indexInFrameTreeSiblings() const
+{
+    if (!tree().parent())
+        return std::nullopt;
+
+    for (uint64_t i = 0; i < tree().parent()->tree().childCount(); i++) {
+        if (RefPtr child = tree().parent()->tree().child(i); child->frameID() == this->frameID())
+            return i;
+    }
+
+    ASSERT_NOT_REACHED("This frame should be in its own tree");
+    return std::nullopt;
+}
+
+Vector<uint64_t> Frame::pathToFrame() const
+{
+    Vector<uint64_t> path;
+    RefPtr current = this;
+
+    while (current) {
+        if (auto index = current->indexInFrameTreeSiblings())
+            path.append(*index);
+        current = current->tree().parent();
+    }
+
+    path.reverse();
+    return path;
+}
+
 RenderWidget* Frame::ownerRenderer() const
 {
     RefPtr ownerElement = this->ownerElement();
@@ -236,7 +266,7 @@ bool Frame::isRootFrameIdentifier(FrameIdentifier identifier)
 void Frame::updateOpener(Frame& newOpener, NotifyUIProcess notifyUIProcess)
 {
     if (notifyUIProcess == NotifyUIProcess::Yes)
-        loaderClient().updateOpener(newOpener);
+        loaderClient().updateOpener(newOpener.frameID());
     if (m_opener)
         m_opener->m_openedFrames.remove(*this);
     newOpener.m_openedFrames.add(*this);
@@ -247,10 +277,14 @@ void Frame::updateOpener(Frame& newOpener, NotifyUIProcess notifyUIProcess)
     reinitializeDocumentSecurityContext();
 }
 
-void Frame::disownOpener()
+void Frame::disownOpener(NotifyUIProcess notifyUIProcess)
 {
-    if (m_opener)
+    if (m_opener) {
+        if (notifyUIProcess == NotifyUIProcess::Yes)
+            loaderClient().updateOpener(std::nullopt);
         m_opener->m_openedFrames.remove(*this);
+    }
+
     m_opener = nullptr;
 
     reinitializeDocumentSecurityContext();
@@ -288,24 +322,24 @@ void Frame::setOwnerElement(HTMLFrameOwnerElement* element)
 
 void Frame::setOwnerPermissionsPolicy(OwnerPermissionsPolicyData&& ownerPermissionsPolicy)
 {
-    m_ownerPermisssionsPolicyOverride = makeUnique<OwnerPermissionsPolicyData>(WTFMove(ownerPermissionsPolicy));
+    m_ownerPermissionsPolicyOverride = makeUnique<OwnerPermissionsPolicyData>(WTF::move(ownerPermissionsPolicy));
 }
 
 std::optional<OwnerPermissionsPolicyData> Frame::ownerPermissionsPolicy() const
 {
-    if (m_ownerPermisssionsPolicyOverride)
-        return *m_ownerPermisssionsPolicyOverride;
+    if (m_ownerPermissionsPolicyOverride)
+        return *m_ownerPermissionsPolicyOverride;
 
     RefPtr owner = ownerElement();
     if (!owner)
         return std::nullopt;
 
-    auto documentOrigin = owner->protectedDocument()->securityOrigin().data();
-    auto documentPolicy = owner->protectedDocument()->permissionsPolicy();
+    auto documentOrigin = protect(owner->document())->securityOrigin().data();
+    auto documentPolicy = protect(owner->document())->permissionsPolicy();
 
     RefPtr iframe = dynamicDowncast<HTMLIFrameElement>(owner);
     auto containerPolicy = iframe ? PermissionsPolicy::processPermissionsPolicyAttribute(*iframe) : PermissionsPolicy::PolicyDirective { };
-    return OwnerPermissionsPolicyData { WTFMove(documentOrigin), WTFMove(documentPolicy), WTFMove(containerPolicy) };
+    return OwnerPermissionsPolicyData { WTF::move(documentOrigin), WTF::move(documentPolicy), WTF::move(containerPolicy) };
 }
 
 void Frame::updateSandboxFlags(SandboxFlags flags, NotifyUIProcess notifyUIProcess)
@@ -326,7 +360,7 @@ void Frame::stopForBackForwardCache()
 
 void Frame::updateFrameTreeSyncData(Ref<FrameTreeSyncData>&& data)
 {
-    m_frameTreeSyncData = WTFMove(data);
+    m_frameTreeSyncData = WTF::move(data);
 }
 
 void Frame::updateFrameTreeSyncData(const FrameTreeSyncSerializationData& data)
@@ -352,5 +386,48 @@ void Frame::setPrinting(bool printing, FloatSize pageSize, FloatSize originalPag
     if (notifyUIProcess == NotifyUIProcess::Yes && m_settings->siteIsolationEnabled())
         loaderClient().setPrinting(printing, pageSize, originalPageSize, maximumShrinkRatio, shouldAdjustViewSize);
 }
+
+SecurityOrigin& Frame::topOrigin() const
+{
+    if (RefPtr page = this->page())
+        return page->mainFrameOrigin();
+
+    return SecurityOrigin::opaqueOrigin();
+}
+
+Ref<SecurityOrigin> Frame::protectedTopOrigin() const
+{
+    return topOrigin();
+}
+
+float Frame::frameScaleFactor() const
+{
+    RefPtr page = this->page();
+
+    if (!page)
+        return 1.0;
+
+    // https://github.com/w3c/csswg-drafts/issues/9644
+    // Check if this frame's owner element (iframe) has CSS zoom applied.
+    if (!isMainFrame()) {
+        auto rootZoom = 1.0;
+
+        // FIXME: maybe pageZoomFactor should be available in remote frames?
+        if (RefPtr localMainFrame = dynamicDowncast<LocalFrame>(mainFrame()))
+            rootZoom = localMainFrame->pageZoomFactor();
+
+        if (RefPtr parentFrame = tree().parent())
+            rootZoom = parentFrame->usedZoomForChild(*this) / rootZoom;
+
+        return rootZoom;
+    }
+
+    // Main frame is scaled with respect to the container.
+    if (page->delegatesScaling())
+        return 1;
+
+    return page->pageScaleFactor();
+}
+
 
 } // namespace WebCore

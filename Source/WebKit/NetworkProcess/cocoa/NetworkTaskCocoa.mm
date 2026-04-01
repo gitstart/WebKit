@@ -57,11 +57,6 @@ NetworkTaskCocoa::NetworkTaskCocoa(NetworkSession& session)
 {
 }
 
-RetainPtr<NSURLSessionTask> NetworkTaskCocoa::protectedTask() const
-{
-    return task();
-}
-
 CheckedPtr<NetworkSession> NetworkTaskCocoa::checkedNetworkSession() const
 {
     ASSERT(m_networkSession);
@@ -116,7 +111,7 @@ static RetainPtr<NSArray<NSHTTPCookie *>> cookiesByCappingExpiry(NSArray<NSHTTPC
 }
 
 #if ENABLE(OPT_IN_PARTITIONED_COOKIES) && defined(CFN_COOKIE_ACCEPTS_POLICY_PARTITION) && CFN_COOKIE_ACCEPTS_POLICY_PARTITION
-static NSArray<NSHTTPCookie *> *cookiesBySettingPartition(NSArray<NSHTTPCookie *> *cookies, NSString* partition)
+static RetainPtr<NSArray<NSHTTPCookie *>> cookiesBySettingPartition(NSArray<NSHTTPCookie *> *cookies, NSString* partition)
 {
     RetainPtr<NSMutableArray> partitionedCookies = [NSMutableArray arrayWithCapacity:cookies.count];
     for (NSHTTPCookie *cookie in cookies) {
@@ -124,7 +119,7 @@ static NSArray<NSHTTPCookie *> *cookiesBySettingPartition(NSArray<NSHTTPCookie *
         if (partitionedCookie)
             [partitionedCookies addObject:partitionedCookie.get()];
     }
-    return partitionedCookies.unsafeGet();
+    return partitionedCookies;
 }
 #endif
 
@@ -186,7 +181,7 @@ void NetworkTaskCocoa::setCookieTransformForThirdPartyRequest(const WebCore::Res
 
         // FIXME: Consider making these session cookies, as well.
         if (!cookiePartition.isEmpty())
-            cookiesSetInResponse = cookiesBySettingPartition(cookiesSetInResponse, cookiePartition.createNSString().get());
+            cookiesSetInResponse = cookiesBySettingPartition(cookiesSetInResponse, cookiePartition.createNSString().get()).autorelease();
 
         return cookiesSetInResponse;
     }).get();
@@ -200,7 +195,7 @@ void NetworkTaskCocoa::setCookieTransformForFirstPartyRequest(const WebCore::Res
 
     ASSERT(!request.isThirdParty());
     if (request.isThirdParty()) {
-        protectedTask().get()._cookieTransformCallback = nil;
+        protect(task()).get()._cookieTransformCallback = nil;
         return;
     }
 
@@ -211,7 +206,7 @@ void NetworkTaskCocoa::setCookieTransformForFirstPartyRequest(const WebCore::Res
     auto firstPartyHostName = firstPartyURL.host().toString();
     CheckedPtr networkSession = m_networkSession.get();
 
-    protectedTask().get()._cookieTransformCallback = makeBlockPtr([
+    protect(task()).get()._cookieTransformCallback = makeBlockPtr([
         requestURL = crossThreadCopy(request.url())
         , firstPartyURL = crossThreadCopy(firstPartyURL)
         , firstPartyHostCNAME = crossThreadCopy(networkSession->firstPartyHostCNAMEDomain(firstPartyHostName))
@@ -303,7 +298,7 @@ void NetworkTaskCocoa::blockCookies()
     if (m_hasBeenSetToUseStatelessCookieStorage)
         return;
 
-    [protectedTask() _setExplicitCookieStorage:RetainPtr { statelessCookieStorage() }.get()._cookieStorage];
+    [protect(task()) _setExplicitCookieStorage:RetainPtr { statelessCookieStorage() }.get()._cookieStorage];
     m_hasBeenSetToUseStatelessCookieStorage = true;
 }
 
@@ -315,7 +310,7 @@ void NetworkTaskCocoa::unblockCookies()
         return;
 
     if (CheckedPtr storageSession = checkedNetworkSession()->networkStorageSession()) {
-        [protectedTask() _setExplicitCookieStorage:[storageSession->nsCookieStorage() _cookieStorage]];
+        [protect(task()) _setExplicitCookieStorage:[storageSession->nsCookieStorage() _cookieStorage]];
         m_hasBeenSetToUseStatelessCookieStorage = false;
     }
 }
@@ -399,11 +394,11 @@ void NetworkTaskCocoa::willPerformHTTPRedirection(WebCore::ResourceResponse&& re
     LOG(NetworkSession, "%lu %s cookies for redirect URL %s", (unsigned long)[task() taskIdentifier], (m_hasBeenSetToUseStatelessCookieStorage ? "Blocking" : "Not blocking"), request.url().string().utf8().data());
 #endif
 
-    updateTaskWithFirstPartyForSameSiteCookies(protectedTask().get(), request);
+    updateTaskWithFirstPartyForSameSiteCookies(protect(task()).get(), request);
 #if ENABLE(OPT_IN_PARTITIONED_COOKIES) && defined(CFN_COOKIE_ACCEPTS_POLICY_PARTITION) && CFN_COOKIE_ACCEPTS_POLICY_PARTITION
     updateTaskWithStoragePartitionIdentifier(request);
 #endif
-    completionHandler(WTFMove(request));
+    completionHandler(WTF::move(request));
 }
 
 ShouldRelaxThirdPartyCookieBlocking NetworkTaskCocoa::shouldRelaxThirdPartyCookieBlocking() const

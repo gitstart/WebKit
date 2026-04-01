@@ -70,10 +70,6 @@
 #define USE_GLIB 1
 #endif
 
-#if ((PLATFORM(GTK) || PLATFORM(WPE)) && !USE(SKIA))
-#define USE_FREETYPE 1
-#endif
-
 #if PLATFORM(GTK) || PLATFORM(WPE)
 #define USE_HARFBUZZ 1
 #define USE_FONT_VARIANT_VIA_FEATURES 1
@@ -239,6 +235,18 @@
 #endif
 #endif
 
+#if !defined(USE_MIMALLOC)
+#define USE_MIMALLOC 0
+#endif
+
+#if !defined(USE_SYSTEM_MALLOC)
+#if OS(DARWIN) && !CPU(ADDRESS64)
+#define USE_SYSTEM_MALLOC 1
+#else
+#define USE_SYSTEM_MALLOC 0
+#endif
+#endif
+
 #if PLATFORM(COCOA)
 #define USE_DICTATION_ALTERNATIVES 1
 #endif
@@ -256,8 +264,8 @@
 #define USE_UICONTEXTMENU 1
 #endif
 
-#if PLATFORM(IOS_FAMILY) || (!USE(SYSTEM_MALLOC) && (OS(LINUX) && (PLATFORM(GTK) || PLATFORM(WPE))))
-#define USE_BMALLOC_MEMORY_FOOTPRINT_API 1
+#if PLATFORM(IOS_FAMILY) || (OS(LINUX) && (PLATFORM(GTK) || PLATFORM(WPE)))
+#define USE_MEMORY_FOOTPRINT_API 1
 #endif
 
 #if !defined(USE_PLATFORM_REGISTERS_WITH_PROFILE) && OS(DARWIN) && CPU(ARM64) && defined(__LP64__)
@@ -301,21 +309,16 @@
 #endif
 
 #if !defined(USE_TZONE_MALLOC)
-#if (CPU(ARM64) || CPU(X86_64)) && OS(DARWIN) && (__SIZEOF_POINTER__ == 8)
+#if (!USE(MIMALLOC) && !USE(SYSTEM_MALLOC)) && (CPU(ARM64) || CPU(X86_64)) && OS(DARWIN) && CPU(ADDRESS64)
 #define USE_TZONE_MALLOC 1
-#define USE_ISO_MALLOC 0
 #else
 #define USE_TZONE_MALLOC 0
 #endif
 #endif
 
-#if !defined(USE_ISO_MALLOC)
-#define USE_ISO_MALLOC 1
-#endif
-
 #if !defined(USE_PROTECTED_JIT)
-#if CPU(ADDRESS64) && OS(DARWIN) && USE(APPLE_INTERNAL_SDK)
-#define USE_PROTECTED_JIT 0
+#if CPU(ARM64) && OS(DARWIN) && USE(APPLE_INTERNAL_SDK) && PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 260400
+#define USE_PROTECTED_JIT 1
 #else
 #define USE_PROTECTED_JIT 0
 #endif
@@ -434,13 +437,4 @@
     || (PLATFORM(WATCHOS) && __WATCH_OS_VERSION_MIN_REQUIRED < 110400) \
     || (PLATFORM(APPLETV) && __TV_OS_VERSION_MIN_REQUIRED < 180400))
 #define USE_NSURL_ERROR_FAILING_URL_STRING_KEY 1
-#endif
-
-#if !defined(USE_COMPRESSED_HEAP)
-/* Change run-jsc-stress-tests too. */
-#define USE_COMPRESSED_HEAP 0
-#endif
-
-#if defined(__cplusplus)
-constexpr bool useCompressedHeap = USE_COMPRESSED_HEAP;
 #endif

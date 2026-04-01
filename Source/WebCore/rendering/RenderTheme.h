@@ -25,7 +25,7 @@
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/PaintInfo.h>
 #include <WebCore/PopupMenuStyle.h>
-#include <WebCore/RenderStyleInlines.h>
+#include <WebCore/RenderStyle+GettersInlines.h>
 #include <WebCore/ScrollTypes.h>
 #include <WebCore/StyleColor.h>
 #include <WebCore/StyleMinimumSize.h>
@@ -39,7 +39,7 @@ namespace WebCore {
 enum class DocumentMarkerLineStyleMode : uint8_t;
 
 struct AttachmentLayout;
-class BorderData;
+struct BorderData;
 class Element;
 class FileList;
 class HTMLInputElement;
@@ -53,6 +53,16 @@ class RenderElement;
 class RenderProgress;
 class RenderStyle;
 class Settings;
+
+#if PLATFORM(MAC)
+class RenderThemeMac;
+#elif PLATFORM(IOS_FAMILY)
+class RenderThemeIOS;
+#elif USE(THEME_ADWAITA)
+class RenderThemeAdwaita;
+#elif PLATFORM(PLAYSTATION)
+class RenderThemePlayStation;
+#endif
 
 template<typename> struct MinimallySerializingSpaceSeparatedRectEdges;
 
@@ -71,7 +81,17 @@ protected:
 public:
     // This function is to be implemented in platform-specific theme implementations to hand back the
     // appropriate platform theme.
+#if PLATFORM(MAC)
+    WEBCORE_EXPORT static RenderThemeMac& singleton();
+#elif PLATFORM(IOS_FAMILY)
+    WEBCORE_EXPORT static RenderThemeIOS& singleton();
+#elif USE(THEME_ADWAITA)
+    WEBCORE_EXPORT static RenderThemeAdwaita& singleton();
+#elif PLATFORM(PLAYSTATION)
+    WEBCORE_EXPORT static RenderThemePlayStation& singleton();
+#else
     WEBCORE_EXPORT static RenderTheme& singleton();
+#endif
 
     virtual void purgeCaches();
 
@@ -225,7 +245,6 @@ public:
     virtual void setColorWellSwatchBackground(HTMLElement&, Color);
 
     // Functions for <select> elements.
-    virtual bool delegatesMenuListRendering() const { return false; }
     virtual bool popsMenuByArrowKeys() const { return false; }
     virtual bool popsMenuBySpaceOrReturn() const { return false; }
 
@@ -488,3 +507,13 @@ private:
 };
 
 } // namespace WebCore
+
+#if PLATFORM(MAC)
+#include <WebCore/RenderThemeMac.h>
+#elif PLATFORM(IOS_FAMILY)
+#include <WebCore/RenderThemeIOS.h>
+#elif USE(THEME_ADWAITA)
+#include <WebCore/RenderThemeAdwaita.h>
+#elif PLATFORM(PLAYSTATION)
+#include <WebCore/RenderThemePlayStation.h>
+#endif

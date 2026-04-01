@@ -49,22 +49,28 @@ class Element;
 class MediaResource;
 class WeakPtrImplWithEventTargetData;
 
-class MediaResourceLoader final : public PlatformMediaResourceLoader, public ContextDestructionObserver {
+enum class LoadedFromOpaqueSource : bool;
+
+class MediaResourceLoader final
+    : public ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr<MediaResourceLoader, WTF::DestructionThread::Main>
+    , public PlatformMediaResourceLoader
+    , public ContextDestructionObserver {
     WTF_MAKE_TZONE_ALLOCATED_EXPORT(MediaResourceLoader, WEBCORE_EXPORT);
 public:
     static Ref<MediaResourceLoader> create(Document& document, Element& element, const String& crossOriginMode, FetchOptions::Destination destination) { return adoptRef(*new MediaResourceLoader(document, element, crossOriginMode, destination)); }
     WEBCORE_EXPORT virtual ~MediaResourceLoader();
 
     // ContextDestructionObserver.
-    void ref() const final { PlatformMediaResourceLoader::ref(); }
-    void deref() const final { PlatformMediaResourceLoader::deref(); }
+    void ref() const final { ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr::ref(); }
+    void deref() const final { ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr::deref(); }
+    ThreadSafeWeakPtrControlBlock& controlBlock() const final { return ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr::controlBlock(); }
+    uint32_t weakRefCount() const final { return ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr::weakRefCount(); }
 
     RefPtr<PlatformMediaResource> requestResource(ResourceRequest&&, LoadOptions) final;
     void sendH2Ping(const URL&, CompletionHandler<void(Expected<Seconds, ResourceError>&&)>&&) final;
     void removeResource(MediaResource&);
 
     Document* document();
-    RefPtr<Document> protectedDocument();
     const String& crossOriginMode() const;
 
     WEBCORE_EXPORT static void recordResponsesForTesting();
@@ -72,6 +78,7 @@ public:
     void addResponseForTesting(const ResourceResponse&);
 
     bool verifyMediaResponse(const URL& requestURL, const ResourceResponse&, const SecurityOrigin*);
+    void redirectReceived(const URL&);
 
 private:
     WEBCORE_EXPORT MediaResourceLoader(Document&, Element&, const String& crossOriginMode, FetchOptions::Destination);
@@ -91,6 +98,9 @@ private:
         bool usedServiceWorker { false };
     };
     HashMap<URL, ValidationInformation> m_validationLoadInformations WTF_GUARDED_BY_CAPABILITY(mainThread);
+
+    HashSet<URL> m_nonOpaqueLoadURLs;
+    std::optional<LoadedFromOpaqueSource> m_loadedFromOpaqueSource;
 };
 
 class MediaResource : public PlatformMediaResource, public CachedRawResourceClient {
@@ -114,7 +124,6 @@ public:
     void notifyFinished(CachedResource&, const NetworkLoadMetrics&, LoadWillContinueInAnotherProcess) override;
 
 private:
-    CachedResourceHandle<CachedRawResource> protectedResource() const;
 
     MediaResource(MediaResourceLoader&, CachedResourceHandle<CachedRawResource>&&);
     void ensureShutdown();

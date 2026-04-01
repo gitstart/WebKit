@@ -62,9 +62,9 @@ struct ResolutionContext;
 }
 
 class KeyframeEffect final : public AnimationEffect, public Style::Interpolation::Client, public KeyframeInterpolation {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(KeyframeEffect);
+    WTF_MAKE_TZONE_ALLOCATED(KeyframeEffect);
 public:
-    static ExceptionOr<Ref<KeyframeEffect>> create(JSC::JSGlobalObject&, Document&, Element*, JSC::Strong<JSC::JSObject>&&, std::optional<Variant<double, KeyframeEffectOptions>>&&);
+    static ExceptionOr<Ref<KeyframeEffect>> create(JSC::JSGlobalObject&, Document&, Element*, JSC::Strong<JSC::JSObject>&&, Variant<double, KeyframeEffectOptions>&&);
     static Ref<KeyframeEffect> create(Ref<KeyframeEffect>&&);
     static Ref<KeyframeEffect> create(const Element&, const std::optional<Style::PseudoElementIdentifier>&);
 
@@ -195,8 +195,7 @@ public:
 
 #if ENABLE(THREADED_ANIMATIONS)
     bool canHaveAcceleratedRepresentation() const;
-    const AcceleratedEffect* acceleratedRepresentation() const { return m_acceleratedRepresentation.get(); }
-    RefPtr<AcceleratedEffect> updatedAcceleratedRepresentation(const TimelineIdentifier&, const IntRect&, const AcceleratedEffectValues&, OptionSet<AcceleratedEffectProperty>&);
+    Ref<AcceleratedEffect> acceleratedRepresentation(const IntRect&, const AcceleratedEffectValues&, OptionSet<AcceleratedEffectProperty>&);
     void timelineAccelerationAbilityDidChange();
 #endif
 
@@ -277,7 +276,7 @@ private:
     void animationDidChangeTimingProperties() final;
     void animationWasCanceled() final;
     void animationSuspensionStateDidChange(bool) final;
-    void animationTimelineDidChange(const AnimationTimeline*) final;
+    void animationTimelineDidChange() final;
     void animationDidFinish() final;
     void animationPlaybackRateDidChange() final;
     void setAnimation(WebAnimation*) final;

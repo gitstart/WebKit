@@ -39,6 +39,9 @@
 
 #if USE(SKIA)
 #include <skia/core/SkImageInfo.h>
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
+#include <skia/core/SkSurface.h>
+WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
 #endif
 
 namespace WebCore {
@@ -46,6 +49,8 @@ namespace WebCore {
 class GraphicsContext;
 class Image;
 class NativeImage;
+
+inline constexpr auto defaultCopyOnWrite = SharedMemory::CopyOnWrite::No;
 
 class ShareableBitmapConfiguration {
 public:
@@ -151,7 +156,7 @@ public:
     WEBCORE_EXPORT static RefPtr<ShareableBitmap> createFromImageDraw(NativeImage&, const DestinationColorSpace&, const IntSize& destinationSize, const IntSize& sourceSize);
 
     // Create a shareable bitmap from a handle.
-    WEBCORE_EXPORT static RefPtr<ShareableBitmap> create(Handle&&, SharedMemory::Protection = SharedMemory::Protection::ReadWrite);
+    WEBCORE_EXPORT static RefPtr<ShareableBitmap> create(Handle&&, SharedMemory::Protection = SharedMemory::Protection::ReadWrite, SharedMemory::CopyOnWrite = defaultCopyOnWrite);
 
     // Create a shareable bitmap from a ReadOnly handle.
     WEBCORE_EXPORT static std::optional<Ref<ShareableBitmap>> createReadOnly(std::optional<Handle>&&);
@@ -190,6 +195,10 @@ public:
     // This is only safe to use when we know that the contents of the shareable bitmap won't change.
     WEBCORE_EXPORT RefPtr<cairo_surface_t> createPersistentCairoSurface();
     WEBCORE_EXPORT RefPtr<cairo_surface_t> createCairoSurface();
+#endif
+
+#if USE(SKIA)
+    WEBCORE_EXPORT sk_sp<SkSurface> createSurface();
 #endif
 
 private:

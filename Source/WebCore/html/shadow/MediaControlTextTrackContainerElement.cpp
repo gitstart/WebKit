@@ -71,7 +71,7 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(MediaControlTextTrackContainerElement);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaControlTextTrackContainerElement);
 
 using namespace HTMLNames;
 
@@ -93,7 +93,7 @@ MediaControlTextTrackContainerElement::~MediaControlTextTrackContainerElement() 
 
 RenderPtr<RenderElement> MediaControlTextTrackContainerElement::createElementRenderer(RenderStyle&& style, const RenderTreePosition&)
 {
-    return createRenderer<RenderBlockFlow>(RenderObject::Type::BlockFlow, *this, WTFMove(style));
+    return createRenderer<RenderBlockFlow>(RenderObject::Type::BlockFlow, *this, WTF::move(style));
 }
 
 static bool compareCueIntervalForDisplay(const CueInterval& one, const CueInterval& two)
@@ -104,7 +104,7 @@ static bool compareCueIntervalForDisplay(const CueInterval& one, const CueInterv
 void MediaControlTextTrackContainerElement::updateDisplay()
 {
     RefPtr mediaElement = m_mediaElement.get();
-    if (mediaElement && !mediaElement->closedCaptionsVisible())
+    if (mediaElement && !mediaElement->closedCaptionsVisible() && !m_shouldShowCaptionPreviewCue)
         removeChildren();
 
     // 1. If the media element is an audio element, or is another playback
@@ -180,7 +180,7 @@ void MediaControlTextTrackContainerElement::updateDisplay()
     // so that the newest captions appear at the bottom.
     std::ranges::sort(activeCues, &compareCueIntervalForDisplay);
 
-    if (mediaElement->closedCaptionsVisible()) {
+    if (mediaElement->closedCaptionsVisible() || m_shouldShowCaptionPreviewCue) {
         // 10. For each text track cue in cues that has not yet had
         // corresponding CSS boxes added to output, in text track cue order, run the
         // following substeps:
@@ -476,7 +476,7 @@ RefPtr<NativeImage> MediaControlTextTrackContainerElement::createTextTrackRepres
     if (!frame)
         return nullptr;
 
-    protectedDocument()->updateLayout();
+    protect(document())->updateLayout();
 
     CheckedPtr renderer = this->renderer();
     if (!renderer)
@@ -503,7 +503,7 @@ RefPtr<NativeImage> MediaControlTextTrackContainerElement::createTextTrackRepres
     paintFlags.add(RenderLayer::PaintLayerFlag::AppliedTransform);
     layer->paint(buffer->context(), paintingRect, LayoutSize(), { PaintBehavior::FlattenCompositingLayers, PaintBehavior::Snapshotting }, nullptr, paintFlags);
 
-    return ImageBuffer::sinkIntoNativeImage(WTFMove(buffer));
+    return ImageBuffer::sinkIntoNativeImage(WTF::move(buffer));
 }
 
 void MediaControlTextTrackContainerElement::textTrackRepresentationBoundsChanged(const IntRect&)
@@ -553,7 +553,7 @@ VTTCue& MediaControlTextTrackContainerElement::ensurePreviewCue() const
     }
 
     if (!m_previewCue) {
-        m_previewCue = VTTCue::create(protectedDocument(), 0, 0, { });
+        m_previewCue = VTTCue::create(protect(document()), 0, 0, { });
         m_previewCue->setSnapToLines(false);
         m_previewCue->setLine(25.);
         m_previewCue->setStartTime(MediaTime::zeroTime());
@@ -572,7 +572,7 @@ VTTCue& MediaControlTextTrackContainerElement::ensurePreviewCue() const
 const Logger& MediaControlTextTrackContainerElement::logger() const
 {
     if (!m_logger)
-        m_logger = protectedDocument()->logger();
+        m_logger = protect(document())->logger();
 
     return *m_logger;
 }

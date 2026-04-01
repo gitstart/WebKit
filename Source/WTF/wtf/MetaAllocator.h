@@ -42,6 +42,8 @@ namespace WTF {
 
 #define ENABLE_META_ALLOCATOR_PROFILE 0
 
+DECLARE_ALLOCATOR_WITH_HEAP_IDENTIFIER_AND_EXPORT(MetaAllocatorFreeSpace, WTF_INTERNAL);
+
 class MetaAllocatorTracker {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED(MetaAllocatorTracker);
 public:
@@ -139,11 +141,17 @@ protected:
 private:
     
     friend class MetaAllocatorHandle;
-    
+
     class FreeSpaceNode final : public RedBlackTree<FreeSpaceNode, size_t>::ThreadSafeNode {
-        WTF_MAKE_TZONE_ALLOCATED(FreeSpaceNode);
         WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(FreeSpaceNode);
     public:
+        void operator delete(void* object) { MetaAllocatorFreeSpaceMalloc::free(object); }
+        void* operator new(size_t size)
+        {
+            ASSERT(sizeof(FreeSpaceNode) == size);
+            return MetaAllocatorFreeSpaceMalloc::malloc(size);
+        }
+
         size_t sizeInBytes()
         {
             return m_end.untaggedPtr<size_t>() - m_start.untaggedPtr<size_t>();

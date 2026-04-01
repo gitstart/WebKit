@@ -65,14 +65,14 @@ public:
     void start();
     void stop();
     bool isStopped() const;
-    WARN_UNUSED_RETURN GRefPtr<GstCaps> caps();
+    [[nodiscard]] GRefPtr<GstCaps> caps();
 
     std::pair<GstClockTime, GstClockTime> queryLatency();
 
     GstElement* makeElement(ASCIILiteral factoryName);
     virtual GstElement* createSource();
     GstElement* source() { return m_src.get();  }
-    virtual const char* name() = 0;
+    virtual ASCIILiteral name() = 0;
 
     GstElement* sink() const { return m_sink.get(); }
 

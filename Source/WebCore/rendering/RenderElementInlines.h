@@ -23,7 +23,7 @@
 #include <WebCore/RenderBox.h>
 #include <WebCore/RenderObjectDocument.h>
 #include <WebCore/RenderObjectNode.h>
-#include <WebCore/RenderStyleInlines.h>
+#include <WebCore/RenderStyle+GettersInlines.h>
 #include <WebCore/StyleOpacity.h>
 #include <WebCore/StyleShapeOutside.h>
 
@@ -35,6 +35,16 @@ inline Element* RenderElement::element() const { return downcast<Element>(Render
 inline RefPtr<Element> RenderElement::protectedElement() const { return element(); }
 inline Element* RenderElement::nonPseudoElement() const { return downcast<Element>(RenderObject::nonPseudoNode()); }
 inline RefPtr<Element> RenderElement::protectedNonPseudoElement() const { return nonPseudoElement(); }
+
+inline bool RenderElement::isFixedPositioned() const
+{
+    return isOutOfFlowPositioned() && style().position() == PositionType::Fixed;
+}
+
+inline bool RenderElement::isAbsolutelyPositioned() const
+{
+    return isOutOfFlowPositioned() && style().position() == PositionType::Absolute;
+}
 
 inline bool RenderElement::isBlockLevelBox() const
 {

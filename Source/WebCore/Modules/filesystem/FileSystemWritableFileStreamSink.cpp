@@ -42,7 +42,7 @@ namespace WebCore {
 
 static ExceptionOr<FileSystemWritableFileStream::WriteParams> writeParamsFromChunk(FileSystemWritableFileStream::ChunkType&& chunk)
 {
-    return WTF::switchOn(WTFMove(chunk), [](FileSystemWritableFileStream::WriteParams&& params) -> ExceptionOr<FileSystemWritableFileStream::WriteParams> {
+    return WTF::switchOn(WTF::move(chunk), [](FileSystemWritableFileStream::WriteParams&& params) -> ExceptionOr<FileSystemWritableFileStream::WriteParams> {
         switch (params.type) {
         case FileSystemWriteCommandType::Write:
             if (!params.data)
@@ -63,14 +63,17 @@ static ExceptionOr<FileSystemWritableFileStream::WriteParams> writeParamsFromChu
     }, [](auto&& data) -> ExceptionOr<FileSystemWritableFileStream::WriteParams> {
         return FileSystemWritableFileStream::WriteParams {
             .type = FileSystemWritableFileStream::WriteCommandType::Write,
-            .data = WTFMove(data)
+            .data = WTF::move(data)
         };
     });
 }
 
-static void fetchDataBytesForWrite(const FileSystemWritableFileStream::DataVariant& data, CompletionHandler<void(ExceptionOr<std::span<const uint8_t>>&&)>&& completionHandler)
+static void fetchDataBytesForWrite(const std::optional<FileSystemWritableFileStream::DataVariant>& data, CompletionHandler<void(ExceptionOr<std::span<const uint8_t>>&&)>&& completionHandler)
 {
-    WTF::switchOn(data, [&](const RefPtr<JSC::ArrayBufferView>& bufferView) {
+    if (!data)
+        return completionHandler(Exception { ExceptionCode::TypeError });
+
+    WTF::switchOn(*data, [&](const RefPtr<JSC::ArrayBufferView>& bufferView) {
         if (!bufferView || bufferView->isDetached())
             return completionHandler(Exception { ExceptionCode::TypeError });
 
@@ -89,7 +92,7 @@ static void fetchDataBytesForWrite(const FileSystemWritableFileStream::DataVaria
             return completionHandler(Exception { ExceptionCode::TypeError });
 
         // FIXME: For optimization, we may just send blob URL to backend and let it fetch data instead of fetching data here.
-        blob->getArrayBuffer([completionHandler = WTFMove(completionHandler)](auto&& result) mutable {
+        blob->getArrayBuffer([completionHandler = WTF::move(completionHandler)](auto&& result) mutable {
             if (result.hasException())
                 return completionHandler(result.releaseException());
 
@@ -154,23 +157,23 @@ void FileSystemWritableFileStreamSink::write(ScriptExecutionContext& context, JS
     switch (writeParams.type) {
     case FileSystemWriteCommandType::Seek:
     case FileSystemWriteCommandType::Truncate:
-        return protectedSource()->executeCommandForWritable(m_identifier, writeParams.type, writeParams.position, writeParams.size, { }, false, WTFMove(promise));
+        return protectedSource()->executeCommandForWritable(m_identifier, writeParams.type, writeParams.position, writeParams.size, { }, false, WTF::move(promise));
     case FileSystemWriteCommandType::Write:
         if (!writeParams.data)
-            return protectedSource()->executeCommandForWritable(m_identifier, writeParams.type, writeParams.position, writeParams.size, { }, true, WTFMove(promise));
+            return protectedSource()->executeCommandForWritable(m_identifier, writeParams.type, writeParams.position, writeParams.size, { }, true, WTF::move(promise));
 
-        fetchDataBytesForWrite(*writeParams.data, [source = protectedSource(), identifier = m_identifier, promise = WTFMove(promise), type = writeParams.type, size = writeParams.size, position = writeParams.position](auto result) mutable {
+        fetchDataBytesForWrite(*writeParams.data, [source = protectedSource(), identifier = m_identifier, promise = WTF::move(promise), type = writeParams.type, size = writeParams.size, position = writeParams.position](auto result) mutable {
             if (result.hasException()) {
                 promise.reject(result.releaseException());
                 source->closeWritable(identifier, FileSystemWriteCloseReason::Aborted);
                 return;
             }
-            source->executeCommandForWritable(identifier, type, position, size, result.returnValue(), false, WTFMove(promise));
+            source->executeCommandForWritable(identifier, type, position, size, result.returnValue(), false, WTF::move(promise));
         });
     }
 }
 
-void FileSystemWritableFileStreamSink::close()
+void FileSystemWritableFileStreamSink::close(JSDOMGlobalObject&)
 {
     ASSERT(!m_isClosed);
 
@@ -178,12 +181,13 @@ void FileSystemWritableFileStreamSink::close()
     protectedSource()->closeWritable(m_identifier, FileSystemWriteCloseReason::Completed);
 }
 
-void FileSystemWritableFileStreamSink::error(String&&)
+void FileSystemWritableFileStreamSink::abort(JSDOMGlobalObject&, JSC::JSValue, DOMPromiseDeferred<void>&& promise)
 {
     ASSERT(!m_isClosed);
 
     m_isClosed = true;
     protectedSource()->closeWritable(m_identifier, FileSystemWriteCloseReason::Aborted);
+    promise.resolve();
 }
 
 } // namespace WebCore

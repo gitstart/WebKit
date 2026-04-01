@@ -52,7 +52,7 @@ class TableFormattingState;
 
 class LayoutState : public CanMakeWeakPtr<LayoutState>, public CanMakeThreadSafeCheckedPtr<LayoutState> {
     WTF_MAKE_NONCOPYABLE(LayoutState);
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(LayoutState);
+    WTF_MAKE_TZONE_ALLOCATED(LayoutState);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(LayoutState);
 public:
     // Primary layout state has a direct geometry cache in layout boxes.
@@ -110,7 +110,7 @@ public:
     void layoutWithFormattingContextForBox(const ElementBox&, std::optional<LayoutUnit> widthConstraint, std::optional<LayoutUnit> heightConstraint) const;
     LayoutUnit logicalWidthWithFormattingContextForBox(const ElementBox&, LayoutIntegration::LogicalWidthType) const;
     LayoutUnit logicalHeightWithFormattingContextForBox(const ElementBox&, LayoutIntegration::LogicalHeightType) const;
-    void layoutWithFormattingContextForBlockInInline(const Layout::ElementBox& block, LayoutPoint blockLogicalTopLeft, const InlineLayoutState&) const;
+    void layoutWithFormattingContextForBlockInInline(const Layout::ElementBox& block, LayoutPoint blockLineLogicalTopLeft, const InlineLayoutState&) const;
 
 private:
     void setQuirksMode(QuirksMode quirksMode) { m_quirksMode = quirksMode; }

@@ -66,6 +66,10 @@
 #import <pal/spi/mac/HIServicesSPI.h>
 #endif
 
+#if USE(SOURCE_APPLICATION_AUDIT_DATA)
+#import <wtf/darwin/XPCObjectPtr.h>
+#endif
+
 #import <pal/cf/AudioToolboxSoftLink.h>
 
 #if HAVE(UPDATE_WEB_ACCESSIBILITY_SETTINGS) && ENABLE(CFPREFS_DIRECT_MODE)
@@ -110,6 +114,14 @@ void AuxiliaryProcess::platformInitialize(const AuxiliaryProcessInitializationPa
 
     setApplicationBundleIdentifier(parameters.clientBundleIdentifier);
 
+#if USE(SOURCE_APPLICATION_AUDIT_DATA)
+    if (OSObjectPtr<xpc_connection_t> connection = parameters.connectionIdentifier.xpcConnection) {
+        audit_token_t auditToken { };
+        xpc_connection_get_audit_token(connection.get(), &auditToken);
+        setApplicationAuditToken(auditToken);
+    }
+#endif
+
 #if PLATFORM(MAC)
     disableDowngradeToLayoutManager();
 #endif
@@ -133,7 +145,7 @@ void AuxiliaryProcess::didReceiveInvalidMessage(IPC::Connection&, IPC::MessageNa
 
 bool AuxiliaryProcess::parentProcessHasEntitlement(ASCIILiteral entitlement)
 {
-    return WTF::hasEntitlement(protectedParentProcessConnection()->protectedXPCConnection().get(), entitlement);
+    return WTF::hasEntitlement(protect(protect(parentProcessConnection())->xpcConnection()).get(), entitlement);
 }
 
 void AuxiliaryProcess::platformStopRunLoop()

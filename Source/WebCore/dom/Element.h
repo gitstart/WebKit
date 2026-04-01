@@ -180,7 +180,7 @@ struct UnadjustedStyle;
 }
 
 class Element : public ContainerNode {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(Element);
+    WTF_MAKE_TZONE_ALLOCATED(Element);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(Element);
 public:
     static Ref<Element> create(const QualifiedName&, Document&);
@@ -223,7 +223,7 @@ public:
     inline String attributeTrimmedWithDefaultARIA(const QualifiedName&) const;
 
     enum class TopLayerElementType : bool { Other, Popover };
-    HTMLElement* topmostPopoverAncestor(TopLayerElementType topLayerType);
+    RefPtr<HTMLElement> topmostPopoverAncestor(TopLayerElementType topLayerType);
 
     // https://github.com/w3c/aria/pull/2484
     // These ARIA attributes will become enumerated. Currently, they use [ReflectSetter] with custom getters
@@ -302,7 +302,7 @@ public:
 
     bool checkVisibility(const CheckVisibilityOptions&);
 
-    WEBCORE_EXPORT void scrollIntoView(std::optional<Variant<bool, ScrollIntoViewOptions>>&& arg);
+    WEBCORE_EXPORT void scrollIntoView(Variant<bool, ScrollIntoViewOptions>&&);
     WEBCORE_EXPORT void scrollIntoView(bool alignToTop = true);
     WEBCORE_EXPORT void scrollIntoViewIfNeeded(bool centerIfNeeded = true);
     WEBCORE_EXPORT void scrollIntoViewIfNotVisible(bool centerIfNotVisible = true, AllowScrollingOverflowHidden = AllowScrollingOverflowHidden::Yes);
@@ -372,7 +372,7 @@ public:
     RefPtr<Attr> attrIfExists(const QualifiedName&);
     Ref<Attr> ensureAttr(const QualifiedName&);
 
-    const Vector<RefPtr<Attr>>& attrNodeList();
+    const Vector<Ref<Attr>>& attrNodeList();
 
     const QualifiedName& tagQName() const { return m_tagName; }
 #if ENABLE(JIT)
@@ -468,7 +468,6 @@ public:
     ExceptionOr<ShadowRoot&> attachDeclarativeShadow(ShadowRootMode, ShadowRootDelegatesFocus, ShadowRootClonable, ShadowRootSerializable, String referenceTarget, CustomElementRegistryKind);
 
     WEBCORE_EXPORT ShadowRoot* userAgentShadowRoot() const;
-    RefPtr<ShadowRoot> protectedUserAgentShadowRoot() const;
     WEBCORE_EXPORT ShadowRoot& ensureUserAgentShadowRoot();
     Ref<ShadowRoot> ensureProtectedUserAgentShadowRoot();
     WEBCORE_EXPORT ShadowRoot& createUserAgentShadowRoot();
@@ -594,7 +593,7 @@ public:
     RefPtr<Element> findFocusDelegate(FocusTrigger = FocusTrigger::Other);
     RefPtr<Element> findAutofocusDelegate(FocusTrigger = FocusTrigger::Other);
 
-    static AXTextStateChangeIntent defaultFocusTextStateChangeIntent() { return AXTextStateChangeIntent(AXTextStateChangeTypeSelectionMove, AXTextSelection { AXTextSelectionDirectionDiscontiguous, AXTextSelectionGranularityUnknown, true }); }
+    static AXTextStateChangeIntent defaultFocusTextStateChangeIntent() { return AXTextStateChangeIntent(AXTextStateChangeType::SelectionMove, AXTextSelection { AXTextSelectionDirection::Discontiguous, AXTextSelectionGranularity::Unknown, true }); }
     virtual void focus(const FocusOptions& = { });
     virtual void focusForBindings(FocusOptions&&);
     void findTargetAndUpdateFocusAppearance(SelectionRestorationMode, SelectionRevealMode = SelectionRevealMode::Reveal);
@@ -654,7 +653,6 @@ public:
     WEBCORE_EXPORT ExceptionOr<Element*> closest(const String& selectors);
 
     WEBCORE_EXPORT DOMTokenList& classList();
-    WEBCORE_EXPORT Ref<DOMTokenList> protectedClassList();
 
     SpaceSplitString partNames() const;
     DOMTokenList& part();
@@ -827,7 +825,7 @@ public:
     // This should be called whenever an element changes in a manner that can affect its style.
     void invalidateStyle();
 
-    // As above but also call RenderElement::setStyle with StyleDifference::RecompositeLayer flag for
+    // As above but also call RenderElement::setStyle with Style::DifferenceResult::RecompositeLayer flag for
     // the element even when the style doesn't change. This is mostly needed by the animation code.
     WEBCORE_EXPORT void invalidateStyleAndLayerComposition();
 
@@ -882,8 +880,8 @@ public:
 
     RefPtr<Element> findAnchorElementForLink(String& outAnchorName);
 
-    ExceptionOr<Ref<WebAnimation>> animate(JSC::JSGlobalObject&, JSC::Strong<JSC::JSObject>&&, std::optional<Variant<double, KeyframeAnimationOptions>>&&);
-    Vector<RefPtr<WebAnimation>> getAnimations(std::optional<GetAnimationsOptions>);
+    ExceptionOr<Ref<WebAnimation>> animate(JSC::JSGlobalObject&, JSC::Strong<JSC::JSObject>&&, Variant<double, KeyframeAnimationOptions>&&);
+    Vector<Ref<WebAnimation>> getAnimations(std::optional<GetAnimationsOptions>);
 
     String description() const override;
     String debugDescription() const override;
@@ -894,7 +892,7 @@ public:
 
     virtual void updateUserAgentShadowTree() { }
 
-    StylePropertyMapReadOnly* computedStyleMap();
+    StylePropertyMapReadOnly& computedStyleMap();
 
     ExplicitlySetAttrElementsMap& explicitlySetAttrElementsMap();
     ExplicitlySetAttrElementsMap* explicitlySetAttrElementsMapIfExists() const;
@@ -954,8 +952,6 @@ private:
     LocalFrame* documentFrameWithNonNullView() const;
     void hideNonceSlow();
 
-    bool isTextNode() const;
-
     bool isUserActionElementInActiveChain() const;
     bool isUserActionElementActive() const;
     bool isUserActionElementFocused() const;
@@ -995,6 +991,8 @@ private:
     bool childTypeAllowed(NodeType) const final;
 
     void notifyAttributeChanged(const QualifiedName&, const AtomString& oldValue, const AtomString& newValue, AttributeModificationReason = AttributeModificationReason::Directly);
+    void parserNotifyAttributeAdded(const QualifiedName&, const AtomString& value, AttributeModificationReason = AttributeModificationReason::Directly);
+    void notifyAttributeChangedCommon(const QualifiedName&, const AtomString& oldValue, const AtomString& newValue, AttributeModificationReason);
     enum class InSynchronizationOfLazyAttribute : bool { No, Yes };
     void setAttributeInternal(unsigned index, const QualifiedName&, const AtomString& value, InSynchronizationOfLazyAttribute);
     void addAttributeInternal(const QualifiedName&, const AtomString& value, InSynchronizationOfLazyAttribute);

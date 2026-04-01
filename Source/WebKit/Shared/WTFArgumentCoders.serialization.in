@@ -158,7 +158,7 @@ template: struct WebKit::PDFPluginIdentifierType
 template: struct WebKit::PageGroupIdentifierType
 template: struct WebKit::RemoteAudioDestinationIdentifierType
 template: struct WebKit::RemoteAudioHardwareListenerIdentifierType
-template: struct WebKit::RemoteMediaResourceIdentifierType
+template: struct WebKit::RemoteMediaResourceLoaderIdentifierType
 template: struct WebKit::RemoteRemoteCommandListenerIdentifierType
 template: struct WebKit::RiceBackendIdentifierType
 template: struct WebKit::SampleBufferDisplayLayerIdentifierType
@@ -174,6 +174,7 @@ template: struct WebKit::WebExtensionTabIdentifierType
 template: struct WebKit::WebExtensionWindowIdentifierType
 template: struct WebKit::WebPageProxyIdentifierType
 template: struct WebKit::WebURLSchemeHandlerIdentifierType
+template: struct WebKit::WebUndoStepIDType
 [WebKitPlatform, AdditionalEncoder=StreamConnectionEncoder] class WTF::ObjectIdentifier {
     [Validator='WTF::ObjectIdentifierGenericBase<uint64_t>::isValidIdentifier(*toUInt64)'] uint64_t toUInt64()
 }
@@ -215,6 +216,8 @@ template: struct WebKit::RemoteGraphicsContextIdentifierType
 template: struct WebKit::RemoteDisplayListIdentifierType
 template: struct WebKit::RemoteDisplayListRecorderIdentifierType
 template: struct WebKit::RemoteGraphicsContextGLIdentifierType
+template: struct WebKit::RemoteMediaResourceIdentifierType
+template: struct WebKit::RemotePathImplIdentifierType
 template: struct WebKit::RemoteRenderingBackendIdentifierType
 template: struct WebKit::RemoteSerializedImageBufferIdentifierType
 template: struct WebKit::RemoteSnapshotIdentifierType
@@ -227,7 +230,7 @@ template: struct IPC::AsyncReplyIDType
 template: struct WebCore::FileSystemHandleIdentifierType
 template: struct WebCore::FileSystemSyncAccessHandleIdentifierType
 template: struct WebCore::WebSocketIdentifierType
-template: struct WebKit::DDModelIdentifierType
+template: struct WebKit::WebModelIdentifierType
 template: struct WebKit::QuotaIncreaseRequestIdentifierType
 template: struct WebKit::StorageAreaIdentifierType
 template: struct WebKit::WebGPUIdentifierType

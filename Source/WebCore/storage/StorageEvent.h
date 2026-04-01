@@ -33,7 +33,7 @@ namespace WebCore {
 class Storage;
 
 class StorageEvent final : public Event {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(StorageEvent);
+    WTF_MAKE_TZONE_ALLOCATED(StorageEvent);
 public:
     static Ref<StorageEvent> create(const AtomString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
     static Ref<StorageEvent> createForBindings();
@@ -46,7 +46,7 @@ public:
         RefPtr<Storage> storageArea;
     };
 
-    static Ref<StorageEvent> create(const AtomString&, const Init&, IsTrusted = IsTrusted::No);
+    static Ref<StorageEvent> create(const AtomString&, Init&&, IsTrusted = IsTrusted::No);
     virtual ~StorageEvent();
 
     const String& key() const { return m_key; }
@@ -63,7 +63,7 @@ public:
 private:
     StorageEvent();
     StorageEvent(const AtomString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
-    StorageEvent(const AtomString&, const Init&, IsTrusted);
+    StorageEvent(const AtomString&, Init&&, IsTrusted);
 
     String m_key;
     String m_oldValue;

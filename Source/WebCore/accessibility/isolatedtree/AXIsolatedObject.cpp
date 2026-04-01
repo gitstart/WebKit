@@ -62,18 +62,18 @@ using namespace HTMLNames;
 
 AXIsolatedObject::AXIsolatedObject(IsolatedObjectData&& data)
     : AXCoreObject(data.axID, data.role, data.getsGeometryFromChildren)
-    , m_unresolvedChildrenIDs(WTFMove(data.childrenIDs))
-    , m_properties(WTFMove(data.properties))
-    , m_tree(WTFMove(data.tree))
+    , m_unresolvedChildrenIDs(WTF::move(data.childrenIDs))
+    , m_properties(WTF::move(data.properties))
+    , m_tree(WTF::move(data.tree))
     , m_parentID(data.parentID)
     , m_propertyFlags(data.propertyFlags)
 {
-    ASSERT(!isMainThread());
+    AX_ASSERT(!isMainThread());
 }
 
 Ref<AXIsolatedObject> AXIsolatedObject::create(IsolatedObjectData&& data)
 {
-    return adoptRef(*new AXIsolatedObject(WTFMove(data)));
+    return adoptRef(*new AXIsolatedObject(WTF::move(data)));
 }
 
 AXIsolatedObject::~AXIsolatedObject()
@@ -83,21 +83,21 @@ AXIsolatedObject::~AXIsolatedObject()
 
 void AXIsolatedObject::updateFromData(IsolatedObjectData&& data)
 {
-    ASSERT(!isMainThread());
+    AX_ASSERT(!isMainThread());
 
     if (data.axID != objectID() || data.tree->treeID() != treeID()) {
         // Our data should only be updated from the same main-thread equivalent object.
-        ASSERT_NOT_REACHED();
+        AX_ASSERT_NOT_REACHED();
         return;
     }
 
     m_role = data.role;
     m_parentID = data.parentID;
-    m_unresolvedChildrenIDs = WTFMove(data.childrenIDs);
+    m_unresolvedChildrenIDs = WTF::move(data.childrenIDs);
     m_childrenDirty = true;
     m_getsGeometryFromChildren = data.getsGeometryFromChildren;
 
-    m_properties = WTFMove(data.properties);
+    m_properties = WTF::move(data.properties);
     m_propertyFlags = data.propertyFlags;
 }
 
@@ -131,11 +131,6 @@ bool isDefaultValue(AXProperty property, AXPropertyValueVariant& value)
         [](std::nullptr_t&) { return true; },
         [](Markable<AXID> typedValue) { return !typedValue; },
         [&](String& typedValue) {
-#if !ENABLE(AX_THREAD_TEXT_APIS)
-            // We use a null stringValue to indicate when the string value is different than the text content.
-            if (property == AXProperty::StringValue)
-                return typedValue == emptyString(); // Only compares empty, not null
-#endif // !ENABLE(AX_THREAD_TEXT_APIS)
             return typedValue.isEmpty(); // null or empty
         },
         [](bool typedValue) { return !typedValue; },
@@ -175,24 +170,22 @@ bool isDefaultValue(AXProperty property, AXPropertyValueVariant& value)
 #endif
         [](InputType::Type&) { return false; },
         [](Vector<Vector<Markable<AXID>>>& typedValue) { return typedValue.isEmpty(); },
-        [](Vector<Vector<AXID>>& typedValue) { return typedValue.isEmpty(); },
+        [](Vector<AXStitchGroup>& typedValue) { return typedValue.isEmpty(); },
         [](CharacterRange& typedValue) { return !typedValue.location && !typedValue.length; },
         [](std::unique_ptr<AXIDAndCharacterRange>& typedValue) {
             return !typedValue || (!typedValue->first && !typedValue->second.location && !typedValue->second.length);
         },
-#if ENABLE(AX_THREAD_TEXT_APIS)
         [](std::unique_ptr<AXTextRuns>& typedValue) { return !typedValue || !typedValue->size(); },
         [](RetainPtr<CTFontRef>& typedValue) { return !typedValue; },
         [](FontOrientation typedValue) { return typedValue == FontOrientation::Horizontal; },
         [](AXTextRunLineID typedValue) { return !typedValue; },
-#endif // ENABLE(AX_THREAD_TEXT_APIS)
         [](WallTime& time) { return !time; },
         [](ElementName& name) { return name == ElementName::Unknown; },
         [](DateComponentsType& typedValue) { return typedValue == DateComponentsType::Invalid; },
         [](AccessibilityOrientation) { return false; },
         [](Style::SpeakAs& typedValue) { return typedValue.isNormal(); },
         [](auto&) {
-            ASSERT_NOT_REACHED();
+            AX_ASSERT_NOT_REACHED();
             return false;
         }
     );
@@ -203,9 +196,9 @@ AccessibilityObject* AXIsolatedObject::associatedAXObject() const
     // It is only safe to call this on an AXIsolatedObject when done via a synchronous call from the
     // accessibility thread. Otherwise, |this| could be deleted by the secondary thread (who owns the
     // lifetime of isolated objects) in the middle of this method.
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
 
-    auto* axObjectCache = this->axObjectCache();
+    CheckedPtr axObjectCache = this->axObjectCache();
     return axObjectCache ? axObjectCache->objectForID(objectID()) : nullptr;
 }
 
@@ -223,7 +216,7 @@ void AXIsolatedObject::setMathscripts(AXProperty property, AccessibilityObject& 
     auto idPairs = pairs.map([](auto& mathPair) {
         return std::pair { mathPair.first ? Markable { mathPair.first->objectID() } : std::nullopt, mathPair.second ? Markable { mathPair.second->objectID() } : std::nullopt };
     });
-    setProperty(property, WTFMove(idPairs));
+    setProperty(property, WTF::move(idPairs));
 }
 
 void AXIsolatedObject::setObjectProperty(AXProperty property, AXCoreObject* object)
@@ -248,12 +241,12 @@ void AXIsolatedObject::setProperty(AXProperty property, AXPropertyValueVariant&&
     if (isDefaultValue(property, value))
         removePropertyInVector(property);
     else
-        setPropertyInVector(property, WTFMove(value));
+        setPropertyInVector(property, WTF::move(value));
 }
 
 void AXIsolatedObject::detachRemoteParts(AccessibilityDetachmentType)
 {
-    ASSERT(!isMainThread());
+    AX_ASSERT(!isMainThread());
 
     for (const auto& child : m_children)
         child->detachFromParent();
@@ -271,7 +264,7 @@ void AXIsolatedObject::detachRemoteParts(AccessibilityDetachmentType)
 #if !PLATFORM(MAC)
 bool AXIsolatedObject::isDetached() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 #endif
@@ -283,17 +276,17 @@ void AXIsolatedObject::detachFromParent()
 
 void AXIsolatedObject::setChildrenIDs(Vector<AXID>&& ids)
 {
-    m_unresolvedChildrenIDs = WTFMove(ids);
+    m_unresolvedChildrenIDs = WTF::move(ids);
     m_childrenDirty = true;
 }
 
 const AXCoreObject::AccessibilityChildrenVector& AXIsolatedObject::children(bool updateChildrenIfNeeded)
 {
 #if USE(APPLE_INTERNAL_SDK)
-    AX_DEBUG_ASSERT(_AXSIsolatedTreeModeFunctionIsAvailable() && ((_AXSIsolatedTreeMode_Soft() == AXSIsolatedTreeModeSecondaryThread && !isMainThread())
+    AX_ASSERT(_AXSIsolatedTreeModeFunctionIsAvailable() && ((_AXSIsolatedTreeMode_Soft() == AXSIsolatedTreeModeSecondaryThread && !isMainThread())
         || (_AXSIsolatedTreeMode_Soft() == AXSIsolatedTreeModeMainThread && isMainThread())));
 #elif USE(ATSPI)
-    ASSERT(!isMainThread());
+    AX_ASSERT(!isMainThread());
 #endif
     if (updateChildrenIfNeeded && m_childrenDirty) {
         unsigned index = 0;
@@ -308,7 +301,7 @@ const AXCoreObject::AccessibilityChildrenVector& AXIsolatedObject::children(bool
             return std::nullopt;
         });
         m_childrenDirty = false;
-        m_unresolvedChildrenIDs = WTFMove(unresolvedIDs);
+        m_unresolvedChildrenIDs = WTF::move(unresolvedIDs);
         // Having any unresolved children IDs at this point means we should've had a child / children, but they didn't
         // exist in tree()->objectForID(), so we were never able to hydrate it into an object.
         AX_BROKEN_ASSERT(m_unresolvedChildrenIDs.isEmpty());
@@ -322,16 +315,16 @@ const AXCoreObject::AccessibilityChildrenVector& AXIsolatedObject::children(bool
 
 void AXIsolatedObject::setSelectedChildren(const AccessibilityChildrenVector& selectedChildren)
 {
-    ASSERT(selectedChildren.isEmpty() || selectedChildren[0]->isAXIsolatedObjectInstance());
+    AX_ASSERT(selectedChildren.isEmpty() || selectedChildren[0]->isAXIsolatedObjectInstance());
 
     auto childrenIDs = axIDs(selectedChildren);
-    performFunctionOnMainThread([selectedChildrenIDs = WTFMove(childrenIDs), protectedThis = Ref { *this }] (auto* object) {
+    performFunctionOnMainThread([selectedChildrenIDs = WTF::move(childrenIDs), protectedThis = Ref { *this }] (auto* object) {
         if (selectedChildrenIDs.isEmpty()) {
             object->setSelectedChildren({ });
             return;
         }
 
-        auto* axObjectCache = protectedThis->axObjectCache();
+        CheckedPtr axObjectCache = protectedThis->axObjectCache();
         if (!axObjectCache)
             return;
 
@@ -368,19 +361,19 @@ void AXIsolatedObject::accessibilityText(Vector<AccessibilityText>& texts) const
     texts = vectorAttributeValue<AccessibilityText>(AXProperty::AccessibilityText);
 }
 
-const Vector<Vector<AXID>>* AXIsolatedObject::stitchGroupsView() const
+const Vector<AXStitchGroup>* AXIsolatedObject::stitchGroupsView() const
 {
     size_t index = indexOfProperty(AXProperty::StitchGroups);
     if (index == notFound)
         return nullptr;
 
     return WTF::switchOn(m_properties[index].second,
-        [] (const Vector<Vector<AXID>>& typedValue) -> const Vector<Vector<AXID>>* { return &typedValue; },
-        [] (auto&) -> const Vector<Vector<AXID>>* { return nullptr; }
+        [] (const Vector<AXStitchGroup>& typedValue) -> const Vector<AXStitchGroup>* { return &typedValue; },
+        [] (auto&) -> const Vector<AXStitchGroup>* { return nullptr; }
     );
 }
 
-AXIsolatedObject::StitchState AXIsolatedObject::stitchState(IncludeStitchGroup includeStitchGroup) const
+std::optional<AXStitchGroup> AXIsolatedObject::stitchGroup(IncludeGroupMembers includeGroupMembers) const
 {
     if (!AXObjectCache::isAXTextStitchingEnabled())
         return { };
@@ -389,7 +382,7 @@ AXIsolatedObject::StitchState AXIsolatedObject::stitchState(IncludeStitchGroup i
     if (!blockFlowAncestor)
         return { };
 
-    return stitchStateFromGroups(blockFlowAncestor->stitchGroupsView(), includeStitchGroup);
+    return stitchGroupFromGroups(blockFlowAncestor->stitchGroupsView(), includeGroupMembers);
 }
 
 void AXIsolatedObject::insertMathPairs(Vector<std::pair<Markable<AXID>, Markable<AXID>>>& isolatedPairs, AccessibilityMathMultiscriptPairs& pairs)
@@ -447,8 +440,8 @@ void AXIsolatedObject::setIsExpanded(bool value)
 
 bool AXIsolatedObject::performDismissAction()
 {
-    return Accessibility::retrieveValueFromMainThread<bool>([this] () -> bool {
-        if (RefPtr axObject = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<bool>([context = mainThreadContext()] () -> bool {
+        if (RefPtr axObject = context.axObjectOnMainThread())
             return axObject->performDismissAction();
         return false;
     });
@@ -470,22 +463,22 @@ void AXIsolatedObject::scrollToMakeVisible() const
 
 void AXIsolatedObject::scrollToMakeVisibleWithSubFocus(IntRect&& rect) const
 {
-    performFunctionOnMainThread([rect = WTFMove(rect)] (auto* axObject) mutable {
-        axObject->scrollToMakeVisibleWithSubFocus(WTFMove(rect));
+    performFunctionOnMainThread([rect = WTF::move(rect)] (auto* axObject) mutable {
+        axObject->scrollToMakeVisibleWithSubFocus(WTF::move(rect));
     });
 }
 
 void AXIsolatedObject::scrollToGlobalPoint(IntPoint&& point) const
 {
-    performFunctionOnMainThread([point = WTFMove(point)] (auto* axObject) mutable {
-        axObject->scrollToGlobalPoint(WTFMove(point));
+    performFunctionOnMainThread([point = WTF::move(point)] (auto* axObject) mutable {
+        axObject->scrollToGlobalPoint(WTF::move(point));
     });
 }
 
 bool AXIsolatedObject::setValue(float value)
 {
-    return Accessibility::retrieveValueFromMainThread<bool>([&value, this] () -> bool {
-        if (RefPtr axObject = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<bool>([&value, context = mainThreadContext()] () -> bool {
+        if (RefPtr axObject = context.axObjectOnMainThread())
             return axObject->setValue(value);
         return false;
     });
@@ -500,8 +493,8 @@ void AXIsolatedObject::setValueIgnoringResult(float value)
 
 bool AXIsolatedObject::setValue(const String& value)
 {
-    return Accessibility::retrieveValueFromMainThread<bool>([&value, this] () -> bool {
-        if (RefPtr axObject = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<bool>([&value, context = mainThreadContext()] () -> bool {
+        if (RefPtr axObject = context.axObjectOnMainThread())
             return axObject->setValue(value);
         return false;
     });
@@ -524,13 +517,13 @@ void AXIsolatedObject::setSelected(bool value)
 void AXIsolatedObject::setSelectedRows(AccessibilityChildrenVector&& selectedRows)
 {
     auto rowIDs = axIDs(selectedRows);
-    performFunctionOnMainThread([selectedRowIDs = WTFMove(rowIDs), protectedThis = Ref { *this }] (auto* object) {
+    performFunctionOnMainThread([selectedRowIDs = WTF::move(rowIDs), protectedThis = Ref { *this }] (auto* object) {
         if (selectedRowIDs.isEmpty()) {
             object->setSelectedRows({ });
             return;
         }
 
-        auto* axObjectCache = protectedThis->axObjectCache();
+        CheckedPtr axObjectCache = protectedThis->axObjectCache();
         if (!axObjectCache)
             return;
 
@@ -547,13 +540,11 @@ void AXIsolatedObject::setFocused(bool value)
 
 String AXIsolatedObject::selectedText() const
 {
-#if ENABLE(AX_THREAD_TEXT_APIS)
     if (AXObjectCache::useAXThreadTextApis())
         return selectedTextMarkerRange().toString();
-#endif // ENABLE(AX_THREAD_TEXT_APIS)
 
-    return Accessibility::retrieveValueFromMainThread<String>([this] () -> String {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<String>([context = mainThreadContext()] () -> String {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->selectedText().isolatedCopy();
         return { };
     });
@@ -568,8 +559,8 @@ void AXIsolatedObject::setSelectedText(const String& value)
 
 void AXIsolatedObject::setSelectedTextRange(CharacterRange&& range)
 {
-    performFunctionOnMainThread([range = WTFMove(range)] (auto* object) mutable {
-        object->setSelectedTextRange(WTFMove(range));
+    performFunctionOnMainThread([range = WTF::move(range)] (auto* object) mutable {
+        object->setSelectedTextRange(WTF::move(range));
     });
 }
 
@@ -585,25 +576,102 @@ SRGBA<uint8_t> AXIsolatedObject::colorValue() const
     return WTF::switchOn(m_properties[index].second,
         [] (const Color& typedValue) -> SRGBA<uint8_t> { return typedValue.toColorTypeLossy<SRGBA<uint8_t>>(); },
         [] (const auto&) -> SRGBA<uint8_t> {
-            ASSERT_NOT_REACHED();
+            AX_ASSERT_NOT_REACHED();
             return Color().toColorTypeLossy<SRGBA<uint8_t>>();
         }
     );
 }
 
-AXIsolatedObject* AXIsolatedObject::accessibilityHitTest(const IntPoint& point) const
+RefPtr<AXCoreObject> AXIsolatedObject::accessibilityHitTest(const IntPoint& point) const
 {
-    auto axID = Accessibility::retrieveValueFromMainThread<std::optional<AXID>>([&point, this] () -> std::optional<AXID> {
-        if (RefPtr object = associatedAXObject()) {
-            object->updateChildrenIfNecessary();
-            if (auto* axObject = object->accessibilityHitTest(point))
-                return axObject->objectID();
+    auto hitTestOnMainThread = [axID = objectID(), treeID = treeID(), point] -> std::optional<AXID> {
+        if (WeakPtr<AXObjectCache> cache = AXTreeStore<AXObjectCache>::axObjectCacheForID(treeID)) {
+            RefPtr object = cache->objectForID(axID);
+            auto pageRelativePoint = cache->mapScreenPointToPagePoint(point);
+            if (RefPtr hitTestResult = object ? object->accessibilityHitTest(pageRelativePoint) : nullptr)
+                return hitTestResult->objectID();
+        }
+        return std::nullopt;
+    };
+
+    // For layout tests, we want to exercise hit testing using the accessibility thread, so only call.
+    // out to the main-thread in non-testing contexts.
+    if (!AXObjectCache::clientIsInTestMode()) [[likely]] {
+        auto timeoutableValue = Accessibility::retrieveValueFromMainThreadWithTimeout(hitTestOnMainThread, 15_ms);
+        if (std::optional<std::optional<AXID>> optionalAXID = timeoutableValue.value)
+            return *optionalAXID ? tree()->objectForID(**optionalAXID) : nullptr;
+    }
+
+    // If we're here (because !timeoutableValue.value), the request to the main-thread timed out.
+    // Let's use the accessibility thread to serve an approximate hit test. One optimization we
+    // could consider is computing the hit-test on the accessibility thread while waiting for the
+    // main-thread to compute the result (or timeout).
+    return approximateHitTest(point);
+}
+
+RefPtr<AXIsolatedObject> AXIsolatedObject::approximateHitTest(const IntPoint& point) const
+{
+    FloatRect bounds;
+    if (!AXObjectCache::clientIsInTestMode()) [[likely]] {
+        // For "real" off-main-thread hit tests (i.e. those forwarded to us by WKAccessibilityWebPageObjectMac),
+        // the coordinates are in the screen space. Note this may not be true for non-Mac platforms when we
+        // expand ITM to said other platforms (e.g. iOS).
+        bounds = screenRelativeRect();
+    } else {
+        // In a layout text context, the passed coordinates are page-relative, so use relative-frame.
+        bounds = relativeFrame();
+    }
+
+    IntPoint adjustedPoint = point;
+    adjustedPoint.moveBy(-remoteFrameOffset());
+
+    if (!bounds.contains(adjustedPoint) && !bounds.isEmpty()) {
+        // If our bounds are empty, we cannot possible contain the hit-point. However, this may happen
+        // because we haven't got geomtry for |this| yet, but maybe our children contain the hit-point,
+        // so check them before exiting. If our bounds are not empty and we don't contain the hit-point,
+        // we can exit now.
+        //
+        // This early-exit makes the assumption that parents always contain their children's bounds, which
+        // is generally true, but not always. This is OK since it's an approximate hit-test, but maybe we
+        // can improve this heuristic in the future.
+        return nullptr;
+    }
+
+    AXIsolatedObject* mutableThis = const_cast<AXIsolatedObject*>(this);
+    auto children = mutableThis->unignoredChildren();
+    for (int i = children.size() - 1; i >= 0; --i) {
+        RefPtr child = downcast<AXIsolatedObject>(children[i].ptr());
+        if (!child)
+            continue;
+
+        if (child->isTableColumn()) {
+            // Returning columns via hit testing is typically not what ATs expect as they are mock objects
+            // and thus not backed by any real DOM node. Returning nullptr allows us to return the table
+            // cell (or cell contents) instead, which is typically more useful for ATs like Hover Text.
+            continue;
         }
 
-        return std::nullopt;
-    });
+        if (RefPtr hitChild = child->approximateHitTest(point))
+            return hitChild;
+    }
 
-    return tree()->objectForID(axID);
+    if (bounds.isEmpty())
+        return nullptr;
+
+    RefPtr result = mutableThis;
+    if (result && result->isIgnored()) {
+        // FIXME: If |result| is the label of a control, a hit test should return the control.
+
+        result = result->parentObjectUnignored();
+    }
+
+    if (result) {
+        if (std::optional stitchedIntoID = result->stitchedIntoID()) {
+            if (RefPtr stitchRepresentative = tree()->objectForID(*stitchedIntoID))
+                return stitchRepresentative;
+        }
+    }
+    return result;
 }
 
 TextEmissionBehavior AXIsolatedObject::textEmissionBehavior() const
@@ -702,7 +770,7 @@ std::optional<T> AXIsolatedObject::optionalAttributeValue(AXProperty property) c
     return WTF::switchOn(m_properties[index].second,
         [] (const T& typedValue) -> std::optional<T> { return typedValue; },
         [] (const auto&) -> std::optional<T> {
-            ASSERT_NOT_REACHED();
+            AX_ASSERT_NOT_REACHED();
             return std::nullopt;
         }
     );
@@ -728,7 +796,7 @@ URL AXIsolatedObject::urlAttributeValue(AXProperty property) const
 
     return WTF::switchOn(m_properties[index].second,
         [] (const std::unique_ptr<URL>& typedValue) -> URL {
-            ASSERT(typedValue.get());
+            AX_ASSERT(typedValue.get());
             return *typedValue.get();
         },
         [] (auto&) { return URL(); }
@@ -743,7 +811,7 @@ Path AXIsolatedObject::pathAttributeValue(AXProperty property) const
 
     return WTF::switchOn(m_properties[index].second,
         [] (const std::unique_ptr<Path>& typedValue) -> Path {
-            ASSERT(typedValue.get());
+            AX_ASSERT(typedValue.get());
             return *typedValue.get();
         },
         [] (auto&) { return Path(); }
@@ -797,7 +865,7 @@ Color AXIsolatedObject::colorAttributeValue(AXProperty property) const
 
 #ifndef NDEBUG
     if (RefPtr parent = parentObject(); parent && property == AXProperty::TextColor)
-        ASSERT(parent->cachedTextColor() != getColor(m_properties[index].second));
+        AX_ASSERT(parent->cachedTextColor() != getColor(m_properties[index].second));
 #endif
 
     return getColor(m_properties[index].second);
@@ -813,7 +881,7 @@ RetainPtr<CTFontRef> AXIsolatedObject::fontAttributeValue(AXProperty property) c
 
 #ifndef NDEBUG
     if (RefPtr parent = parentObject(); parent && property == AXProperty::Font)
-        ASSERT(parent->cachedFont() != getFont(m_properties[index].second));
+        AX_ASSERT(parent->cachedFont() != getFont(m_properties[index].second));
 #endif
 
     return getFont(m_properties[index].second);
@@ -906,7 +974,6 @@ int AXIsolatedObject::intAttributeValue(AXProperty property) const
     );
 }
 
-#if ENABLE(AX_THREAD_TEXT_APIS)
 const AXTextRuns* AXIsolatedObject::textRuns() const
 {
     size_t index = indexOfProperty(AXProperty::TextRuns);
@@ -918,7 +985,6 @@ const AXTextRuns* AXIsolatedObject::textRuns() const
         [] (auto&) -> const AXTextRuns* { return nullptr; }
     );
 }
-#endif
 
 template<typename T>
 T AXIsolatedObject::getOrRetrievePropertyValue(AXProperty property)
@@ -926,12 +992,12 @@ T AXIsolatedObject::getOrRetrievePropertyValue(AXProperty property)
     if (std::optional value = optionalAttributeValue<T>(property))
         return *value;
 
-    Accessibility::performFunctionOnMainThreadAndWait([&property, this] () {
-        RefPtr axObject = associatedAXObject();
+    AXPropertyValueVariant value = nullptr;
+    Accessibility::performFunctionOnMainThreadAndWait([&property, &value, context = mainThreadContext()] () {
+        RefPtr axObject = context.axObjectOnMainThread();
         if (!axObject)
             return;
 
-        AXPropertyValueVariant value;
         switch (property) {
         case AXProperty::InnerHTML:
             value = axObject->innerHTML().isolatedCopy();
@@ -942,10 +1008,9 @@ T AXIsolatedObject::getOrRetrievePropertyValue(AXProperty property)
         default:
             break;
         }
-
-        // Cache value so that there is no need to access the main thread in subsequent calls.
-        setPropertyInVector(property, WTFMove(value));
     });
+    // Cache value so that there is no need to access the main thread in subsequent calls.
+    setPropertyInVector(property, WTF::move(value));
 
     return propertyValue<T>(property);
 }
@@ -962,7 +1027,7 @@ void AXIsolatedObject::fillChildrenVectorForProperty(AXProperty property, Access
 
 void AXIsolatedObject::updateBackingStore()
 {
-    ASSERT(!isMainThread());
+    AX_ASSERT(!isMainThread());
 
     if (RefPtr tree = this->tree())
         tree->applyPendingChanges();
@@ -972,7 +1037,7 @@ void AXIsolatedObject::updateBackingStore()
 
 std::optional<SimpleRange> AXIsolatedObject::rangeForCharacterRange(const CharacterRange& axRange) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->rangeForCharacterRange(axRange) : std::nullopt;
 }
@@ -986,47 +1051,47 @@ AXTextMarkerRange AXIsolatedObject::selectedTextMarkerRange() const
 
 IntRect AXIsolatedObject::boundsForRange(const SimpleRange& range) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->boundsForRange(range) : IntRect();
 }
 
 VisiblePosition AXIsolatedObject::visiblePositionForPoint(const IntPoint& point) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->visiblePositionForPoint(point) : VisiblePosition();
 }
 
 VisiblePosition AXIsolatedObject::nextLineEndPosition(const VisiblePosition&) const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return { };
 }
 
 VisiblePosition AXIsolatedObject::previousLineStartPosition(const VisiblePosition&) const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return { };
 }
 
 VisiblePosition AXIsolatedObject::visiblePositionForIndex(int index) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->visiblePositionForIndex(index) : VisiblePosition();
 }
 
 int AXIsolatedObject::indexForVisiblePosition(const VisiblePosition&) const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return 0;
 }
 
 Vector<SimpleRange> AXIsolatedObject::findTextRanges(const AccessibilitySearchTextCriteria& criteria) const
 {
-    return Accessibility::retrieveValueFromMainThread<Vector<SimpleRange>>([&criteria, this] () -> Vector<SimpleRange> {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<Vector<SimpleRange>>([&criteria, context = mainThreadContext()] () -> Vector<SimpleRange> {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->findTextRanges(criteria);
         return { };
     });
@@ -1034,8 +1099,8 @@ Vector<SimpleRange> AXIsolatedObject::findTextRanges(const AccessibilitySearchTe
 
 Vector<String> AXIsolatedObject::performTextOperation(const AccessibilityTextOperation& textOperation)
 {
-    return Accessibility::retrieveValueFromMainThread<Vector<String>>([&textOperation, this] () -> Vector<String> {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<Vector<String>>([&textOperation, context = mainThreadContext()] () -> Vector<String> {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->performTextOperation(textOperation);
         return Vector<String>();
     });
@@ -1044,18 +1109,18 @@ Vector<String> AXIsolatedObject::performTextOperation(const AccessibilityTextOpe
 AXCoreObject::AccessibilityChildrenVector AXIsolatedObject::findMatchingObjects(AccessibilitySearchCriteria&& criteria)
 {
     criteria.anchorObject = this;
-    return AXSearchManager().findMatchingObjects(WTFMove(criteria));
+    return AXSearchManager().findMatchingObjects(WTF::move(criteria));
 }
 
 String AXIsolatedObject::textUnderElement(TextUnderElementMode) const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return { };
 }
 
 std::optional<SimpleRange> AXIsolatedObject::misspellingRange(const SimpleRange& range, AccessibilitySearchDirection direction) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->misspellingRange(range, direction) : std::nullopt;
 }
@@ -1066,11 +1131,11 @@ LayoutRect AXIsolatedObject::elementRect() const
     // It is not expected for elementRect to be called directly or indirectly when serving a request for VoiceOver.
     // If this does happen, we should either see if AXIsolatedObject::relativeFrame can be used instead, or do the
     // work to cache the correct elementRect value.
-    ASSERT(_AXGetClientForCurrentRequestUntrusted() != kAXClientTypeVoiceOver);
+    AX_ASSERT(_AXGetClientForCurrentRequestUntrusted() != kAXClientTypeVoiceOver);
 #endif
 
-    return Accessibility::retrieveValueFromMainThread<LayoutRect>([&, this] () -> LayoutRect {
-        if (RefPtr axObject = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<LayoutRect>([context = mainThreadContext()] () -> LayoutRect {
+        if (RefPtr axObject = context.axObjectOnMainThread())
             return axObject->elementRect();
         return { };
     });
@@ -1089,22 +1154,28 @@ FloatPoint AXIsolatedObject::screenRelativePosition() const
     return convertFrameToSpace(relativeFrame(), AccessibilityConversionSpace::Screen).location();
 }
 
+FloatRect AXIsolatedObject::screenRelativeRect() const
+{
+    if (auto point = optionalAttributeValue<FloatPoint>(AXProperty::ScreenRelativePosition))
+        return { *point, size() };
+    return convertFrameToSpace(relativeFrame(), AccessibilityConversionSpace::Screen);
+}
+
 FloatRect AXIsolatedObject::relativeFrame() const
 {
     FloatRect relativeFrame;
 
     if (std::optional cachedRelativeFrame = this->cachedRelativeFrame()) {
         // We should not have cached a relative frame for elements that get their geometry from their children.
-        ASSERT(!m_getsGeometryFromChildren);
+        AX_ASSERT(!m_getsGeometryFromChildren);
         relativeFrame = *cachedRelativeFrame;
 
         if (isStaticText()) {
-            auto stitchState = this->stitchState();
-            if (stitchState.stitchedIntoID && *stitchState.stitchedIntoID == objectID() && stitchState.group.size()) {
+            if (std::optional stitchGroup = stitchGroupIfRepresentative()) {
                 // |this| is a stitching of multiple objects, so we need to combine all of their frames.
 
                 RefPtr tree = this->tree();
-                for (AXID axID : stitchState.group) {
+                for (AXID axID : stitchGroup->members()) {
                     if (axID == objectID())
                         continue;
 
@@ -1129,8 +1200,8 @@ FloatRect AXIsolatedObject::relativeFrame() const
     // Mock objects and SVG objects need use the main thread since they do not have render nodes and are not painted with layers, respectively.
     // FIXME: Remove isNonLayerSVGObject when LBSE is enabled & SVG frames are cached.
     if (!AXObjectCache::shouldServeInitialCachedFrame() || isNonLayerSVGObject()) {
-        return Accessibility::retrieveValueFromMainThread<FloatRect>([this] () -> FloatRect {
-            if (RefPtr axObject = associatedAXObject())
+        return Accessibility::retrieveValueFromMainThread<FloatRect>([context = mainThreadContext()] () -> FloatRect {
+            if (RefPtr axObject = context.axObjectOnMainThread())
                 return axObject->relativeFrame();
             return { };
         });
@@ -1198,12 +1269,12 @@ FloatRect AXIsolatedObject::convertFrameToSpace(const FloatRect& rect, Accessibi
             auto rootRelativeFrame = rootNode->relativeFrame();
             // Relative frames are top-left origin, but screen relative positions are bottom-left origin.
             FloatPoint position = { rootPoint.x() + rect.x(), rootPoint.y() + (rootRelativeFrame.maxY() - rect.maxY()) };
-            return { WTFMove(position), rect.size() };
+            return { WTF::move(position), rect.size() };
         }
     }
 
-    return Accessibility::retrieveValueFromMainThread<FloatRect>([&rect, &space, this] () -> FloatRect {
-        if (RefPtr axObject = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<FloatRect>([&rect, &space, context = mainThreadContext()] () -> FloatRect {
+        if (RefPtr axObject = context.axObjectOnMainThread())
             return axObject->convertFrameToSpace(rect, space);
         return { };
     });
@@ -1211,8 +1282,8 @@ FloatRect AXIsolatedObject::convertFrameToSpace(const FloatRect& rect, Accessibi
 
 bool AXIsolatedObject::replaceTextInRange(const String& replacementText, const CharacterRange& textRange)
 {
-    return Accessibility::retrieveValueFromMainThread<bool>([text = replacementText.isolatedCopy(), &textRange, this] () -> bool {
-        if (RefPtr axObject = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<bool>([text = replacementText.isolatedCopy(), &textRange, context = mainThreadContext()] () -> bool {
+        if (RefPtr axObject = context.axObjectOnMainThread())
             return axObject->replaceTextInRange(text, textRange);
         return false;
     });
@@ -1232,7 +1303,7 @@ bool AXIsolatedObject::insertText(const String& text)
 
 bool AXIsolatedObject::press()
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
 
     if (RefPtr object = associatedAXObject())
         return object->press();
@@ -1255,19 +1326,19 @@ void AXIsolatedObject::decrement()
 
 bool AXIsolatedObject::isAccessibilityNodeObject() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::isAccessibilityRenderObject() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::isNativeTextControl() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
@@ -1282,17 +1353,15 @@ int AXIsolatedObject::insertionPointLineNumber() const
         return -1;
     }
 
-#if ENABLE(AX_THREAD_TEXT_APIS)
     if (AXObjectCache::useAXThreadTextApis()) {
         RefPtr selectionObject = selectedMarkerRange.start().isolatedObject();
         if (isTextControl() && selectionObject && isAncestorOfObject(*selectionObject))
             return selectedMarkerRange.start().lineIndex();
         return -1;
     }
-#endif // ENABLE(AX_THREAD_TEXT_APIS)
 
-    return Accessibility::retrieveValueFromMainThread<int>([this] () -> int {
-        if (RefPtr axObject = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<int>([context = mainThreadContext()] () -> int {
+        if (RefPtr axObject = context.axObjectOnMainThread())
             return axObject->insertionPointLineNumber();
         return -1;
     });
@@ -1303,8 +1372,8 @@ String AXIsolatedObject::identifierAttribute() const
 #if !LOG_DISABLED
     return stringAttributeValue(AXProperty::IdentifierAttribute);
 #else
-    return Accessibility::retrieveValueFromMainThread<String>([this] () -> String {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<String>([context = mainThreadContext()] () -> String {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->identifierAttribute().isolatedCopy();
         return { };
     });
@@ -1313,13 +1382,11 @@ String AXIsolatedObject::identifierAttribute() const
 
 CharacterRange AXIsolatedObject::doAXRangeForLine(unsigned lineIndex) const
 {
-#if ENABLE(AX_THREAD_TEXT_APIS)
     if (AXObjectCache::useAXThreadTextApis())
         return AXTextMarker { *this, 0 }.characterRangeForLine(lineIndex);
-#endif
 
-    return Accessibility::retrieveValueFromMainThread<CharacterRange>([&lineIndex, this] () -> CharacterRange {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<CharacterRange>([&lineIndex, context = mainThreadContext()] () -> CharacterRange {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->doAXRangeForLine(lineIndex);
         return { };
     });
@@ -1327,13 +1394,11 @@ CharacterRange AXIsolatedObject::doAXRangeForLine(unsigned lineIndex) const
 
 String AXIsolatedObject::doAXStringForRange(const CharacterRange& range) const
 {
-#if ENABLE(AX_THREAD_TEXT_APIS)
     if (AXObjectCache::useAXThreadTextApis())
         return textMarkerRange().toString().substring(range.location, range.length);
-#endif // ENABLE(AX_THREAD_TEXT_APIS)
 
-    return Accessibility::retrieveValueFromMainThread<String>([&range, this] () -> String {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<String>([&range, context = mainThreadContext()] () -> String {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->doAXStringForRange(range).isolatedCopy();
         return { };
     });
@@ -1341,8 +1406,8 @@ String AXIsolatedObject::doAXStringForRange(const CharacterRange& range) const
 
 CharacterRange AXIsolatedObject::characterRangeForPoint(const IntPoint& point) const
 {
-    return Accessibility::retrieveValueFromMainThread<CharacterRange>([&point, this] () -> CharacterRange {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<CharacterRange>([&point, context = mainThreadContext()] () -> CharacterRange {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->characterRangeForPoint(point);
         return { };
     });
@@ -1350,8 +1415,8 @@ CharacterRange AXIsolatedObject::characterRangeForPoint(const IntPoint& point) c
 
 CharacterRange AXIsolatedObject::doAXRangeForIndex(unsigned index) const
 {
-    return Accessibility::retrieveValueFromMainThread<CharacterRange>([&index, this] () -> CharacterRange {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<CharacterRange>([&index, context = mainThreadContext()] () -> CharacterRange {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->doAXRangeForIndex(index);
         return { };
     });
@@ -1359,8 +1424,8 @@ CharacterRange AXIsolatedObject::doAXRangeForIndex(unsigned index) const
 
 CharacterRange AXIsolatedObject::doAXStyleRangeForIndex(unsigned index) const
 {
-    return Accessibility::retrieveValueFromMainThread<CharacterRange>([&index, this] () -> CharacterRange {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<CharacterRange>([&index, context = mainThreadContext()] () -> CharacterRange {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->doAXStyleRangeForIndex(index);
         return { };
     });
@@ -1368,8 +1433,8 @@ CharacterRange AXIsolatedObject::doAXStyleRangeForIndex(unsigned index) const
 
 IntRect AXIsolatedObject::doAXBoundsForRange(const CharacterRange& axRange) const
 {
-    return Accessibility::retrieveValueFromMainThread<IntRect>([&axRange, this] () -> IntRect {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<IntRect>([&axRange, context = mainThreadContext()] () -> IntRect {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->doAXBoundsForRange(axRange);
         return { };
     });
@@ -1377,8 +1442,8 @@ IntRect AXIsolatedObject::doAXBoundsForRange(const CharacterRange& axRange) cons
 
 IntRect AXIsolatedObject::doAXBoundsForRangeUsingCharacterOffset(const CharacterRange& axRange) const
 {
-    return Accessibility::retrieveValueFromMainThread<IntRect>([&axRange, this] () -> IntRect {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<IntRect>([&axRange, context = mainThreadContext()] () -> IntRect {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->doAXBoundsForRangeUsingCharacterOffset(axRange);
         return { };
     });
@@ -1387,13 +1452,11 @@ IntRect AXIsolatedObject::doAXBoundsForRangeUsingCharacterOffset(const Character
 
 unsigned AXIsolatedObject::doAXLineForIndex(unsigned index)
 {
-#if ENABLE(AX_THREAD_TEXT_APIS)
     if (AXObjectCache::useAXThreadTextApis())
         return AXTextMarker { *this, 0 }.lineNumberForIndex(index);
-#endif
 
-    return Accessibility::retrieveValueFromMainThread<unsigned>([&index, this] () -> unsigned {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<unsigned>([&index, context = mainThreadContext()] () -> unsigned {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->doAXLineForIndex(index);
         return 0;
     });
@@ -1401,7 +1464,7 @@ unsigned AXIsolatedObject::doAXLineForIndex(unsigned index)
 
 VisibleSelection AXIsolatedObject::selection() const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
 
     RefPtr object = associatedAXObject();
     return object ? object->selection() : VisibleSelection();
@@ -1409,7 +1472,7 @@ VisibleSelection AXIsolatedObject::selection() const
 
 void AXIsolatedObject::setSelectedVisiblePositionRange(const VisiblePositionRange& visiblePositionRange) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
 
     if (RefPtr object = associatedAXObject())
         object->setSelectedVisiblePositionRange(visiblePositionRange);
@@ -1419,8 +1482,8 @@ void AXIsolatedObject::setSelectedVisiblePositionRange(const VisiblePositionRang
 
 ModelPlayerAccessibilityChildren AXIsolatedObject::modelElementChildren()
 {
-    return Accessibility::retrieveValueFromMainThread<ModelPlayerAccessibilityChildren>([this] -> ModelPlayerAccessibilityChildren {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<ModelPlayerAccessibilityChildren>([context = mainThreadContext()] -> ModelPlayerAccessibilityChildren {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->modelElementChildren();
         return { };
     });
@@ -1430,90 +1493,90 @@ ModelPlayerAccessibilityChildren AXIsolatedObject::modelElementChildren()
 
 std::optional<SimpleRange> AXIsolatedObject::simpleRange() const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->simpleRange() : std::nullopt;
 }
 
 VisiblePositionRange AXIsolatedObject::visiblePositionRange() const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->visiblePositionRange() : VisiblePositionRange();
 }
 
 VisiblePositionRange AXIsolatedObject::visiblePositionRangeForLine(unsigned index) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->visiblePositionRangeForLine(index) : VisiblePositionRange();
 }
 
 VisiblePositionRange AXIsolatedObject::visiblePositionRangeForUnorderedPositions(const VisiblePosition& position1, const VisiblePosition& position2) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->visiblePositionRangeForUnorderedPositions(position1, position2) : visiblePositionRange();
 }
 
 VisiblePositionRange AXIsolatedObject::leftLineVisiblePositionRange(const VisiblePosition& position) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->leftLineVisiblePositionRange(position) : VisiblePositionRange();
 }
 
 VisiblePositionRange AXIsolatedObject::rightLineVisiblePositionRange(const VisiblePosition& position) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->rightLineVisiblePositionRange(position) : VisiblePositionRange();
 }
 
 VisiblePositionRange AXIsolatedObject::styleRangeForPosition(const VisiblePosition& position) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->styleRangeForPosition(position) : VisiblePositionRange();
 }
 
 VisiblePositionRange AXIsolatedObject::lineRangeForPosition(const VisiblePosition& position) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->lineRangeForPosition(position) : VisiblePositionRange();
 }
 
 VisiblePosition AXIsolatedObject::visiblePositionForIndex(unsigned index, bool lastIndexOK) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->visiblePositionForIndex(index, lastIndexOK) : VisiblePosition();
 }
 
 int AXIsolatedObject::lineForPosition(const VisiblePosition& position) const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     RefPtr axObject = associatedAXObject();
     return axObject ? axObject->lineForPosition(position) : -1;
 }
 
 bool AXIsolatedObject::isMockObject() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::isNonNativeTextControl() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::isOnScreen() const
 {
-    return Accessibility::retrieveValueFromMainThread<bool>([this] () -> bool {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<bool>([context = mainThreadContext()] () -> bool {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->isOnScreen();
         return false;
     });
@@ -1521,28 +1584,28 @@ bool AXIsolatedObject::isOnScreen() const
 
 bool AXIsolatedObject::isOffScreen() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::isPressed() const
 {
 #if PLATFORM(MAC)
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
 #endif
     return boolAttributeValue(AXProperty::IsPressed);
 }
 
 bool AXIsolatedObject::isSelectedOptionActive() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 Vector<AXTextMarkerRange> AXIsolatedObject::misspellingRanges() const
 {
-    return Accessibility::retrieveValueFromMainThread<Vector<AXTextMarkerRange>>([this] () -> Vector<AXTextMarkerRange> {
-        if (RefPtr axObject = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<Vector<AXTextMarkerRange>>([context = mainThreadContext()] () -> Vector<AXTextMarkerRange> {
+        if (RefPtr axObject = context.axObjectOnMainThread())
             return axObject->misspellingRanges();
         return { };
     });
@@ -1556,7 +1619,6 @@ bool AXIsolatedObject::hasRowGroupTag() const
 
 bool AXIsolatedObject::hasSameFont(AXCoreObject& otherObject)
 {
-#if ENABLE(AX_THREAD_TEXT_APIS)
     if (AXObjectCache::useAXThreadTextApis()) {
         // Having a font only really makes sense for text, so if this or otherObject isn't text, find the first text descendant to compare.
         RefPtr thisText = selfOrFirstTextDescendant();
@@ -1568,13 +1630,12 @@ bool AXIsolatedObject::hasSameFont(AXCoreObject& otherObject)
         }
         return thisText->font() == otherText->font();
     }
-#endif // ENABLE(AX_THREAD_TEXT_APIS)
 
     if (!is<AXIsolatedObject>(otherObject))
         return false;
 
-    return Accessibility::retrieveValueFromMainThread<bool>([&otherObject, this] () -> bool {
-        if (RefPtr axObject = associatedAXObject()) {
+    return Accessibility::retrieveValueFromMainThread<bool>([&otherObject, context = mainThreadContext()] () -> bool {
+        if (RefPtr axObject = context.axObjectOnMainThread()) {
             if (RefPtr axOtherObject = downcast<AXIsolatedObject>(otherObject).associatedAXObject())
                 return axObject->hasSameFont(*axOtherObject);
         }
@@ -1584,7 +1645,6 @@ bool AXIsolatedObject::hasSameFont(AXCoreObject& otherObject)
 
 bool AXIsolatedObject::hasSameFontColor(AXCoreObject& otherObject)
 {
-#if ENABLE(AX_THREAD_TEXT_APIS)
     if (AXObjectCache::useAXThreadTextApis()) {
         RefPtr thisText = downcast<AXIsolatedObject>(selfOrFirstTextDescendant());
         RefPtr otherText = downcast<AXIsolatedObject>(otherObject.selfOrFirstTextDescendant());
@@ -1593,13 +1653,12 @@ bool AXIsolatedObject::hasSameFontColor(AXCoreObject& otherObject)
             return false;
         return thisText->colorAttributeValue(AXProperty::TextColor) == otherText->colorAttributeValue(AXProperty::TextColor);
     }
-#endif // ENABLE(AX_THREAD_TEXT_APIS)
 
     if (!is<AXIsolatedObject>(otherObject))
         return false;
 
-    return Accessibility::retrieveValueFromMainThread<bool>([&otherObject, this] () -> bool {
-        if (RefPtr axObject = associatedAXObject()) {
+    return Accessibility::retrieveValueFromMainThread<bool>([&otherObject, context = mainThreadContext()] () -> bool {
+        if (RefPtr axObject = context.axObjectOnMainThread()) {
             if (RefPtr axOtherObject = downcast<AXIsolatedObject>(otherObject).associatedAXObject())
                 return axObject->hasSameFontColor(*axOtherObject);
         }
@@ -1609,7 +1668,6 @@ bool AXIsolatedObject::hasSameFontColor(AXCoreObject& otherObject)
 
 bool AXIsolatedObject::hasSameStyle(AXCoreObject& otherObject)
 {
-#if ENABLE(AX_THREAD_TEXT_APIS)
     if (AXObjectCache::useAXThreadTextApis()) {
         RefPtr thisText = selfOrFirstTextDescendant();
         RefPtr otherText = otherObject.selfOrFirstTextDescendant();
@@ -1618,13 +1676,12 @@ bool AXIsolatedObject::hasSameStyle(AXCoreObject& otherObject)
             return false;
         return thisText->stylesForAttributedString() == otherText->stylesForAttributedString();
     }
-#endif // ENABLE(AX_THREAD_TEXT_APIS)
 
     if (!is<AXIsolatedObject>(otherObject))
         return false;
 
-    return Accessibility::retrieveValueFromMainThread<bool>([&otherObject, this] () -> bool {
-        if (RefPtr axObject = associatedAXObject()) {
+    return Accessibility::retrieveValueFromMainThread<bool>([&otherObject, context = mainThreadContext()] () -> bool {
+        if (RefPtr axObject = context.axObjectOnMainThread()) {
             if (RefPtr axOtherObject = downcast<AXIsolatedObject>(otherObject).associatedAXObject())
                 return axObject->hasSameStyle(*axOtherObject);
         }
@@ -1652,8 +1709,8 @@ AXTextMarkerRange AXIsolatedObject::textInputMarkedTextMarkerRange() const
 // Re-visit if ITM expands to more platforms, or if AX clients need to start using this.
 String AXIsolatedObject::linkRelValue() const
 {
-    return Accessibility::retrieveValueFromMainThread<String>([this] () -> String {
-        if (RefPtr object = associatedAXObject())
+    return Accessibility::retrieveValueFromMainThread<String>([context = mainThreadContext()] () -> String {
+        if (RefPtr object = context.axObjectOnMainThread())
             return object->linkRelValue().isolatedCopy();
         return { };
     });
@@ -1712,85 +1769,84 @@ AXIsolatedObject* AXIsolatedObject::crossFrameChildObject() const
 
 Element* AXIsolatedObject::element() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 Node* AXIsolatedObject::node() const
 {
-    ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 RenderObject* AXIsolatedObject::renderer() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 bool AXIsolatedObject::supportsHasPopup() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::supportsChecked() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::isModalNode() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::isTableCell() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 AXCoreObject* AXIsolatedObject::parentTableIfTableCell() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 AXCoreObject* AXIsolatedObject::parentTable() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 bool AXIsolatedObject::isTableRow() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 AXCoreObject* AXIsolatedObject::parentTableIfExposedTableRow() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 bool AXIsolatedObject::isDescendantOfRole(AccessibilityRole) const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 bool AXIsolatedObject::inheritsPresentationalRole() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 void AXIsolatedObject::setAccessibleName(const AtomString&)
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
 }
 
 String AXIsolatedObject::textContentPrefixFromListMarker() const
@@ -1800,19 +1856,12 @@ String AXIsolatedObject::textContentPrefixFromListMarker() const
 
 String AXIsolatedObject::stringValue() const
 {
-#if ENABLE(AX_THREAD_TEXT_APIS)
     size_t index = indexOfProperty(AXProperty::StringValue);
     if (index == notFound) {
         if (hasStitchableRole()) {
-            auto stitchState = this->stitchState();
-            if (!stitchState.stitchedIntoID)
+            std::optional stitchGroup = stitchGroupIfRepresentative();
+            if (!stitchGroup)
                 return textMarkerRange().toString(IncludeListMarkerText::No);
-
-            AXID thisID = objectID();
-            if (*stitchState.stitchedIntoID != thisID) {
-                // |this| is stitched into another object, so don't return any string value.
-                return emptyString();
-            }
 
             // |this| is the sum of several stitched text-like objects. Our string value should
             // include all of them.
@@ -1823,10 +1872,10 @@ String AXIsolatedObject::stringValue() const
             AXTextMarker endMarker;
 
             RefPtr tree = std::get<RefPtr<AXIsolatedTree>>(axTreeForID(treeID()));
-            if (!tree || stitchState.group.isEmpty())
+            if (!tree)
                 return textMarkerRange().toString(IncludeListMarkerText::No);
 
-            for (auto axID = stitchState.group.rbegin(); axID != stitchState.group.rend() && *axID != thisID; ++axID) {
+            for (auto axID = stitchGroup->members().rbegin(); axID != stitchGroup->members().rend(); ++axID) {
                 if (RefPtr object = tree->objectForID(*axID)) {
                     if (const auto* runs = object->textRuns()) {
                         endMarker = AXTextMarker { *object, runs->totalLength() };
@@ -1838,7 +1887,7 @@ String AXIsolatedObject::stringValue() const
             if (!endMarker.isValid())
                 return textMarkerRange().toString(IncludeListMarkerText::No);
 
-            return AXTextMarkerRange { WTFMove(startMarker), WTFMove(endMarker) }.toString(IncludeListMarkerText::No);
+            return AXTextMarkerRange { WTF::move(startMarker), WTF::move(endMarker) }.toString(IncludeListMarkerText::Yes);
         }
         return emptyString();
     }
@@ -1847,38 +1896,31 @@ String AXIsolatedObject::stringValue() const
         [] (const String& typedValue) { return typedValue; },
         [] (auto&) { return emptyString(); }
     );
-#else
-    if (std::optional stringValue = optionalAttributeValue<String>(AXProperty::StringValue))
-        return *stringValue;
-    if (auto value = platformStringValue())
-        return *value;
-    return { };
-#endif // ENABLE(AX_THREAD_TEXT_APIS)
 }
 
 String AXIsolatedObject::text() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return String();
 }
 
 #if !PLATFORM(COCOA)
 unsigned AXIsolatedObject::textLength() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return 0;
 }
 #endif
 
 AXObjectCache* AXIsolatedObject::axObjectCache() const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
     return tree()->axObjectCache();
 }
 
 Element* AXIsolatedObject::actionElement() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
@@ -1899,40 +1941,40 @@ PlatformWidget AXIsolatedObject::platformWidget() const
 
 Widget* AXIsolatedObject::widgetForAttachmentView() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 Page* AXIsolatedObject::page() const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
 
     if (RefPtr axObject = associatedAXObject())
         return axObject->page();
 
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 Document* AXIsolatedObject::document() const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
 
     if (RefPtr axObject = associatedAXObject())
         return axObject->document();
 
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
 LocalFrameView* AXIsolatedObject::documentFrameView() const
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
 
     if (RefPtr axObject = associatedAXObject())
         return axObject->documentFrameView();
 
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return nullptr;
 }
 
@@ -1995,37 +2037,37 @@ AXIsolatedObject* AXIsolatedObject::tableHeaderContainer()
 #if !PLATFORM(MAC)
 IntPoint AXIsolatedObject::clickPoint()
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return { };
 }
 
 Vector<String> AXIsolatedObject::determineDropEffects() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return { };
 }
 
 bool AXIsolatedObject::pressedIsPresent() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return false;
 }
 
 int AXIsolatedObject::layoutCount() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return 0;
 }
 
 Vector<String> AXIsolatedObject::classList() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return { };
 }
 
 String AXIsolatedObject::computedRoleString() const
 {
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return { };
 }
 #endif

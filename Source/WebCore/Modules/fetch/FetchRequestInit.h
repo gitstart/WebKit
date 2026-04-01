@@ -39,7 +39,7 @@ namespace WebCore {
 struct FetchRequestInit {
     String method;
     std::optional<FetchHeaders::Init> headers;
-    std::optional<FetchBody::Init> body;
+    std::optional<std::optional<FetchBody::Init>> body;
     String referrer;
     std::optional<ReferrerPolicy> referrerPolicy;
     std::optional<FetchOptions::Mode> mode;
@@ -51,8 +51,8 @@ struct FetchRequestInit {
     JSC::JSValue signal;
     std::optional<RequestPriority> priority;
     JSC::JSValue window;
-    IPAddressSpace targetAddressSpace { IPAddressSpace::Public };
-    bool hasMembers() const { return !method.isEmpty() || headers || body || !referrer.isEmpty() || referrerPolicy || mode || credentials || cache || redirect || !integrity.isEmpty() || keepalive || !window.isUndefined() || !signal.isUndefined() || targetAddressSpace != IPAddressSpace::Public; }
+    std::optional<IPAddressSpace> targetAddressSpace;
+    bool hasMembers() const { return !method.isEmpty() || headers || body || !referrer.isEmpty() || referrerPolicy || mode || credentials || cache || redirect || !integrity.isEmpty() || keepalive || !window.isUndefined() || !signal.isUndefined() || (targetAddressSpace && *targetAddressSpace != IPAddressSpace::Public); }
 };
 
 }

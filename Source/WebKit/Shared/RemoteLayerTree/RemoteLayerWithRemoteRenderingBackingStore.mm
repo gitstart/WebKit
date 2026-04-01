@@ -50,7 +50,7 @@ RemoteLayerWithRemoteRenderingBackingStore::RemoteLayerWithRemoteRenderingBackin
         return;
     }
 
-    lazyInitialize(m_bufferSet, collection->protectedLayerTreeContext()->ensureProtectedRemoteRenderingBackendProxy()->createImageBufferSet(*CheckedPtr { this }.get()));
+    lazyInitialize(m_bufferSet, protect(collection->layerTreeContext())->ensureProtectedRemoteRenderingBackendProxy()->createImageBufferSet(*CheckedPtr { this }));
 }
 
 RemoteLayerWithRemoteRenderingBackingStore::~RemoteLayerWithRemoteRenderingBackingStore()
@@ -141,7 +141,7 @@ void RemoteLayerWithRemoteRenderingBackingStore::ensureBackingStore(const Parame
             .includeDisplayList = m_parameters.includeDisplayList,
 #endif
         };
-        m_bufferSet->setConfiguration(WTFMove(configuration));
+        m_bufferSet->setConfiguration(WTF::move(configuration));
     }
 }
 

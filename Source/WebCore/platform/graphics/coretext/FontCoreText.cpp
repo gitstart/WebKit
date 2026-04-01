@@ -46,6 +46,7 @@
 #include <unicode/uchar.h>
 #include <wtf/Assertions.h>
 #include <wtf/HexNumber.h>
+#include <wtf/MathExtras.h>
 #include <wtf/RetainPtr.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/cf/VectorCF.h>
@@ -155,6 +156,18 @@ void Font::platformInit()
     if (origin() == Origin::Local && needsAscentAdjustment(familyName.get()))
         ascent += std::round((ascent + descent) * 0.15f);
 #endif
+
+    if (isAhemFont(familyName.get())) {
+        auto tolerance = [&] (auto a, auto b) {
+            auto toleranceInPixel = 0.01f;
+            return toleranceInPixel / std::max(std::abs(a), std::abs(b)) * 100.f;
+        };
+        auto roundedAscent = std::round(ascent);
+        if (WTF::areEssentiallyEqual(ascent, roundedAscent, tolerance(ascent, roundedAscent))) {
+            ascent = roundedAscent;
+            descent = std::round(descent);
+        }
+    }
 
     // Compute line spacing before the line metrics hacks are applied.
 #if !PLATFORM(IOS_FAMILY)
@@ -805,7 +818,7 @@ Path Font::platformPathForGlyph(Glyph glyph) const
         CGPathAddPath(newPath.get(), nullptr, result.get());
         auto translation = CGAffineTransformMakeTranslation(syntheticBoldOffset, 0);
         CGPathAddPath(newPath.get(), &translation, result.get());
-        return { PathCG::create(WTFMove(newPath)) };
+        return { PathCG::create(WTF::move(newPath)) };
     }
 
     return { PathCG::create(adoptCF(CGPathCreateMutableCopy(result.get()))) };
@@ -990,12 +1003,12 @@ bool Font::hasAnyComplexColorFormatGlyphs(std::span<const GlyphBufferGlyph> glyp
 
 std::optional<Ref<Font>> Font::fromIPCData(IPCFontData&& data)
 {
-    return WTF::switchOn(data,
-        [] (const InstalledFont& installedFont) -> std::optional<Ref<Font>> {
+    return WTF::switchOn(WTF::move(data),
+        [] (InstalledFont&& installedFont) -> std::optional<Ref<Font>> {
             return installedFont.toFont();
         },
-        [] (const CustomFontCreationData& creationData) -> std::optional<Ref<Font>> {
-            Ref fontFaceData = SharedBuffer::create(WTFMove(creationData.fontFaceData));
+        [] (CustomFontCreationData&& creationData) -> std::optional<Ref<Font>> {
+            Ref fontFaceData = SharedBuffer::create(WTF::move(creationData.fontFaceData));
             RefPtr<FontCustomPlatformData> customPlatformData = FontCustomPlatformData::create(fontFaceData, creationData.itemInCollection);
             if (!customPlatformData)
                 return std::nullopt;
@@ -1009,7 +1022,7 @@ std::optional<Ref<Font>> Font::fromIPCData(IPCFontData&& data)
 
             RetainPtr font = adoptCF(CTFontCreateWithFontDescriptor(fontDescriptor.get(), creationData.metadata.pointSize, nullptr));
 
-            return Font::create(FontPlatformData(creationData.metadata.pointSize, FontOrientation(creationData.metadata.orientation), FontWidthVariant(creationData.metadata.widthVariant), TextRenderingMode(creationData.metadata.textRenderingMode), creationData.metadata.syntheticBold, creationData.metadata.syntheticOblique, WTFMove(font), WTFMove(customPlatformData)));
+            return Font::create(FontPlatformData(creationData.metadata.pointSize, FontOrientation(creationData.metadata.orientation), FontWidthVariant(creationData.metadata.widthVariant), TextRenderingMode(creationData.metadata.textRenderingMode), creationData.metadata.syntheticBold, creationData.metadata.syntheticOblique, WTF::move(font), WTF::move(customPlatformData)));
         }
     );
 }
@@ -1028,6 +1041,17 @@ std::optional<InstalledFont> Font::toSerializableInstalledFont() const
         platformData().syntheticBold(),
         platformData().syntheticOblique()
     };
+
+    SystemUIFontType fontType = CTFontGetUIFontType(ctFont.get());
+    if (fontType != SystemUIFontTypeNone) {
+        return InstalledFont {
+            InstalledFont::SystemUIFont {
+                fontType,
+                adoptCF(checked_cf_cast<CFStringRef>(CTFontCopyAttribute(ctFont.get(), kCTFontDescriptorLanguageAttribute))).get()
+            },
+            fontData
+        };
+    }
 
     RetainPtr fontDescriptor = adoptCF(CTFontCopyFontDescriptor(ctFont.get()));
     RetainPtr attributes = adoptCF(CTFontDescriptorCopyAttributes(fontDescriptor.get()));

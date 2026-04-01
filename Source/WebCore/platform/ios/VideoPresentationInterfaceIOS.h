@@ -30,11 +30,11 @@
 
 #include <WebCore/EventListener.h>
 #include <WebCore/HTMLMediaElementEnums.h>
+#include <WebCore/ImmersiveVideoMetadata.h>
 #include <WebCore/MediaPlayerIdentifier.h>
 #include <WebCore/PlatformImage.h>
 #include <WebCore/PlatformLayer.h>
 #include <WebCore/PlaybackSessionInterfaceIOS.h>
-#include <WebCore/SpatialVideoMetadata.h>
 #include <WebCore/VideoFullscreenCaptions.h>
 #include <WebCore/VideoPresentationLayerProvider.h>
 #include <WebCore/VideoPresentationModel.h>
@@ -153,7 +153,7 @@ public:
         bool hasVideo() const { return m_mode & (HTMLMediaElementEnums::VideoFullscreenModeStandard | HTMLMediaElementEnums::VideoFullscreenModePictureInPicture); }
     };
 
-    RefPtr<VideoPresentationModel> videoPresentationModel() const { return m_videoPresentationModel.get(); }
+    RefPtr<VideoPresentationModel> videoPresentationModel() const { return m_videoPresentationModel; }
     WEBCORE_EXPORT virtual bool shouldExitFullscreenWithReason(ExitFullScreenReason);
     HTMLMediaElementEnums::VideoFullscreenMode mode() const { return m_currentMode.mode(); }
     WEBCORE_EXPORT virtual bool mayAutomaticallyShowVideoPictureInPicture() const = 0;

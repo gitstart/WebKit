@@ -59,7 +59,7 @@
 namespace WebCore {
 
 GPUQueue::GPUQueue(Ref<WebGPU::Queue>&& backing, WebGPU::Device& device)
-    : m_backing(WTFMove(backing))
+    : m_backing(WTF::move(backing))
     , m_device(&device)
 {
 }
@@ -71,7 +71,7 @@ String GPUQueue::label() const
 
 void GPUQueue::setLabel(String&& label)
 {
-    m_backing->setLabel(WTFMove(label));
+    m_backing->setLabel(WTF::move(label));
 }
 
 void GPUQueue::submit(Vector<Ref<GPUCommandBuffer>>&& commandBuffers)
@@ -79,7 +79,7 @@ void GPUQueue::submit(Vector<Ref<GPUCommandBuffer>>&& commandBuffers)
     auto result = WTF::map(commandBuffers, [](auto& commandBuffer) -> Ref<WebGPU::CommandBuffer> {
         return commandBuffer->backing();
     });
-    m_backing->submit(WTFMove(result));
+    m_backing->submit(WTF::move(result));
 
     if (RefPtr device = m_device.get()) {
         for (Ref commandBuffer : commandBuffers) {
@@ -91,7 +91,7 @@ void GPUQueue::submit(Vector<Ref<GPUCommandBuffer>>&& commandBuffers)
 
 void GPUQueue::onSubmittedWorkDone(OnSubmittedWorkDonePromise&& promise)
 {
-    m_backing->onSubmittedWorkDone([promise = WTFMove(promise)]() mutable {
+    m_backing->onSubmittedWorkDone([promise = WTF::move(promise)]() mutable {
         promise.resolve(nullptr);
     });
 }
@@ -111,11 +111,11 @@ ExceptionOr<void> GPUQueue::writeBuffer(
     const GPUBuffer& buffer,
     GPUSize64 bufferOffset,
     BufferSource&& data,
-    std::optional<GPUSize64> optionalDataOffset,
+    GPUSize64 optionalDataOffset,
     std::optional<GPUSize64> optionalSize)
 {
     auto elementSize = computeElementSize(data);
-    auto dataOffset = elementSize * optionalDataOffset.value_or(0);
+    auto dataOffset = elementSize * optionalDataOffset;
     auto dataSize = data.length();
     auto contentSize = optionalSize.has_value() ? (elementSize * optionalSize.value()) : (dataSize - dataOffset);
 
@@ -160,9 +160,7 @@ static size_t requiredBytesInCopy(const GPUImageCopyTexture& destination, const 
 {
     using namespace WebGPU;
 
-    auto texture = destination.texture;
-    if (!texture)
-        return 0;
+    Ref texture = destination.texture;
 
     auto aspectSpecificFormat = GPUTexture::aspectSpecificFormat(texture->format(), destination.aspect);
     uint32_t blockWidth = GPUTexture::texelBlockWidth(aspectSpecificFormat);
@@ -409,12 +407,12 @@ static void clampDimension(WebGPU::Extent3D& extent3D, size_t dimension, WebGPU:
     });
 }
 
-static void getImageBytesFromVideoFrame(const RefPtr<VideoFrame>& videoFrame, WebGPU::Extent3D& backingCopySize, NOESCAPE const ImageDataCallback& callback)
+static void getImageBytesFromVideoFrame(WebGPU::Queue& backing, const RefPtr<VideoFrame>& videoFrame, WebGPU::Extent3D& backingCopySize, NOESCAPE const ImageDataCallback& callback)
 {
     if (!videoFrame.get())
         return callback({ }, 0, 0);
 
-    RefPtr nativeImage = videoFrame->copyNativeImage();
+    RefPtr<NativeImage> nativeImage = backing.getNativeImage(*videoFrame.get());
     if (!nativeImage)
         return callback({ }, 0, 0);
 
@@ -627,14 +625,14 @@ static void imageBytesForSource(WebGPU::Queue& backing, const GPUImageCopyExtern
     }, [&](const RefPtr<HTMLVideoElement> videoElement) -> ResultType {
 #if PLATFORM(COCOA)
         if (RefPtr player = videoElement ? videoElement->player() : nullptr; player && player->isVideoPlayer())
-            return getImageBytesFromVideoFrame(player->videoFrameForCurrentTime(), backingCopySize, callback);
+            return getImageBytesFromVideoFrame(backing, player->videoFrameForCurrentTime(), backingCopySize, callback);
 #else
         UNUSED_PARAM(videoElement);
 #endif
         return callback({ }, 0, 0);
     }, [&](const RefPtr<WebCodecsVideoFrame> webCodecsFrame) -> ResultType {
 #if PLATFORM(COCOA)
-        return getImageBytesFromVideoFrame(webCodecsFrame->internalFrame(), backingCopySize, callback);
+        return getImageBytesFromVideoFrame(backing, webCodecsFrame->internalFrame(), backingCopySize, callback);
 #else
         UNUSED_PARAM(webCodecsFrame);
         return callback({ }, 0, 0);
@@ -661,10 +659,10 @@ static bool isOriginClean(const auto& source, ScriptExecutionContext& context)
     }, [&](const RefPtr<ImageData>) -> ResultType {
         return true;
     }, [&](const RefPtr<HTMLImageElement> imageElement) -> ResultType {
-        return imageElement->originClean(*context.protectedSecurityOrigin().get());
+        return imageElement->originClean(*protect(context.securityOrigin()).get());
     }, [&](const RefPtr<HTMLVideoElement> videoElement) -> ResultType {
 #if PLATFORM(COCOA)
-        return !videoElement->taintsOrigin(*context.protectedSecurityOrigin().get());
+        return !videoElement->taintsOrigin(*protect(context.securityOrigin()).get());
 #else
         UNUSED_PARAM(videoElement);
 #endif
@@ -1151,7 +1149,7 @@ ExceptionOr<void> GPUQueue::copyExternalImageToTexture(ScriptExecutionContext& c
         RELEASE_ASSERT(callbackScopeIsSafe);
         auto destinationTexture = destination.texture;
         auto sizeInBytes = imageBytes.size();
-        if (!imageBytes.data() || !sizeInBytes || !destinationTexture || (imageBytes.size() % 4))
+        if (!imageBytes.data() || !sizeInBytes || (imageBytes.size() % 4))
             return;
 
         bool supportedFormat;

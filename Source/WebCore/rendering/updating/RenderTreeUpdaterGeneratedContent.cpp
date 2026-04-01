@@ -38,7 +38,7 @@
 #include "RenderImage.h"
 #include "RenderImageResourceStyleImage.h"
 #include "RenderQuote.h"
-#include "RenderStyleInlines.h"
+#include "RenderStyle+GettersInlines.h"
 #include "RenderTextFragment.h"
 #include "RenderTreeUpdater.h"
 #include "RenderView.h"
@@ -147,7 +147,7 @@ static void createContentRenderers(RenderTreeBuilder& builder, RenderElement& ps
             WTF::switchOn(contentItem,
                 [&](const auto& item) {
                     if (auto child = createContentRenderer(item, altText, pseudoRenderer.document(), style); child && pseudoRenderer.isChildAllowed(*child, style))
-                        builder.attach(pseudoRenderer, WTFMove(child));
+                        builder.attach(pseudoRenderer, WTF::move(child));
                 }
             );
         }
@@ -188,7 +188,7 @@ void RenderTreeUpdater::GeneratedContent::updateBeforeOrAfterPseudoElement(Eleme
 {
     ASSERT(pseudoElementType == PseudoElementType::Before || pseudoElementType == PseudoElementType::After);
 
-    PseudoElement* pseudoElement = pseudoElementType == PseudoElementType::Before ? current.beforePseudoElement() : current.afterPseudoElement();
+    RefPtr pseudoElement = pseudoElementType == PseudoElementType::Before ? current.beforePseudoElement() : current.afterPseudoElement();
 
     if (auto* renderer = pseudoElement ? pseudoElement->renderer() : nullptr)
         m_updater.renderTreePosition().invalidateNextSibling(*renderer);
@@ -233,17 +233,17 @@ void RenderTreeUpdater::GeneratedContent::updateBeforeOrAfterPseudoElement(Eleme
         contentsStyle->copyContentFrom(*updateStyle);
         contentsStyle->copyPseudoElementsFrom(*updateStyle);
 
-        Style::ElementUpdate contentsUpdate { WTFMove(contentsStyle), styleChanges, elementUpdate.recompositeLayer };
-        m_updater.updateElementRenderer(*pseudoElement, WTFMove(contentsUpdate));
+        Style::ElementUpdate contentsUpdate { WTF::move(contentsStyle), styleChanges, elementUpdate.recompositeLayer };
+        m_updater.updateElementRenderer(*pseudoElement, WTF::move(contentsUpdate));
         auto pseudoElementUpdateStyle = RenderStyle::cloneIncludingPseudoElements(*updateStyle);
-        pseudoElement->storeDisplayContentsOrNoneStyle(makeUnique<RenderStyle>(WTFMove(pseudoElementUpdateStyle)));
+        pseudoElement->storeDisplayContentsOrNoneStyle(makeUnique<RenderStyle>(WTF::move(pseudoElementUpdateStyle)));
     } else {
         auto pseudoElementUpdateStyle = RenderStyle::cloneIncludingPseudoElements(*updateStyle);
-        Style::ElementUpdate pseudoElementUpdate { makeUnique<RenderStyle>(WTFMove(pseudoElementUpdateStyle)), styleChanges, elementUpdate.recompositeLayer };
-        m_updater.updateElementRenderer(*pseudoElement, WTFMove(pseudoElementUpdate));
+        Style::ElementUpdate pseudoElementUpdate { makeUnique<RenderStyle>(WTF::move(pseudoElementUpdateStyle)), styleChanges, elementUpdate.recompositeLayer };
+        m_updater.updateElementRenderer(*pseudoElement, WTF::move(pseudoElementUpdate));
         if (updateStyle->display() == DisplayType::None) {
             auto pseudoElementUpdateStyle = RenderStyle::cloneIncludingPseudoElements(*updateStyle);
-            pseudoElement->storeDisplayContentsOrNoneStyle(makeUnique<RenderStyle>(WTFMove(pseudoElementUpdateStyle)));
+            pseudoElement->storeDisplayContentsOrNoneStyle(makeUnique<RenderStyle>(WTF::move(pseudoElementUpdateStyle)));
         } else
             pseudoElement->clearDisplayContentsOrNoneStyle();
     }
@@ -264,7 +264,7 @@ void RenderTreeUpdater::GeneratedContent::updateBeforeOrAfterPseudoElement(Eleme
     m_updater.m_builder.updateAfterDescendants(*pseudoElementRenderer);
 }
 
-void RenderTreeUpdater::GeneratedContent::updateBackdropRenderer(RenderElement& renderer, StyleDifference minimalStyleDifference)
+void RenderTreeUpdater::GeneratedContent::updateBackdropRenderer(RenderElement& renderer, Style::DifferenceResult minimalStyleDifference)
 {
     auto destroyBackdropIfNeeded = [&renderer, this]() {
         if (WeakPtr backdropRenderer = renderer.backdropRenderer())
@@ -285,12 +285,12 @@ void RenderTreeUpdater::GeneratedContent::updateBackdropRenderer(RenderElement& 
 
     auto newStyle = RenderStyle::clone(*style);
     if (auto backdropRenderer = renderer.backdropRenderer())
-        backdropRenderer->setStyle(WTFMove(newStyle), minimalStyleDifference);
+        backdropRenderer->setStyle(WTF::move(newStyle), minimalStyleDifference);
     else {
-        auto newBackdropRenderer = WebCore::createRenderer<RenderBlockFlow>(RenderObject::Type::BlockFlow, renderer.document(), WTFMove(newStyle));
+        auto newBackdropRenderer = WebCore::createRenderer<RenderBlockFlow>(RenderObject::Type::BlockFlow, renderer.document(), WTF::move(newStyle));
         newBackdropRenderer->initializeStyle();
         renderer.setBackdropRenderer(*newBackdropRenderer.get());
-        m_updater.m_builder.attach(renderer.view(), WTFMove(newBackdropRenderer));
+        m_updater.m_builder.attach(renderer.view(), WTF::move(newBackdropRenderer));
     }
 }
 
@@ -307,7 +307,7 @@ bool RenderTreeUpdater::GeneratedContent::needsPseudoElement(const RenderStyle* 
 
 void RenderTreeUpdater::GeneratedContent::removeBeforePseudoElement(Element& element, RenderTreeBuilder& builder)
 {
-    auto* pseudoElement = element.beforePseudoElement();
+    RefPtr pseudoElement = element.beforePseudoElement();
     if (!pseudoElement)
         return;
     tearDownRenderers(*pseudoElement, TeardownType::Full, builder);
@@ -316,22 +316,22 @@ void RenderTreeUpdater::GeneratedContent::removeBeforePseudoElement(Element& ele
 
 void RenderTreeUpdater::GeneratedContent::removeAfterPseudoElement(Element& element, RenderTreeBuilder& builder)
 {
-    auto* pseudoElement = element.afterPseudoElement();
+    RefPtr pseudoElement = element.afterPseudoElement();
     if (!pseudoElement)
         return;
     tearDownRenderers(*pseudoElement, TeardownType::Full, builder);
     element.clearAfterPseudoElement();
 }
 
-void RenderTreeUpdater::GeneratedContent::updateWritingSuggestionsRenderer(RenderElement& renderer, StyleDifference minimalStyleDifference)
+void RenderTreeUpdater::GeneratedContent::updateWritingSuggestionsRenderer(RenderElement& renderer, Style::DifferenceResult minimalStyleDifference)
 {
     auto destroyWritingSuggestionsIfNeeded = [&renderer, this]() {
         if (!renderer.element())
             return;
 
-        auto& editor = renderer.element()->document().editor();
+        Ref editor = renderer.element()->document().editor();
 
-        if (WeakPtr writingSuggestionsRenderer = editor.writingSuggestionRenderer())
+        if (WeakPtr writingSuggestionsRenderer = editor->writingSuggestionRenderer())
             m_updater.m_builder.destroy(*writingSuggestionsRenderer);
     };
 
@@ -341,15 +341,15 @@ void RenderTreeUpdater::GeneratedContent::updateWritingSuggestionsRenderer(Rende
     if (!renderer.element())
         return;
 
-    auto& editor = renderer.element()->document().editor();
-    RefPtr nodeBeforeWritingSuggestions = editor.nodeBeforeWritingSuggestions();
+    Ref editor = renderer.element()->document().editor();
+    RefPtr nodeBeforeWritingSuggestions = editor->nodeBeforeWritingSuggestions();
     if (!nodeBeforeWritingSuggestions)
         return;
 
     if (renderer.element() != nodeBeforeWritingSuggestions->parentElement())
         return;
 
-    auto* writingSuggestionData = editor.writingSuggestionData();
+    auto* writingSuggestionData = editor->writingSuggestionData();
     if (!writingSuggestionData) {
         destroyWritingSuggestionsIfNeeded();
         return;
@@ -388,8 +388,8 @@ void RenderTreeUpdater::GeneratedContent::updateWritingSuggestionsRenderer(Rende
     auto newStyle = RenderStyle::clone(*style);
     newStyle.setDisplay(DisplayType::Inline);
 
-    if (auto writingSuggestionsRenderer = editor.writingSuggestionRenderer()) {
-        writingSuggestionsRenderer->setStyle(WTFMove(newStyle), minimalStyleDifference);
+    if (auto writingSuggestionsRenderer = editor->writingSuggestionRenderer()) {
+        writingSuggestionsRenderer->setStyle(WTF::move(newStyle), minimalStyleDifference);
 
         auto* writingSuggestionsText = dynamicDowncast<RenderText>(writingSuggestionsRenderer->firstChild());
         if (!writingSuggestionsText) {
@@ -411,23 +411,23 @@ void RenderTreeUpdater::GeneratedContent::updateWritingSuggestionsRenderer(Rende
             suffixText->setText(suffix);
         }
     } else {
-        auto newWritingSuggestionsRenderer = WebCore::createRenderer<RenderInline>(RenderObject::Type::Inline, renderer.document(), WTFMove(newStyle));
+        auto newWritingSuggestionsRenderer = WebCore::createRenderer<RenderInline>(RenderObject::Type::Inline, renderer.document(), WTF::move(newStyle));
         newWritingSuggestionsRenderer->initializeStyle();
 
         WeakPtr rendererAfterWritingSuggestions = nodeBeforeWritingSuggestionsTextRenderer->nextSibling();
 
         auto writingSuggestionsText = WebCore::createRenderer<RenderText>(RenderObject::Type::Text, renderer.document(), writingSuggestionData->content());
-        m_updater.m_builder.attach(*newWritingSuggestionsRenderer, WTFMove(writingSuggestionsText));
+        m_updater.m_builder.attach(*newWritingSuggestionsRenderer, WTF::move(writingSuggestionsText));
 
-        editor.setWritingSuggestionRenderer(*newWritingSuggestionsRenderer.get());
-        m_updater.m_builder.attach(*parentForWritingSuggestions, WTFMove(newWritingSuggestionsRenderer), rendererAfterWritingSuggestions.get());
+        editor->setWritingSuggestionRenderer(*newWritingSuggestionsRenderer.get());
+        m_updater.m_builder.attach(*parentForWritingSuggestions, WTF::move(newWritingSuggestionsRenderer), rendererAfterWritingSuggestions.get());
 
         if (!parentForWritingSuggestions) {
             destroyWritingSuggestionsIfNeeded();
             return;
         }
 
-        auto* prefixNode = nodeBeforeWritingSuggestionsTextRenderer->textNode();
+        RefPtr prefixNode = nodeBeforeWritingSuggestionsTextRenderer->textNode();
         if (!prefixNode) {
             ASSERT_NOT_REACHED();
             destroyWritingSuggestionsIfNeeded();
@@ -436,7 +436,7 @@ void RenderTreeUpdater::GeneratedContent::updateWritingSuggestionsRenderer(Rende
 
         if (!suffix.isEmpty()) {
             auto suffixRenderer = WebCore::createRenderer<RenderText>(RenderObject::Type::Text, *prefixNode, suffix);
-            m_updater.m_builder.attach(*parentForWritingSuggestions, WTFMove(suffixRenderer), rendererAfterWritingSuggestions.get());
+            m_updater.m_builder.attach(*parentForWritingSuggestions, WTF::move(suffixRenderer), rendererAfterWritingSuggestions.get());
         }
     }
 }

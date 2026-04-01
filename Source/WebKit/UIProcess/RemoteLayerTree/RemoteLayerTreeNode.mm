@@ -56,13 +56,13 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(RemoteLayerTreeNode);
 
 Ref<RemoteLayerTreeNode> RemoteLayerTreeNode::create(WebCore::PlatformLayerIdentifier layerID, Markable<WebCore::LayerHostingContextIdentifier> hostIdentifier, RetainPtr<CALayer> layer)
 {
-    return adoptRef(*new RemoteLayerTreeNode(layerID, hostIdentifier, WTFMove(layer)));
+    return adoptRef(*new RemoteLayerTreeNode(layerID, hostIdentifier, WTF::move(layer)));
 }
 
 RemoteLayerTreeNode::RemoteLayerTreeNode(WebCore::PlatformLayerIdentifier layerID, Markable<WebCore::LayerHostingContextIdentifier> hostIdentifier, RetainPtr<CALayer> layer)
     : m_layerID(layerID)
     , m_remoteContextHostingIdentifier(hostIdentifier)
-    , m_layer(WTFMove(layer))
+    , m_layer(WTF::move(layer))
 {
     initializeLayer();
     [m_layer setDelegate:[WebActionDisablingCALayerDelegate shared]];
@@ -72,14 +72,14 @@ RemoteLayerTreeNode::RemoteLayerTreeNode(WebCore::PlatformLayerIdentifier layerI
 
 Ref<RemoteLayerTreeNode> RemoteLayerTreeNode::create(WebCore::PlatformLayerIdentifier layerID, Markable<WebCore::LayerHostingContextIdentifier> hostIdentifier, RetainPtr<UIView> uiView)
 {
-    return adoptRef(*new RemoteLayerTreeNode(layerID, hostIdentifier, WTFMove(uiView)));
+    return adoptRef(*new RemoteLayerTreeNode(layerID, hostIdentifier, WTF::move(uiView)));
 }
 
 RemoteLayerTreeNode::RemoteLayerTreeNode(WebCore::PlatformLayerIdentifier layerID, Markable<WebCore::LayerHostingContextIdentifier> hostIdentifier, RetainPtr<UIView> uiView)
     : m_layerID(layerID)
     , m_remoteContextHostingIdentifier(hostIdentifier)
     , m_layer([uiView.get() layer])
-    , m_uiView(WTFMove(uiView))
+    , m_uiView(WTF::move(uiView))
 {
     initializeLayer();
 }
@@ -101,7 +101,7 @@ RemoteLayerTreeNode::~RemoteLayerTreeNode()
 Ref<RemoteLayerTreeNode> RemoteLayerTreeNode::createWithPlainLayer(WebCore::PlatformLayerIdentifier layerID)
 {
     RetainPtr<CALayer> layer = adoptNS([[WKCompositingLayer alloc] init]);
-    return RemoteLayerTreeNode::create(layerID, std::nullopt, WTFMove(layer));
+    return RemoteLayerTreeNode::create(layerID, std::nullopt, WTF::move(layer));
 }
 
 void RemoteLayerTreeNode::detachFromParent()
@@ -115,7 +115,7 @@ void RemoteLayerTreeNode::detachFromParent()
         return;
     }
 #endif
-    [protectedLayer() removeFromSuperlayer];
+    [protect(layer()) removeFromSuperlayer];
 }
 
 void RemoteLayerTreeNode::setEventRegion(const WebCore::EventRegion& eventRegion)
@@ -290,7 +290,7 @@ void RemoteLayerTreeNode::addToHostingNode(RemoteLayerTreeNode& hostingNode)
 #if PLATFORM(IOS_FAMILY)
     [hostingNode.uiView() addSubview:uiView()];
 #else
-    [hostingNode.protectedLayer() addSublayer:protectedLayer().get()];
+    [protect(hostingNode.layer()) addSublayer:protect(layer()).get()];
 #endif
 }
 
@@ -299,7 +299,7 @@ void RemoteLayerTreeNode::removeFromHostingNode()
 #if PLATFORM(IOS_FAMILY)
     [uiView() removeFromSuperview];
 #else
-    [protectedLayer() removeFromSuperlayer];
+    [protect(layer()) removeFromSuperlayer];
 #endif
 }
 
@@ -333,10 +333,5 @@ void RemoteLayerTreeNode::setAcceleratedEffectsAndBaseValues(const WebCore::Acce
     host.animationsWereAddedToNode(*this);
 }
 #endif
-
-RetainPtr<CALayer> RemoteLayerTreeNode::protectedLayer() const
-{
-    return layer();
-}
 
 }

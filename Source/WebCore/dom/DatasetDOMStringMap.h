@@ -35,7 +35,7 @@ class WeakPtrImplWithEventTargetData;
 template<typename> class ExceptionOr;
 
 class DatasetDOMStringMap final : public ScriptWrappable {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(DatasetDOMStringMap);
+    WTF_MAKE_TZONE_ALLOCATED(DatasetDOMStringMap);
 public:
     explicit DatasetDOMStringMap(Element& element)
         : m_element(element)
@@ -54,7 +54,7 @@ public:
     ExceptionOr<void> setNamedItem(const String& name, const AtomString& value);
     bool deleteNamedProperty(const String& name);
 
-    Element& element() { return m_element.get(); }
+    Element& element() { return m_element; }
     Ref<Element> protectedElement() const;
 
 private:

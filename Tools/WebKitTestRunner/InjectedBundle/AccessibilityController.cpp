@@ -39,6 +39,10 @@
 #include "AccessibilityNotificationHandler.h"
 #endif
 
+#if PLATFORM(MAC)
+#include "mac/AccessibilityUIElementClientMac.h"
+#endif
+
 namespace WTR {
 
 Ref<AccessibilityController> AccessibilityController::create()
@@ -78,6 +82,16 @@ void AccessibilityController::setForceInitialFrameCaching(bool shouldForce)
     WKAccessibilitySetForceInitialFrameCaching(shouldForce);
 }
 
+void AccessibilityController::setClientAccessibilityMode(bool flag)
+{
+    m_enableClientAccessibilityMode = flag;
+
+    if (flag) {
+        setIsolatedTreeMode(true);
+        platformInitializeClientAccessibility();
+    }
+}
+
 void AccessibilityController::makeWindowObject(JSContextRef context)
 {
     setGlobalObjectProperty(context, "accessibilityController", this);
@@ -102,6 +116,11 @@ bool AccessibilityController::enhancedAccessibilityEnabled()
 
 Ref<AccessibilityUIElement> AccessibilityController::rootElement(JSContextRef context)
 {
+#if PLATFORM(MAC)
+    if (m_enableClientAccessibilityMode)
+        return AccessibilityUIElementClientMac::createForUIProcess();
+#endif
+
     PlatformUIElement root;
     executeOnAXThreadAndWait([&] () {
         root = static_cast<PlatformUIElement>(_WKAccessibilityRootObjectForTesting(WKBundleFrameForJavaScriptContext(context)));
@@ -134,7 +153,7 @@ void AccessibilityController::executeOnAXThread(Function<void()>&& function)
 {
 #if ENABLE(ACCESSIBILITY_ISOLATED_TREE)
     if (m_accessibilityIsolatedTreeMode) {
-        AXThread::dispatch([function = WTFMove(function)] {
+        AXThread::dispatch([function = WTF::move(function)] {
             function();
         });
     } else
@@ -149,7 +168,7 @@ void AccessibilityController::executeOnMainThread(Function<void()>&& function)
         return;
     }
 
-    AXThread::dispatchBarrier([function = WTFMove(function)] {
+    AXThread::dispatchBarrier([function = WTF::move(function)] {
         function();
     });
 }
@@ -180,6 +199,11 @@ void AccessibilityController::announce(JSStringRef message)
 void AccessibilityController::platformInitialize()
 {
 }
+
+void AccessibilityController::platformInitializeClientAccessibility()
+{
+    // Client accessibility mode is only supported on macOS
+}
 #endif
 
 #if PLATFORM(COCOA)
@@ -200,7 +224,7 @@ void AXThread::dispatch(Function<void()>&& function)
 
     {
         Locker locker { axThread.m_functionsMutex };
-        axThread.m_functions.append(WTFMove(function));
+        axThread.m_functions.append(WTF::move(function));
     }
 
     axThread.wakeUpRunLoop();
@@ -208,8 +232,8 @@ void AXThread::dispatch(Function<void()>&& function)
 
 void AXThread::dispatchBarrier(Function<void()>&& function)
 {
-    dispatch([function = WTFMove(function)] () mutable {
-        callOnMainThread(WTFMove(function));
+    dispatch([function = WTF::move(function)] () mutable {
+        callOnMainThread(WTF::move(function));
     });
 }
 
@@ -248,7 +272,7 @@ void AXThread::dispatchFunctionsFromAXThread()
 
     {
         Locker locker { m_functionsMutex };
-        functions = WTFMove(m_functions);
+        functions = WTF::move(m_functions);
     }
 
     for (auto& function : functions)

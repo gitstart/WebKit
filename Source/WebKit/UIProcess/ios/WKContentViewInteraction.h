@@ -71,6 +71,7 @@
 #import <WebCore/FloatQuad.h>
 #import <WebCore/MediaControlsContextMenuItem.h>
 #import <WebCore/PointerID.h>
+#import <WebCore/TextGranularity.h>
 #import <pal/spi/cocoa/WritingToolsSPI.h>
 #import <pal/spi/ios/BrowserEngineKitSPI.h>
 #import <wtf/BlockPtr.h>
@@ -102,9 +103,11 @@ class SelectionRect;
 struct ContactInfo;
 struct ContactsRequestData;
 struct DigitalCredentialsRequestData;
+struct DigitalCredentialsResponseData;
 struct MediaPlayerClientIdentifierType;
 struct PromisedAttachmentInfo;
 struct ShareDataWithParsedURL;
+struct TextAnimationData;
 struct TextRecognitionResult;
 enum class DOMPasteAccessCategory : uint8_t;
 enum class DOMPasteAccessResponse : uint8_t;
@@ -133,6 +136,7 @@ enum class PickerDismissalReason : uint8_t;
 }
 
 @class AVPlayerViewController;
+@class BETextSuggestion;
 @class QLPreviewController;
 @class VKCImageAnalysisInteraction;
 @class WebEvent;
@@ -154,7 +158,7 @@ enum class PickerDismissalReason : uint8_t;
 
 @class WKTextAnimationManager;
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 @class WKDigitalCredentialsPicker;
 #endif
 
@@ -166,6 +170,10 @@ enum class PickerDismissalReason : uint8_t;
 @class UIPointerRegion;
 @class UITargetedPreview;
 @class _UILookupGestureRecognizer;
+
+@protocol BEDragInteractionDelegate;
+@protocol BETextInteractionDelegate;
+@protocol BETextInputDelegate;
 
 #if HAVE(PEPPER_UI_CORE)
 @class PUICQuickboardViewController;
@@ -434,7 +442,7 @@ struct ImageAnalysisContextMenuActionData {
 #if HAVE(CONTACTSUI)
     RetainPtr<WKContactPicker> _contactPicker;
 #endif
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
     RetainPtr<WKDigitalCredentialsPicker> _digitalCredentialsPicker;
 #endif
     RetainPtr<UIGestureRecognizer> _previewGestureRecognizer;
@@ -461,6 +469,7 @@ struct ImageAnalysisContextMenuActionData {
     RetainPtr<WebTextIndicatorLayer> _textIndicatorLayer;
 
 #if USE(UICONTEXTMENU)
+    BOOL _isPreparingToDisplayContextMenu;
     BOOL _isDisplayingContextMenuWithAnimation;
     RetainPtr<UITargetedPreview> _contextMenuInteractionTargetedPreview;
 #endif
@@ -774,8 +783,10 @@ struct ImageAnalysisContextMenuActionData {
 
 - (void)_startSuppressingSelectionAssistantForReason:(WebKit::SuppressSelectionAssistantReason)reason;
 - (void)_stopSuppressingSelectionAssistantForReason:(WebKit::SuppressSelectionAssistantReason)reason;
+@property (nonatomic, readonly, getter=_isSuppressingSelectionAssistant) BOOL _suppressingSelectionAssistant;
 
 - (BOOL)_hasFocusedElement;
+- (BOOL)_isSameAsFocusedElement:(const WebCore::ElementContext&)context;
 - (void)_zoomToRevealFocusedElement;
 
 - (void)_keyboardWillShow;
@@ -840,7 +851,7 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(DECLARE_WKCONTENTVIEW_ACTION_FOR_WEB_VIEW)
 - (void)_showShareSheet:(const WebCore::ShareDataWithParsedURL&)shareData inRect:(std::optional<WebCore::FloatRect>)rect completionHandler:(WTF::CompletionHandler<void(bool)>&&)completionHandler;
 - (void)_showContactPicker:(const WebCore::ContactsRequestData&)requestData completionHandler:(WTF::CompletionHandler<void(std::optional<Vector<WebCore::ContactInfo>>&&)>&&)completionHandler;
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 - (void)_showDigitalCredentialsPicker:(const WebCore::DigitalCredentialsRequestData&)requestData completionHandler:(WTF::CompletionHandler<void(Expected<WebCore::DigitalCredentialsResponseData, WebCore::ExceptionData>&&)>&&)completionHandler;
 - (void)_dismissDigitalCredentialsPicker:(CompletionHandler<void(bool)>&&)completionHandler;
 #endif
@@ -954,6 +965,8 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(DECLARE_WKCONTENTVIEW_ACTION_FOR_WEB_VIEW)
 @property (nonatomic, readonly) BOOL _shouldAvoidSecurityHeuristicScoreUpdates;
 @property (nonatomic, readonly) BOOL _canStartNavigationSwipeAtLastInteractionLocation;
 
+- (BOOL)allowsTouchPanningAtPoint:(CGPoint)point;
+
 - (void)_didChangeLinkPreviewAvailability;
 - (void)setContinuousSpellCheckingEnabled:(BOOL)enabled;
 - (void)setGrammarCheckingEnabled:(BOOL)enabled;
@@ -1016,6 +1029,7 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(DECLARE_WKCONTENTVIEW_ACTION_FOR_WEB_VIEW)
 
 - (BOOL)_shouldIgnoreTouchEvent:(UIEvent *)event;
 - (void)_touchEventsRecognized;
+- (void)_touchEventsGestureRecognizerReset;
 
 - (BOOL)_hasEnclosingScrollView:(UIView *)firstView matchingCriteria:(Function<BOOL(UIScrollView *)>&&)matchFunction;
 

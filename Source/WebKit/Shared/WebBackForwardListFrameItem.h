@@ -44,7 +44,6 @@ public:
     static WebBackForwardListFrameItem* itemForID(WebCore::BackForwardItemIdentifier, WebCore::BackForwardFrameItemIdentifier);
 
     FrameState& frameState() const { return m_frameState; }
-    Ref<FrameState> protectedFrameState() const { return m_frameState; }
     void setFrameState(Ref<FrameState>&&);
 
     Ref<FrameState> copyFrameStateWithChildren();
@@ -53,22 +52,21 @@ public:
     WebCore::BackForwardFrameItemIdentifier identifier() const { return m_identifier; }
     const String& url() const;
 
-    WebBackForwardListFrameItem* parent() const { return m_parent.get(); }
-    RefPtr<WebBackForwardListFrameItem> protectedParent() const { return m_parent.get(); }
+    WebBackForwardListFrameItem* parent() const { return m_parent; }
     void setParent(WebBackForwardListFrameItem* parent) { m_parent = parent; }
     bool sharesAncestor(WebBackForwardListFrameItem&) const;
 
-    WebBackForwardListFrameItem& rootFrame();
-    WebBackForwardListFrameItem& mainFrame();
-    Ref<WebBackForwardListFrameItem> protectedMainFrame();
+    Ref<WebBackForwardListFrameItem> rootFrame();
+    Ref<WebBackForwardListFrameItem> mainFrame();
     WebBackForwardListFrameItem* childItemForFrameID(WebCore::FrameIdentifier);
     RefPtr<WebBackForwardListFrameItem> protectedChildItemForFrameID(WebCore::FrameIdentifier);
 
     WebBackForwardListItem* backForwardListItem() const;
-    RefPtr<WebBackForwardListItem> protectedBackForwardListItem() const;
 
     void setChild(Ref<FrameState>&&);
     void clearChildren() { m_children.clear(); }
+
+    void updateFrameID(WebCore::FrameIdentifier);
 
     void setWasRestoredFromSession();
 

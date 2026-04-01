@@ -48,15 +48,15 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-ContainerNode* composedParentIgnoringDocumentFragments(const Node& node)
+RefPtr<ContainerNode> composedParentIgnoringDocumentFragments(const Node& node)
 {
     RefPtr ancestor = node.parentInComposedTree();
     while (is<DocumentFragment>(ancestor.get()))
         ancestor = ancestor->parentInComposedTree();
-    return ancestor.unsafeGet();
+    return ancestor;
 }
 
-ContainerNode* composedParentIgnoringDocumentFragments(const Node* node)
+RefPtr<ContainerNode> composedParentIgnoringDocumentFragments(const Node* node)
 {
     return node ? composedParentIgnoringDocumentFragments(*node) : nullptr;
 }
@@ -146,7 +146,7 @@ bool hasAnyRole(Element& element, Vector<StringView>&& roles)
         return false;
 
     for (const auto& role : roles) {
-        AX_DEBUG_ASSERT(!role.isEmpty());
+        AX_ASSERT(!role.isEmpty());
         if (SpaceSplitString::spaceSplitStringContainsValue(roleValue, role, SpaceSplitString::ShouldFoldCase::Yes))
             return true;
     }
@@ -155,7 +155,7 @@ bool hasAnyRole(Element& element, Vector<StringView>&& roles)
 
 bool hasAnyRole(Element* element, Vector<StringView>&& roles)
 {
-    return element ? hasAnyRole(*element, WTFMove(roles)) : false;
+    return element ? hasAnyRole(*element, WTF::move(roles)) : false;
 }
 
 bool hasTableRole(Element& element)
@@ -187,10 +187,8 @@ bool isRowGroup(Node* node)
 
 void dumpAccessibilityTreeToStderr(Document& document)
 {
-    if (CheckedPtr cache = document.existingAXObjectCache()) {
-        AXTreeData data = cache->treeData();
-        SAFE_FPRINTF(stderr, "==AX Trees==\n%s\n%s\n", data.liveTree.utf8(), data.isolatedTree.utf8());
-    }
+    if (CheckedPtr cache = document.existingAXObjectCache())
+        cache->treeData().dumpToStderr();
 }
 
 String roleToString(AccessibilityRole role)
@@ -469,7 +467,7 @@ String roleToString(AccessibilityRole role)
     case AccessibilityRole::WebArea:
         return "WebArea"_s;
     }
-    ASSERT_NOT_REACHED();
+    AX_ASSERT_NOT_REACHED();
     return ""_s;
 }
 
@@ -497,25 +495,15 @@ std::optional<CursorType> cursorTypeFrom(const StyleProperties& properties)
     return std::nullopt;
 }
 
-RefPtr<Node> lastNode(const Vector<AXID>& group, AXObjectCache& cache)
+RefPtr<Node> lastNode(const FixedVector<AXID>& axIDs, AXObjectCache& cache)
 {
-    ASSERT(isMainThread());
+    AX_ASSERT(isMainThread());
 
-    for (auto axID = group.rbegin(); axID != group.rend(); ++axID) {
+    for (auto axID = axIDs.rbegin(); axID != axIDs.rend(); ++axID) {
         if (RefPtr object = cache.objectForID(*axID)) {
             if (RefPtr node = object->node())
                 return node;
         }
-    }
-
-    return nullptr;
-}
-
-RefPtr<AccessibilityObject> lastObject(const Vector<AXID>& group, AXObjectCache& cache)
-{
-    for (auto axID = group.rbegin(); axID != group.rend(); ++axID) {
-        if (RefPtr object = cache.objectForID(*axID))
-            return object;
     }
     return nullptr;
 }

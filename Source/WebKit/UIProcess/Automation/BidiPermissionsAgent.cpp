@@ -56,11 +56,11 @@ BidiPermissionsAgent::~BidiPermissionsAgent() = default;
 static Vector<Ref<WebPageProxy>> allPageProxiesFor(const WebAutomationSession& session)
 {
     Vector<Ref<WebPageProxy>> pages;
-    for (Ref process : session.protectedProcessPool()->processes()) {
+    for (Ref process : protect(session.processPool())->processes()) {
         for (Ref page : process->pages()) {
             if (!page->isControlledByAutomation())
                 continue;
-            pages.append(WTFMove(page));
+            pages.append(WTF::move(page));
         }
     }
 
@@ -81,12 +81,12 @@ void BidiPermissionsAgent::setPermission(Ref<JSON::Object>&& descriptor, const S
         bool embeddedOriginIsWildcard = subFrameURLString == "*"_s;
         auto embeddedOrigin = RegistrableDomain { URL { subFrameURLString } };
 
-        Ref callbackAggregator = CallbackAggregator::create([callback = WTFMove(callback)]() {
+        Ref callbackAggregator = CallbackAggregator::create([callback = WTF::move(callback)]() {
             callback({ });
         });
 
         for (auto page : allPageProxiesFor(*session)) {
-            auto pageOrigin = RegistrableDomain { page->protectedPageLoadState()->origin() };
+            auto pageOrigin = RegistrableDomain { protect(page->pageLoadState())->origin() };
             if (pageOrigin != topFrameOrigin)
                 continue;
 

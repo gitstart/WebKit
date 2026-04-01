@@ -47,6 +47,7 @@
 #include <WebCore/FrameIdentifier.h>
 #include <WebCore/HTMLMediaElementIdentifier.h>
 #include <WebCore/InputMode.h>
+#include <WebCore/LayerHostingContextIdentifier.h>
 #include <WebCore/MediaControlsContextMenuItem.h>
 #include <WebCore/ScrollTypes.h>
 #include <WebCore/ShareableBitmap.h>
@@ -394,7 +395,7 @@ public:
     virtual void selectionDidChange() = 0;
 #endif
 
-#if PLATFORM(COCOA) || PLATFORM(GTK) || (PLATFORM(WPE) && USE(SKIA))
+#if PLATFORM(COCOA) || PLATFORM(GTK) || PLATFORM(WPE)
     virtual RefPtr<ViewSnapshot> takeViewSnapshot(std::optional<WebCore::IntRect>&&) = 0;
 #endif
 
@@ -526,12 +527,9 @@ public:
 
     virtual CGRect boundsOfLayerInLayerBackedWindowCoordinates(CALayer *) const = 0;
 
-    virtual WebCore::DestinationColorSpace colorSpace() = 0;
-
     virtual bool useFormSemanticContext() const = 0;
     
     virtual NSView *viewForPresentingRevealPopover() const = 0;
-    RetainPtr<NSView> protectedViewForPresentingRevealPopover() const;
 
     virtual void showPlatformContextMenu(NSMenu *, WebCore::IntPoint) = 0;
 
@@ -556,6 +554,8 @@ public:
     virtual void scrollingNodeScrollViewDidScroll(WebCore::ScrollingNodeID) = 0;
 
     virtual CocoaWindow *platformWindow() const = 0;
+
+    virtual WebCore::DestinationColorSpace colorSpace() = 0;
 #endif
 
     virtual void reconcileEnclosingScrollViewContentOffset(EditorState&) { };
@@ -857,7 +857,9 @@ public:
 #endif
 
 #if ENABLE(MODEL_ELEMENT_IMMERSIVE)
-    virtual void canEnterImmersiveElementFromURL(const URL&, CompletionHandler<void(bool)>&& completion) { completion(false); }
+    virtual void allowImmersiveElementFromURL(const URL&, CompletionHandler<void(bool)>&& completion) const { completion(false); }
+    virtual void presentImmersiveElement(const WebCore::LayerHostingContextIdentifier, CompletionHandler<void(bool)>&& completion) const { completion(false); }
+    virtual void dismissImmersiveElement(CompletionHandler<void()>&& completion) const { completion(); }
 #endif
 };
 

@@ -98,13 +98,14 @@ void GPUConnectionToWebProcess::setTCCIdentity()
         return;
     }
 
-    auto identity = adoptOSObject(tcc_identity_create(TCC_IDENTITY_CODE_BUNDLE_ID, bundleIdentifier.utf8().data()));
+    // FIXME: Adopting is needed here but static analysis is not able to tell.
+    SUPPRESS_RETAINPTR_CTOR_ADOPT auto identity = adoptOSObject(tcc_identity_create(TCC_IDENTITY_CODE_BUNDLE_ID, bundleIdentifier.utf8().data()));
     if (!identity) {
         RELEASE_LOG_ERROR(WebRTC, "tcc_identity_create returned null");
         return;
     }
 
-    WebCore::RealtimeMediaSourceCenter::singleton().setIdentity(WTFMove(identity));
+    WebCore::RealtimeMediaSourceCenter::singleton().setIdentity(WTF::move(identity));
 #endif // !PLATFORM(MACCATALYST)
 }
 #endif // ENABLE(APP_PRIVACY_REPORT)

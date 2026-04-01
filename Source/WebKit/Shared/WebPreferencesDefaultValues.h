@@ -72,6 +72,12 @@
 #define Modelelement_feature_status Testable
 #endif
 
+#if HAVE(COMPLETE_WEB_TRANSPORT)
+#define Web_transport_status Stable
+#else
+#define Web_transport_status Testable
+#endif
+
 namespace WebKit {
 
 #if HAVE(LIQUID_GLASS)
@@ -98,6 +104,8 @@ bool defaultScrollAnimatorEnabled();
 bool defaultPassiveWheelListenersAsDefaultOnDocument();
 bool defaultWheelEventGesturesBecomeNonBlocking();
 bool defaultAppleMailPaginationQuirkEnabled();
+bool defaultUseAppKitGestures();
+bool defaultTextInputClientSelectionUpdatesEnabled();
 #endif
 
 #if ENABLE(MEDIA_STREAM)
@@ -140,6 +148,10 @@ bool defaultDigitalCredentialsEnabled();
 bool defaultAutomaticLiveResizeEnabled();
 bool defaultVisuallyContiguousBidiTextSelectionEnabled();
 bool defaultBidiContentAwarePasteEnabled();
+#endif
+
+#if PLATFORM(COCOA)
+bool defaultExtendedProofreadingEnabled();
 #endif
 
 bool defaultRunningBoardThrottlingEnabled();
@@ -194,6 +206,7 @@ bool defaultTrustedTypesEnabled();
 
 bool defaultGetBoundingClientRectZoomedEnabled();
 bool defaultFacebookLiveRecordingQuirkEnabled();
+bool defaultFontFaceSetConstructorEnabled();
 
 #if HAVE(MATERIAL_HOSTING)
 bool defaultHostedBlurMaterialInMediaControlsEnabled();
@@ -208,5 +221,9 @@ bool defaultUnifiedPDFEnabled();
 bool defaultScrollbarColorEnabled();
 
 bool defaultAllowMultipleCommitLayerTreePending();
+
+#if ENABLE(VIDEO)
+bool defaultCaptionDisplaySettingsEnabled();
+#endif
 
 } // namespace WebKit

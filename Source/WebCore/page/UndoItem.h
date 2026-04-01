@@ -38,17 +38,17 @@ class Document;
 class UndoManager;
 
 class UndoItem : public RefCountedAndCanMakeWeakPtr<UndoItem> {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(UndoItem);
+    WTF_MAKE_TZONE_ALLOCATED(UndoItem);
 public:
     struct Init {
         String label;
-        RefPtr<VoidCallback> undo;
-        RefPtr<VoidCallback> redo;
+        Ref<VoidCallback> undo;
+        Ref<VoidCallback> redo;
     };
 
     static Ref<UndoItem> create(Init&& init)
     {
-        return adoptRef(*new UndoItem(WTFMove(init)));
+        return adoptRef(*new UndoItem(WTF::move(init)));
     }
 
     bool isValid() const { return !!m_undoManager; }
@@ -65,10 +65,10 @@ public:
     VoidCallback& redoHandler() const { return m_redoHandler.get(); }
 
 private:
-    UndoItem(Init&& init)
-        : m_label(WTFMove(init.label))
-        , m_undoHandler(init.undo.releaseNonNull())
-        , m_redoHandler(init.redo.releaseNonNull())
+    explicit UndoItem(Init&& init)
+        : m_label(WTF::move(init.label))
+        , m_undoHandler(WTF::move(init.undo))
+        , m_redoHandler(WTF::move(init.redo))
     {
     }
 

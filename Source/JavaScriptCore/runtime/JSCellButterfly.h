@@ -40,6 +40,8 @@ namespace JSC {
 
 class ClonedArguments;
 class DirectArguments;
+class JSMapIterator;
+class JSSet;
 class ScopedArguments;
 
 // This is essentially a normal butterfly but it can also be handled as a cell since it has a cell header.
@@ -147,6 +149,8 @@ public:
     static JSCellButterfly* createFromClonedArguments(JSGlobalObject*, ClonedArguments*);
     static JSCellButterfly* createFromDirectArguments(JSGlobalObject*, DirectArguments*);
     static JSCellButterfly* createFromScopedArguments(JSGlobalObject*, ScopedArguments*);
+    static JSCellButterfly* createFromSet(JSGlobalObject*, JSSet*);
+    static JSCellButterfly* createFromMapIterator(JSGlobalObject*, JSMapIterator*);
     static JSCellButterfly* createFromString(JSGlobalObject*, JSString*);
     static JSCellButterfly* tryCreateFromArgList(VM&, ArgList);
 

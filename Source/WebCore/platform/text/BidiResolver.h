@@ -98,7 +98,7 @@ struct BidiStatus {
         : eor(eor)
         , lastStrong(lastStrong)
         , last(last)
-        , context(WTFMove(context))
+        , context(WTF::move(context))
     {
     }
 
@@ -124,6 +124,7 @@ inline bool operator==(const BidiStatus& status1, const BidiStatus& status2)
     return status1.eor == status2.eor && status1.last == status2.last && status1.lastStrong == status2.lastStrong && *(status1.context) == *(status2.context);
 }
 
+template<typename ConcreteRunType>
 struct BidiCharacterRun {
     WTF_MAKE_TZONE_ALLOCATED_INLINE(BidiCharacterRun);
 public:
@@ -152,9 +153,9 @@ public:
     ~BidiCharacterRun()
     {
         // Delete the linked list in a loop to prevent destructor recursion.
-        auto next = WTFMove(m_next);
+        auto next = WTF::move(m_next);
         while (next)
-            next = WTFMove(next->m_next);
+            next = WTF::move(next->m_next);
     }
 
     unsigned start() const { return m_start; }
@@ -163,18 +164,23 @@ public:
     bool reversed(bool visuallyOrdered) { return m_level % 2 && !visuallyOrdered; }
     bool dirOverride(bool visuallyOrdered) { return m_override || visuallyOrdered; }
 
-    BidiCharacterRun* next() const { return m_next.get(); }
-    std::unique_ptr<BidiCharacterRun> takeNext() { return WTFMove(m_next); }
-    void setNext(std::unique_ptr<BidiCharacterRun>&& next) { m_next = WTFMove(next); }
+    ConcreteRunType* next() const { return m_next.get(); }
+    std::unique_ptr<ConcreteRunType> takeNext() { return WTF::move(m_next); }
+    void setNext(std::unique_ptr<ConcreteRunType>&& next) { m_next = WTF::move(next); }
 
 private:
-    std::unique_ptr<BidiCharacterRun> m_next;
+    std::unique_ptr<ConcreteRunType> m_next;
 
 public:
     unsigned m_start;
     unsigned m_stop;
     unsigned char m_level;
     bool m_override : 1;
+};
+
+// Standalone BidiCharacterRun for cases that don't need a derived class.
+struct SimpleBidiCharacterRun : BidiCharacterRun<SimpleBidiCharacterRun> {
+    using BidiCharacterRun<SimpleBidiCharacterRun>::BidiCharacterRun;
 };
 
 enum VisualDirectionOverride {
@@ -199,7 +205,7 @@ public:
     void increment() { static_cast<DerivedClass&>(*this).incrementInternal(); }
 
     BidiContext* context() const { return m_status.context.get(); }
-    void setContext(RefPtr<BidiContext>&& context) { m_status.context = WTFMove(context); }
+    void setContext(RefPtr<BidiContext>&& context) { m_status.context = WTF::move(context); }
 
     void setLastDir(UCharDirection lastDir) { m_status.last = lastDir; }
     void setLastStrongDir(UCharDirection lastStrongDir) { m_status.lastStrong = lastStrongDir; }
@@ -438,7 +444,7 @@ bool BidiResolverBase<Iterator, Run, DerivedClass>::commitExplicitEmbedding()
 
     for (auto& embedding : m_currentExplicitEmbeddingSequence) {
         if (embedding.direction == U_POP_DIRECTIONAL_FORMAT) {
-            if (auto* parentContext = toContext->parent())
+            if (RefPtr parentContext = toContext->parent())
                 toContext = parentContext;
         } else {
             UCharDirection direction = (embedding.direction == U_RIGHT_TO_LEFT_EMBEDDING || embedding.direction == U_RIGHT_TO_LEFT_OVERRIDE) ? U_RIGHT_TO_LEFT : U_LEFT_TO_RIGHT;
@@ -460,7 +466,7 @@ bool BidiResolverBase<Iterator, Run, DerivedClass>::commitExplicitEmbedding()
     else if (toLevel < fromLevel)
         lowerExplicitEmbeddingLevel(fromLevel % 2 ? U_RIGHT_TO_LEFT : U_LEFT_TO_RIGHT);
 
-    setContext(WTFMove(toContext));
+    setContext(WTF::move(toContext));
 
     m_currentExplicitEmbeddingSequence.clear();
 
@@ -577,7 +583,7 @@ void BidiResolverBase<Iterator, Run, DerivedClass>::createBidiRunsForLine(const 
     while (true) {
         UCharDirection dirCurrent;
         if (pastEnd && (hardLineBreak || m_current.atEnd())) {
-            BidiContext* c = context();
+            RefPtr c = context();
             if (hardLineBreak) {
                 // A deviation from the Unicode Bidi Algorithm in order to match
                 // WinIE and user expectations: hard line breaks reset bidi state

@@ -82,7 +82,6 @@ function mac_process_webcontent_enhancedsecurity_entitlements()
 
     if [[ "${WK_USE_RESTRICTED_ENTITLEMENTS}" == YES ]]
     then
-        plistbuddy Add :com.apple.private.webkit.enhanced-security bool YES
         plistbuddy Add :com.apple.private.webkit.use-xpc-endpoint bool YES
         plistbuddy Add :com.apple.rootless.storage.WebKitWebContentSandbox bool YES
         plistbuddy Add :com.apple.QuartzCore.webkit-end-points bool YES
@@ -443,7 +442,6 @@ function maccatalyst_process_webcontent_enhancedsecurity_entitlements()
 
     if [[ "${WK_USE_RESTRICTED_ENTITLEMENTS}" == YES ]]
     then
-        plistbuddy Add :com.apple.private.webkit.enhanced-security bool YES
         plistbuddy Add :com.apple.security.cs.jit-write-allowlist bool YES
     fi
 
@@ -650,6 +648,7 @@ function ios_family_process_model_entitlements()
     plistbuddy Add :com.apple.private.pac.exception bool YES
     plistbuddy Add :com.apple.pac.shared_region_id string WebKitModel
     plistbuddy Add :com.apple.developer.hardened-process bool YES
+    plistbuddy Add :com.apple.private.usd.enableusdgltf bool YES
 }
 
 function ios_family_process_adattributiond_entitlements()
@@ -710,6 +709,11 @@ fi
     plistbuddy Add :com.apple.private.assets.accessible-asset-types array
     plistbuddy Add :com.apple.private.assets.accessible-asset-types:0 string com.apple.MobileAsset.WebContentRestrictions
     plistbuddy Add :com.apple.developer.hardened-process bool YES
+
+    plistbuddy Add :com.apple.private.security.mutable-state-flags array
+    plistbuddy Add :com.apple.private.security.mutable-state-flags:0 string BlockNetworkAccess
+    plistbuddy Add :com.apple.private.security.enable-state-flags array
+    plistbuddy Add :com.apple.private.security.enable-state-flags:0 string BlockNetworkAccess
 }
 
 rm -f "${WK_PROCESSED_XCENT_FILE}"

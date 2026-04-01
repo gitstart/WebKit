@@ -72,6 +72,7 @@ public:
         for (BlockIndex blockIndex = 0; blockIndex < m_graph.numBlocks(); ++blockIndex)
             fixupChecksInBlock(m_graph.block(blockIndex));
 
+        ASSERT(m_graph.m_planStage < PlanStage::AfterFixup);
         m_graph.m_planStage = PlanStage::AfterFixup;
 
         return true;
@@ -1108,6 +1109,14 @@ private:
             break;
         }
 
+        case StringStartsWith: {
+            fixEdge<StringUse>(node->child1());
+            fixEdge<StringUse>(node->child2());
+            if (node->child3())
+                fixEdge<Int32Use>(node->child3());
+            break;
+        }
+
         case StringLocaleCompare: {
             fixEdge<StringUse>(node->child1());
             fixEdge<StringUse>(node->child2());
@@ -1964,6 +1973,14 @@ private:
                 && m_graph.isWatchingArrayIteratorProtocolWatchpoint(node->child1().node())
                 && m_graph.isWatchingHavingABadTimeWatchpoint(node->child1().node()))
                 fixEdge<ArrayUse>(node->child1());
+            else if (node->child1()->shouldSpeculateSetObject()
+                && m_graph.isWatchingSetIteratorProtocolWatchpoint(node->child1().node())
+                && m_graph.isWatchingHavingABadTimeWatchpoint(node->child1().node()))
+                fixEdge<SetObjectUse>(node->child1());
+            else if (node->child1()->shouldSpeculateMapIteratorObject()
+                && m_graph.isWatchingMapIteratorProtocolWatchpoint(node->child1().node())
+                && m_graph.isWatchingHavingABadTimeWatchpoint(node->child1().node()))
+                fixEdge<MapIteratorObjectUse>(node->child1());
             else
                 fixEdge<CellUse>(node->child1());
             break;
@@ -2423,15 +2440,11 @@ private:
         }
 
         case GetGetterSetterByOffset: {
-            if (!node->child1()->hasStorageResult())
-                fixEdge<KnownCellUse>(node->child1());
             fixEdge<KnownCellUse>(node->child2());
             break;
         }
 
         case GetByOffset: {
-            if (!node->child1()->hasStorageResult())
-                fixEdge<KnownCellUse>(node->child1());
             fixEdge<KnownCellUse>(node->child2());
             attemptToMakeDoubleResultForGet(node);
             break;
@@ -2443,8 +2456,6 @@ private:
         }
             
         case PutByOffset: {
-            if (!node->child1()->hasStorageResult())
-                fixEdge<KnownCellUse>(node->child1());
             fixEdge<KnownCellUse>(node->child2());
             if (!attemptToMakeDoubleRepForPut(node, node->child3()))
                 speculateForBarrier(node->child3());
@@ -2739,7 +2750,7 @@ private:
                     m_graph.varArgChild(node, 0)->prediction(),
                     m_graph.varArgChild(node, 1)->prediction(),
                     SpecNone));
-
+            
             blessArrayOperation(m_graph.varArgChild(node, 0), m_graph.varArgChild(node, 1), m_graph.varArgChild(node, 2));
             fixEdge<CellUse>(m_graph.varArgChild(node, 0));
             fixEdge<Int32Use>(m_graph.varArgChild(node, 1));
@@ -2934,7 +2945,6 @@ private:
 
         case LoadMapValue:
         case IsEmptyStorage:
-            fixEdge<UntypedUse>(node->child1());
             break;
 
         case MapGet:
@@ -3076,6 +3086,16 @@ private:
             break;
         }
 
+        case MapOrSetSize: {
+            if (node->child1().useKind() == MapObjectUse)
+                fixEdge<MapObjectUse>(node->child1());
+            else {
+                ASSERT(node->child1().useKind() == SetObjectUse);
+                fixEdge<SetObjectUse>(node->child1());
+            }
+            break;
+        }
+
         case SetAdd: {
             fixEdge<SetObjectUse>(node->child1());
             fixEdge<Int32Use>(node->child3());
@@ -3123,6 +3143,13 @@ private:
                 fixEdge<UntypedUse>(propertyEdge);
             fixEdge<UntypedUse>(m_graph.varArgChild(node, 2));
             fixEdge<Int32Use>(m_graph.varArgChild(node, 3));
+            break;
+        }
+
+        case ObjectDefineProperty: {
+            fixEdge<ObjectUse>(node->child1()); // target
+            fixEdge<UntypedUse>(node->child2()); // key
+            fixEdge<ObjectUse>(node->child3()); // descriptor
             break;
         }
 
@@ -3485,8 +3512,6 @@ private:
         case TailCallInlinedCallerWasm:
         case ProfileControlFlow:
         case NewObject:
-        case NewGenerator:
-        case NewAsyncGenerator:
         case NewInternalFieldObject:
         case NewRegExp:
         case NewMap:
@@ -4368,7 +4393,7 @@ private:
         emitPrimordialCheckFor(globalObject->regExpProtoUnicodeGetter(), vm().propertyNames->unicode.impl());
         // Check that searchRegExp.unicodeSets is the primordial RegExp.prototype.unicodeSets
         emitPrimordialCheckFor(globalObject->regExpProtoUnicodeSetsGetter(), vm().propertyNames->unicodeSets.impl());
-        // Check that searchRegExp[Symbol.match] is the primordial RegExp.prototype[Symbol.replace]
+        // Check that searchRegExp[Symbol.replace] is the primordial RegExp.prototype[Symbol.replace]
         emitPrimordialCheckFor(globalObject->regExpProtoSymbolReplaceFunction(), vm().propertyNames->replaceSymbol.impl());
     }
 
@@ -4551,7 +4576,7 @@ private:
             if (!storage)
                 return;
             
-            storageChild = Edge(storage);
+            storageChild = storage->defaultEdge();
             return;
         } }
     }
@@ -4972,7 +4997,7 @@ private:
         if (!storage)
             return;
             
-        node->child2() = Edge(storage);
+        node->child2() = storage->defaultEdge();
     }
 
     void convertToHasIndexedProperty(Node* node)
@@ -5116,6 +5141,7 @@ private:
             if (!m_graph.hasExitSite(node->origin.semantic, BadType)) {
                 if (!node->shouldSpeculateInt32() && node->shouldSpeculateNumber()) {
                     node->setResult(NodeResultDouble);
+                    node->mergeFlags(NodeMustGenerate); // Absorbs speculation check from the using edge
                     return true;
                 }
             }

@@ -34,8 +34,8 @@
 #include <wtf/CheckedRef.h>
 #include <wtf/CompletionHandler.h>
 #include <wtf/Forward.h>
-#include <wtf/OSObjectPtr.h>
 #include <wtf/RetainPtr.h>
+#include <wtf/darwin/DispatchOSObject.h>
 
 OBJC_CLASS NSDictionary;
 OBJC_CLASS NSError;
@@ -43,7 +43,6 @@ OBJC_CLASS SCDisplay;
 OBJC_CLASS SCShareableContent;
 OBJC_CLASS SCStream;
 OBJC_CLASS SCContentFilter;
-OBJC_CLASS SCContentSharingSession;
 OBJC_CLASS SCStreamConfiguration;
 OBJC_CLASS SCWindow;
 OBJC_CLASS WebCoreScreenCaptureKitHelper;
@@ -118,7 +117,6 @@ private:
 
     std::optional<Content> m_content;
     RetainPtr<WebCoreScreenCaptureKitHelper> m_captureHelper;
-    RetainPtr<SCContentSharingSession> m_sharingSession;
     RetainPtr<SCContentFilter> m_contentFilter;
     RetainPtr<CMSampleBufferRef> m_currentFrame;
     RefPtr<ScreenCaptureSessionSource> m_sessionSource;

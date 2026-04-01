@@ -165,6 +165,7 @@ xxx-large
 smaller
 larger
 -webkit-xxx-large
+//math
 
 //
 // CSS_PROP_FONT_STRETCH:
@@ -908,8 +909,9 @@ anywhere
 
 // -webkit-appearance
 // The order here must match the order in the StyleAppearance enum in StyleAppearance.h.
-// All appearance values that should be accepted by the parser should be listed between 'base' and 'textarea':
+// All appearance values that should be accepted by the parser should be listed between 'base' and 'textfield':
 base
+base-select
 checkbox
 radio
 push-button
@@ -980,14 +982,11 @@ intersect
 exclude
 
 //
-// Variables Implementation
+// Global substitution functions
 //
 var
-
-//
-// Environment Variables
-//
 env
+-internal-auto-base
 
 //
 // CSS_PROP_BREAK_BEFORE/AFTER/INSIDE

@@ -42,7 +42,7 @@ using SMILEventSender = EventSender<SVGSMILElement, WeakPtrImplWithEventTargetDa
 
 // This class implements SMIL interval timing model as needed for SVG animation.
 class SVGSMILElement : public SVGElement {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(SVGSMILElement);
+    WTF_MAKE_TZONE_ALLOCATED(SVGSMILElement);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(SVGSMILElement);
 public:
     SVGSMILElement(const QualifiedName&, Document&, UniqueRef<SVGPropertyRegistry>&&);
@@ -57,11 +57,9 @@ public:
     virtual bool hasValidAttributeName() const;
     virtual void animationAttributeChanged() = 0;
 
-    SMILTimeContainer* timeContainer() { return m_timeContainer.get(); }
-    RefPtr<SMILTimeContainer> protectedTimeContainer() const;
+    SMILTimeContainer* timeContainer() { return m_timeContainer; }
 
-    SVGElement* targetElement() const { return m_targetElement.get(); }
-    RefPtr<SVGElement> protectedTargetElement() const { return m_targetElement.get(); }
+    SVGElement* targetElement() const { return m_targetElement; }
     const QualifiedName& attributeName() const { return m_attributeName; }
 
     void beginByLinkActivation();

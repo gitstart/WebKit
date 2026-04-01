@@ -26,9 +26,11 @@
 #pragma once
 
 #include "ContextDestructionObserver.h"
+#include "ExceptionOr.h"
 #include "InternalReadableStream.h"
 #include "JSValueInWrappedObject.h"
 #include "ReadableByteStreamController.h"
+#include "WebCoreOpaqueRoot.h"
 #include <JavaScriptCore/Strong.h>
 #include <wtf/AbstractRefCounted.h>
 #include <wtf/RefCountedAndCanMakeWeakPtr.h>
@@ -62,14 +64,19 @@ public:
         std::optional<ReaderMode> mode;
     };
     struct WritablePair {
-        RefPtr<ReadableStream> readable;
-        RefPtr<WritableStream> writable;
+        Ref<ReadableStream> readable;
+        Ref<WritableStream> writable;
+    };
+    struct IteratorOptions {
+        bool preventCancel { false };
     };
 
-    static ExceptionOr<Ref<ReadableStream>> create(JSDOMGlobalObject&, std::optional<JSC::Strong<JSC::JSObject>>&&, std::optional<JSC::Strong<JSC::JSObject>>&&);
-    static ExceptionOr<Ref<ReadableStream>> create(JSDOMGlobalObject&, Ref<ReadableStreamSource>&&);
+    static ExceptionOr<Ref<ReadableStream>> create(JSDOMGlobalObject&, JSC::Strong<JSC::JSObject>&&, JSC::Strong<JSC::JSObject>&&);
+    static ExceptionOr<Ref<ReadableStream>> create(JSDOMGlobalObject&, Ref<ReadableStreamSource>&&, std::optional<double> = { });
     static ExceptionOr<Ref<ReadableStream>> createFromByteUnderlyingSource(JSDOMGlobalObject&, JSC::JSValue underlyingSource, UnderlyingSource&&, double highWaterMark);
     static Ref<ReadableStream> create(Ref<InternalReadableStream>&&);
+
+    static ExceptionOr<Ref<ReadableStream>> from(JSDOMGlobalObject&, JSC::JSValue);
 
     virtual ~ReadableStream();
 
@@ -121,8 +128,11 @@ public:
     void pipeTo(JSDOMGlobalObject&, WritableStream&, StreamPipeOptions&&, Ref<DeferredPromise>&&);
     ExceptionOr<Ref<ReadableStream>> pipeThrough(JSDOMGlobalObject&, WritablePair&&, StreamPipeOptions&&);
 
-    bool isReachableFromOpaqueRoots() const { return m_isReachableFromOpaqueRootIfPulling && isPulling(); }
-    void visitAdditionalChildren(JSC::AbstractSlotVisitor&);
+    bool isReachableFromOpaqueRoots() const { return m_isSourceReachableFromOpaqueRoot && m_state == State::Readable; }
+    enum class VisitTeedChildren : bool { No, Yes };
+    void visitAdditionalChildren(JSC::AbstractSlotVisitor&, VisitTeedChildren = VisitTeedChildren::No);
+    void setTeedBranches(ReadableStream&, ReadableStream&);
+    void setSourceTeedStream(ReadableStream&);
 
     class DependencyToVisit : public AbstractRefCounted {
     public:
@@ -130,12 +140,12 @@ public:
         virtual void visit(JSC::AbstractSlotVisitor&) = 0;
     };
     enum class StartSynchronously : bool { No, Yes };
-    enum class IsReachableFromOpaqueRootIfPulling : bool { No, Yes };
+    enum class IsSourceReachableFromOpaqueRoot : bool { No, Yes };
     struct ByteStreamOptions {
         RefPtr<DependencyToVisit> dependencyToVisit { };
         double highwaterMark { 0 };
         StartSynchronously startSynchronously { StartSynchronously::No };
-        IsReachableFromOpaqueRootIfPulling isReachableFromOpaqueRootIfPulling { IsReachableFromOpaqueRootIfPulling::No };
+        IsSourceReachableFromOpaqueRoot isSourceReachableFromOpaqueRoot { IsSourceReachableFromOpaqueRoot::No };
     };
     static Ref<ReadableStream> createReadableByteStream(JSDOMGlobalObject&, ReadableByteStreamController::PullAlgorithm&&, ReadableByteStreamController::CancelAlgorithm&&, ByteStreamOptions&&);
 
@@ -147,18 +157,37 @@ public:
 
     JSDOMGlobalObject* globalObject();
 
+    class Iterator : public RefCountedAndCanMakeWeakPtr<Iterator> {
+    public:
+        static Ref<Iterator> create(Ref<ReadableStreamDefaultReader>&&, bool preventCancel);
+        ~Iterator();
+
+        Ref<DOMPromise> next(JSDOMGlobalObject&);
+        bool isFinished() const;
+        Ref<DOMPromise> returnSteps(JSDOMGlobalObject&, JSC::JSValue);
+
+    private:
+        Iterator(Ref<ReadableStreamDefaultReader>&&, bool preventCancel);
+
+        const Ref<ReadableStreamDefaultReader> m_reader;
+        bool m_preventCancel { false };
+    };
+
+    ExceptionOr<Ref<Iterator>> createIterator(ScriptExecutionContext*, std::optional<IteratorOptions>&&);
+
 protected:
-    static ExceptionOr<Ref<ReadableStream>> createFromJSValues(JSC::JSGlobalObject&, JSC::JSValue, JSC::JSValue);
+    static ExceptionOr<Ref<ReadableStream>> createFromJSValues(JSC::JSGlobalObject&, JSC::JSValue, JSC::JSValue, std::optional<double>);
     static ExceptionOr<Ref<InternalReadableStream>> createInternalReadableStream(JSDOMGlobalObject&, Ref<ReadableStreamSource>&&);
-    explicit ReadableStream(ScriptExecutionContext*, RefPtr<InternalReadableStream>&& = { }, RefPtr<DependencyToVisit>&& = { }, IsReachableFromOpaqueRootIfPulling = IsReachableFromOpaqueRootIfPulling::No);
+    explicit ReadableStream(ScriptExecutionContext*, RefPtr<InternalReadableStream>&& = { }, RefPtr<DependencyToVisit>&& = { }, IsSourceReachableFromOpaqueRoot = IsSourceReachableFromOpaqueRoot::No);
 
 private:
     ExceptionOr<void> setupReadableByteStreamControllerFromUnderlyingSource(JSDOMGlobalObject&, JSC::JSValue, UnderlyingSource&&, double);
     void setupReadableByteStreamController(JSDOMGlobalObject&, ReadableByteStreamController::PullAlgorithm&&, ReadableByteStreamController::CancelAlgorithm&&, double, StartSynchronously);
 
     bool isPulling() const;
+    void teedBranchIsDestroyed(ReadableStream&);
 
-    const bool m_isReachableFromOpaqueRootIfPulling { false };
+    const bool m_isSourceReachableFromOpaqueRoot { false };
     bool m_disturbed { false };
     WeakPtr<ReadableStreamDefaultReader> m_defaultReader;
     WeakPtr<ReadableStreamBYOBReader> m_byobReader;
@@ -168,6 +197,12 @@ private:
     const RefPtr<InternalReadableStream> m_internalReadableStream;
 
     const RefPtr<DependencyToVisit> m_dependencyToVisit;
+    Lock m_gcLock;
+    WeakPtr<ReadableStream> m_teedBranch0ForGC WTF_GUARDED_BY_LOCK(m_gcLock);
+    WeakPtr<ReadableStream> m_teedBranch1ForGC WTF_GUARDED_BY_LOCK(m_gcLock);
+    WeakPtr<ReadableStream> m_sourceTeedStream;
 };
+
+WebCoreOpaqueRoot root(ReadableStream*);
 
 } // namespace WebCore

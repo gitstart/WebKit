@@ -90,6 +90,7 @@ Shared/glib/JavaScriptEvaluationResultGLib.cpp
 Shared/glib/ProcessExecutablePathGLib.cpp
 Shared/glib/UserMessage.cpp
 Shared/glib/WebContextMenuItemGlib.cpp
+Shared/glib/WebKitContextMenuGAction.cpp @no-unify
 
 Shared/gtk/ArgumentCodersGtk.cpp
 Shared/gtk/NativeWebKeyboardEventGtk.cpp
@@ -357,8 +358,10 @@ WebProcess/WebPage/ViewGestureGeometryCollector.cpp
 
 WebProcess/WebPage/CoordinatedGraphics/AcceleratedSurface.cpp @no-unify
 WebProcess/WebPage/CoordinatedGraphics/CoordinatedSceneState.cpp
-WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp
+WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphicsGLib.cpp
 WebProcess/WebPage/CoordinatedGraphics/LayerTreeHost.cpp
+WebProcess/WebPage/CoordinatedGraphics/NonCompositedFrameRenderer.cpp
+WebProcess/WebPage/CoordinatedGraphics/ScrollingCoordinatorCoordinated.cpp
 WebProcess/WebPage/CoordinatedGraphics/ThreadedCompositor.cpp
 
 WebProcess/WebPage/glib/WebPageGLib.cpp

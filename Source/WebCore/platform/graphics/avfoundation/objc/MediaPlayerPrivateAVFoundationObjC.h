@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2022 Apple Inc. All rights reserved.
+ * Copyright (C) 2011-2026 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -86,7 +86,7 @@ public:
     static void registerMediaEngine(MediaEngineRegistrar);
 
     void setAsset(RetainPtr<id>&&);
-    void didEnd() final;
+    void didEnd(double) final;
     void metadataLoaded() final;
 
     void processCue(NSArray *, NSArray *, const MediaTime&);
@@ -133,6 +133,8 @@ public:
     MediaTime currentTime() const final;
     void outputMediaDataWillChange();
     void processChapterTracks();
+
+    Ref<WebCoreAVFResourceLoader> ensureAVFResourceLoader(AVAssetResourceLoadingRequest *);
 
 private:
 #if ENABLE(ENCRYPTED_MEDIA)
@@ -310,11 +312,12 @@ private:
     MediaPlayer::WirelessPlaybackTargetType wirelessPlaybackTargetType() const final;
     bool wirelessVideoPlaybackDisabled() const final;
     void setWirelessVideoPlaybackDisabled(bool) final;
-    bool canPlayToWirelessPlaybackTarget() const final { return true; }
+    OptionSet<MediaPlaybackTargetType> supportedPlaybackTargetTypes() const final;
+    static OptionSet<MediaPlaybackTargetType> playbackTargetTypes();
     void updateDisableExternalPlayback();
 #endif
 
-#if ENABLE(WIRELESS_PLAYBACK_TARGET) && PLATFORM(MAC)
+#if ENABLE(WIRELESS_PLAYBACK_TARGET)
     void setWirelessPlaybackTarget(Ref<MediaPlaybackTarget>&&) final;
     void setShouldPlayToPlaybackTarget(bool) final;
 #endif
@@ -394,6 +397,11 @@ private:
     RefPtr<CDMInstanceFairPlayStreamingAVFObjC> protectedCDMInstance() const;
 #endif
 
+    void forEachResourceLoader(Function<void(WebCoreAVFResourceLoader&)>&&) const;
+    void addResourceLoader(AVAssetResourceLoadingRequest *, Ref<WebCoreAVFResourceLoader>&&);
+    RefPtr<WebCoreAVFResourceLoader> getResourceLoader(AVAssetResourceLoadingRequest *) const;
+    RefPtr<WebCoreAVFResourceLoader> takeResourceLoader(AVAssetResourceLoadingRequest *);
+
     RetainPtr<AVURLAsset> m_avAsset;
     RetainPtr<AVPlayer> m_avPlayer;
     RetainPtr<AVPlayerItem> m_avPlayerItem;
@@ -424,15 +432,16 @@ private:
     std::unique_ptr<PixelBufferConformerCV> m_pixelBufferConformer;
 
     friend class WebCoreAVFResourceLoader;
-    HashMap<RetainPtr<CFTypeRef>, RefPtr<WebCoreAVFResourceLoader>> m_resourceLoaderMap;
+    mutable Lock m_resourceLoaderMapLock;
+    HashMap<RetainPtr<AVAssetResourceLoadingRequest>, Ref<WebCoreAVFResourceLoader>> m_resourceLoaderMap;
     const RetainPtr<WebCoreAVFLoaderDelegate> m_loaderDelegate;
     MemoryCompactRobinHoodHashMap<String, RetainPtr<AVAssetResourceLoadingRequest>> m_keyURIToRequestMap;
     MemoryCompactRobinHoodHashMap<String, RetainPtr<AVAssetResourceLoadingRequest>> m_sessionIDToRequestMap;
 
     RetainPtr<AVPlayerItemLegibleOutput> m_legibleOutput;
 
-    Vector<RefPtr<AudioTrackPrivateAVFObjC>> m_audioTracks;
-    Vector<RefPtr<VideoTrackPrivateAVFObjC>> m_videoTracks;
+    Vector<Ref<AudioTrackPrivateAVFObjC>> m_audioTracks;
+    Vector<Ref<VideoTrackPrivateAVFObjC>> m_videoTracks;
     RefPtr<MediaSelectionGroupAVFObjC> m_audibleGroup;
     RefPtr<MediaSelectionGroupAVFObjC> m_visualGroup;
 
@@ -442,11 +451,13 @@ private:
     RefPtr<InbandMetadataTextTrackPrivateAVF> m_metadataTrack;
 #endif
 
-    MemoryCompactRobinHoodHashMap<String, RefPtr<InbandChapterTrackPrivateAVFObjC>> m_chapterTracks;
+    MemoryCompactRobinHoodHashMap<String, Ref<InbandChapterTrackPrivateAVFObjC>> m_chapterTracks;
 
-#if ENABLE(WIRELESS_PLAYBACK_TARGET) && PLATFORM(MAC)
-    RetainPtr<AVOutputContext> m_outputContext;
+#if ENABLE(WIRELESS_PLAYBACK_TARGET)
     RefPtr<MediaPlaybackTarget> m_playbackTarget;
+#if PLATFORM(MAC)
+    RetainPtr<AVOutputContext> m_outputContext;
+#endif
 #endif
 
 #if ENABLE(LEGACY_ENCRYPTED_MEDIA)
@@ -523,10 +534,14 @@ private:
     ProcessIdentity m_resourceOwner;
     PlatformTimeRanges m_buffered;
     TrackID m_currentTextTrackID { 0 };
-    Ref<GuaranteedSerialFunctionDispatcher> m_targetDispatcher { MainThreadDispatcher::singleton() };
+    const Ref<PlatformMediaResourceLoader> m_mediaResourceLoader;
+    const Ref<GuaranteedSerialFunctionDispatcher> m_targetDispatcher;
 #if HAVE(SPATIAL_TRACKING_LABEL)
     String m_defaultSpatialTrackingLabel;
     String m_spatialTrackingLabel;
+#endif
+#if !RELEASE_LOG_DISABLED
+    uint64_t m_childIdentifierSeed { 0 };
 #endif
 };
 

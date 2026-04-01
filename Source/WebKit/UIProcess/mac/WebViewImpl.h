@@ -25,6 +25,10 @@
 
 #pragma once
 
+#if !__has_feature(modules) || (defined(WK_SUPPORTS_SWIFT_OBJCXX_INTEROP) && WK_SUPPORTS_SWIFT_OBJCXX_INTEROP)
+
+#include <wtf/Platform.h>
+
 #if PLATFORM(MAC)
 
 #include "AppKitSPI.h"
@@ -35,6 +39,7 @@
 #include "WKLayoutMode.h"
 #include <WebCore/DOMPasteAccess.h>
 #include <WebCore/FocusDirection.h>
+#include <WebCore/HTMLMediaElementIdentifier.h>
 #include <WebCore/KeypressCommand.h>
 #include <WebCore/PlatformPlaybackSessionInterface.h>
 #include <WebCore/ScrollTypes.h>
@@ -43,6 +48,7 @@
 #include <WebCore/UserInterfaceLayoutDirection.h>
 #include <WebKit/WKDragDestinationAction.h>
 #include <WebKit/_WKOverlayScrollbarStyle.h>
+#include <WebKit/_WKRectEdge.h>
 #include <pal/spi/cocoa/AVKitSPI.h>
 #include <pal/spi/cocoa/WritingToolsSPI.h>
 #include <wtf/BlockPtr.h>
@@ -54,8 +60,6 @@
 #include <wtf/WeakPtr.h>
 #include <wtf/WorkQueue.h>
 #include <wtf/text/WTFString.h>
-
-using _WKRectEdge = NSUInteger;
 
 OBJC_CLASS NSAccessibilityRemoteUIElement;
 OBJC_CLASS NSImmediateActionGestureRecognizer;
@@ -76,7 +80,7 @@ OBJC_CLASS WKFullScreenWindowController;
 OBJC_CLASS WKImageAnalysisOverlayViewDelegate;
 OBJC_CLASS WKImmediateActionController;
 OBJC_CLASS WKMouseTrackingObserver;
-OBJC_CLASS WKPanGestureController;
+OBJC_CLASS WKAppKitGestureController;
 OBJC_CLASS WKRevealItemPresenter;
 OBJC_CLASS _WKWarningView;
 OBJC_CLASS WKShareSheet;
@@ -97,7 +101,7 @@ OBJC_CLASS WKTextTouchBarItemController;
 OBJC_CLASS WebPlaybackControlsManager;
 #endif // HAVE(TOUCH_BAR)
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 OBJC_CLASS WKDigitalCredentialsPicker;
 #endif
 
@@ -125,7 +129,9 @@ namespace WebCore {
 class DestinationColorSpace;
 class IntPoint;
 struct DataDetectorElementInfo;
+struct ExceptionData;
 struct ShareDataWithParsedURL;
+struct TextAnimationData;
 struct TextRecognitionResult;
 
 #if HAVE(TRANSLATION_UI_SERVICES) && ENABLE(CONTEXT_MENUS)
@@ -191,8 +197,9 @@ namespace WebCore {
 struct DragItem;
 struct ResolvedCaptionDisplaySettingsOptions;
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
 struct DigitalCredentialsRequestData;
+struct DigitalCredentialsResponseData;
 #endif
 
 struct FrameIdentifierType;
@@ -235,12 +242,11 @@ public:
     ~WebViewImpl();
 
     NSWindow *window();
-    RetainPtr<NSWindow> protectedWindow();
+    NSInteger windowNumber();
 
     WebPageProxy& page() { return m_page.get(); }
 
     WKWebView *view() const { return m_view.getAutoreleased(); }
-    RetainPtr<WKWebView> protectedView() const { return m_view.get(); };
 
     void processWillSwap();
     void processDidExit();
@@ -409,7 +415,6 @@ public:
 #if ENABLE(FULLSCREEN_API)
     bool hasFullScreenWindowController() const;
     WKFullScreenWindowController *fullScreenWindowController();
-    RetainPtr<WKFullScreenWindowController> protectedFullScreenWindowController();
     void closeFullScreenWindowController();
 #endif
     NSView *fullScreenPlaceholderView();
@@ -480,6 +485,8 @@ public:
 
     void preferencesDidChange();
 
+    void updateNeedsViewFrameInWindowCoordinatesIfNeeded();
+
     void teardownTextIndicatorLayer();
     void startTextIndicatorFadeOut();
     CALayer *textIndicatorInstallationLayer();
@@ -523,6 +530,7 @@ public:
     NSUInteger accessibilityRemoteChildTokenHash();
     NSUInteger accessibilityUIProcessLocalTokenHash();
     NSArray<NSNumber *> *registeredRemoteAccessibilityPids();
+    NSData *remoteAccessibilityChildToken();
     bool hasRemoteAccessibilityChild();
 
     void updatePrimaryTrackingAreaOptions(NSTrackingAreaOptions);
@@ -553,7 +561,7 @@ public:
     void showShareSheet(WebCore::ShareDataWithParsedURL&&, WTF::CompletionHandler<void(bool)>&&, WKWebView *);
     void shareSheetDidDismiss(WKShareSheet *);
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
     void showDigitalCredentialsPicker(const WebCore::DigitalCredentialsRequestData&, WTF::CompletionHandler<void(Expected<WebCore::DigitalCredentialsResponseData, WebCore::ExceptionData>&&)>&&, WKWebView*);
     void dismissDigitalCredentialsPicker(WTF::CompletionHandler<void(bool)>&&, WKWebView*);
 #endif
@@ -598,8 +606,7 @@ public:
 
     _WKWarningView *warningView() { return m_warningView.get(); }
 
-    ViewGestureController* gestureController() { return m_gestureController.get(); }
-    RefPtr<ViewGestureController> protectedGestureController() const;
+    ViewGestureController* gestureController() const { return m_gestureController.get(); }
     ViewGestureController& ensureGestureController();
     Ref<ViewGestureController> ensureProtectedGestureController();
     void setAllowsBackForwardNavigationGestures(bool);
@@ -665,6 +672,9 @@ public:
     void firstRectForCharacterRange(NSRange, void(^)(NSRect firstRect, NSRange actualRange));
     void characterIndexForPoint(NSPoint, void(^)(NSUInteger));
     void typingAttributesWithCompletionHandler(void(^)(NSDictionary<NSString *, id> *));
+
+    NSRect unionRectInVisibleSelectedRange() const;
+    NSRect documentVisibleRect() const;
 
     bool isContentRichlyEditable() const;
 
@@ -841,6 +851,9 @@ private:
     void fulfillDeferredImageAnalysisOverlayViewHierarchyTask();
 #endif
 
+    bool pageIsScrolledToTop() const { return m_lastPageScrollPosition.y() <= 0; }
+    void pageScrollingHysteresisFired(PAL::HysteresisState);
+
     bool hasContentRelativeChildViews() const;
 
     void suppressContentRelativeChildViews();
@@ -928,8 +941,6 @@ private:
 
     std::optional<EditorState::PostLayoutData> postLayoutDataForContentEditable();
 
-    void configurePanGestureRecognizerIfNeeded();
-
     WeakObjCPtr<WKWebView> m_view;
     const UniqueRef<PageClient> m_pageClient;
     const Ref<WebPageProxy> m_page;
@@ -972,7 +983,7 @@ private:
 
     RetainPtr<WKShareSheet> _shareSheet;
 
-#if HAVE(DIGITAL_CREDENTIALS_UI)
+#if ENABLE(WEB_AUTHN)
     RetainPtr<WKDigitalCredentialsPicker> _digitalCredentialsPicker;
 #endif
 
@@ -987,6 +998,7 @@ private:
     id m_flagsChangedEventMonitor { nullptr };
 
     const UniqueRef<PAL::HysteresisActivity> m_contentRelativeViewsHysteresis;
+    std::unique_ptr<PAL::HysteresisActivity> m_pageScrollingHysteresis;
 
     RetainPtr<NSColorSpace> m_colorSpace;
 
@@ -1070,7 +1082,7 @@ ALLOW_DEPRECATED_DECLARATIONS_END
     RetainPtr<WKTextAnimationManager> m_textAnimationTypeManager;
 #endif
 
-    bool m_pageIsScrolledToTop { true };
+    WebCore::IntPoint m_lastPageScrollPosition;
     bool m_isRegisteredScrollViewSeparatorTrackingAdapter { false };
     NSRect m_lastScrollViewFrame { NSZeroRect };
 
@@ -1117,9 +1129,11 @@ ALLOW_DEPRECATED_DECLARATIONS_END
     bool m_inlinePredictionsEnabled { false };
 #endif
 
-    RetainPtr<WKPanGestureController> m_panGestureController;
+    RetainPtr<WKAppKitGestureController> m_appKitGestureController;
 };
 
 } // namespace WebKit
 
 #endif // PLATFORM(MAC)
+
+#endif // !__has_feature(modules) || (defined(WK_SUPPORTS_SWIFT_OBJCXX_INTEROP) && WK_SUPPORTS_SWIFT_OBJCXX_INTEROP)

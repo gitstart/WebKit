@@ -47,10 +47,11 @@ class HTMLVideoElementPictureInPicture
     , private LoggerHelper
 #endif
 {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(HTMLVideoElementPictureInPicture);
+    WTF_MAKE_TZONE_ALLOCATED(HTMLVideoElementPictureInPicture);
 public:
     HTMLVideoElementPictureInPicture(HTMLVideoElement&);
-    static HTMLVideoElementPictureInPicture* from(HTMLVideoElement&);
+    static HTMLVideoElementPictureInPicture& from(HTMLVideoElement&);
+    static Ref<HTMLVideoElementPictureInPicture> protectedFrom(HTMLVideoElement&);
     static void providePictureInPictureTo(HTMLVideoElement&);
     virtual ~HTMLVideoElementPictureInPicture();
 
@@ -73,6 +74,10 @@ public:
     WTFLogChannel& logChannel() const final;
 #endif
 
+    // PictureInPictureObserver.
+    void ref() const final;
+    void deref() const final;
+
 private:
     static ASCIILiteral supplementName() { return "HTMLVideoElementPictureInPicture"_s; }
     bool isHTMLVideoElementPictureInPicture() const final { return true; }
@@ -81,7 +86,7 @@ private:
     bool m_disablePictureInPicture { false };
 
     WeakRef<HTMLVideoElement> m_videoElement;
-    RefPtr<PictureInPictureWindow> m_pictureInPictureWindow;
+    const Ref<PictureInPictureWindow> m_pictureInPictureWindow;
     RefPtr<DeferredPromise> m_enterPictureInPicturePromise;
     RefPtr<DeferredPromise> m_exitPictureInPicturePromise;
 

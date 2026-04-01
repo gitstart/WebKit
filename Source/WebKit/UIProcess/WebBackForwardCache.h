@@ -53,7 +53,7 @@ public:
 
     void setCapacity(WebProcessPool&, unsigned);
     unsigned capacity() const { return m_capacity; }
-    unsigned size() const { return m_itemsWithCachedPage.computeSize(); }
+    unsigned size() const;
 
     void clear();
     void pruneToSize(unsigned);
@@ -69,7 +69,6 @@ public:
     Ref<SuspendedPageProxy> takeSuspendedPage(WebBackForwardListItem&);
 
 private:
-    Ref<WebProcessPool> protectedProcessPool() const;
 
     void removeOldestEntry();
     void removeEntriesMatching(NOESCAPE const Function<bool(WebBackForwardListItem&)>&);

@@ -26,14 +26,14 @@
 #import "config.h"
 #import "MediaDeviceRoute.h"
 
-#if HAVE(AVROUTING_FRAMEWORK)
+#if ENABLE(WIRELESS_PLAYBACK_MEDIA_PLAYER)
 
-#include <WebKitAdditions/MediaDeviceRouteImplementationAdditions.h>
-#include <wtf/TZoneMallocInlines.h>
+#import <WebKitAdditions/MediaDeviceRouteAdditions.mm>
+#import <wtf/TZoneMallocInlines.h>
 
 #define FOR_EACH_READONLY_KEY_PATH(Macro) \
     Macro(minValue, MinValue, float) \
-    Macro(maxValue, MinValue, float) \
+    Macro(maxValue, MaxValue, float) \
     Macro(segments, Segments, Vector<MediaTimelineSegment>) \
     Macro(currentSegment, CurrentSegment, std::optional<MediaTimelineSegment>) \
     Macro(state, State, MediaPlaybackSourceState) \
@@ -88,7 +88,7 @@
 #define DEFINE_SETTER(KeyPath, SetterSuffix, Type) \
     void MediaDeviceRoute::set##SetterSuffix(Type KeyPath) \
     { \
-        [[m_route platformRoute] set##SetterSuffix:convert(WTFMove(KeyPath))]; \
+        [[m_route platformRoute] set##SetterSuffix:convert(WTF::move(KeyPath))]; \
     } \
 \
 
@@ -183,7 +183,7 @@ static MediaTimelineSegment::Type convert(AVMediaTimelineSegmentType segmentType
 static MediaTimeRange convert(CMTimeRange timeRange)
 {
     MediaTime start = PAL::toMediaTime(timeRange.start);
-    return { WTFMove(start), start + PAL::toMediaTime(timeRange.duration) };
+    return { WTF::move(start), start + PAL::toMediaTime(timeRange.duration) };
 }
 
 static std::optional<MediaTimelineSegment> convert(id<AVMediaTimelineSegment> _Nullable segment)
@@ -335,8 +335,14 @@ Ref<MediaDeviceRoute> MediaDeviceRoute::create(WebMediaDevicePlatformRoute *plat
 }
 
 MediaDeviceRoute::MediaDeviceRoute(WebMediaDevicePlatformRoute *platformRoute)
-    : m_route { adoptNS([[WebMediaDeviceRoute alloc] initWithRoute:*this platformRoute:platformRoute]) }
+    : m_identifier { WTF::UUID::createVersion4() }
+    , m_route { adoptNS([[WebMediaDeviceRoute alloc] initWithRoute:*this platformRoute:platformRoute]) }
 {
+}
+
+WebMediaDevicePlatformRoute *MediaDeviceRoute::platformRoute() const
+{
+    return [m_route platformRoute];
 }
 
 MediaDeviceRoute::~MediaDeviceRoute() = default;
@@ -356,4 +362,4 @@ NS_ASSUME_NONNULL_END
 #undef DEFINE_GETTER
 #undef DEFINE_SETTER
 
-#endif // HAVE(AVROUTING_FRAMEWORK)
+#endif // ENABLE(WIRELESS_PLAYBACK_MEDIA_PLAYER)

@@ -46,7 +46,7 @@ using RiceBackendIdentifier = ObjectIdentifier<RiceBackendIdentifierType>;
 
 class RiceBackendProxy : public IPC::MessageSender, public IPC::MessageReceiver, public WebCore::RiceBackend, public ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr<RiceBackendProxy, WTF::DestructionThread::MainRunLoop> {
 public:
-    static Ref<RiceBackendProxy> create(WebPageProxyIdentifier, WebCore::RiceBackendClient&);
+    static RefPtr<RiceBackendProxy> create(WebPageProxyIdentifier, WebCore::RiceBackendClient&);
     ~RiceBackendProxy();
 
     void ref() const final { ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr::ref(); }
@@ -59,9 +59,12 @@ private:
 
     // RiceBackend (Web -> Network)
     void resolveAddress(const String&, WebCore::RiceBackend::ResolveAddressCallback&&) final;
+
     void send(unsigned, WebCore::RTCIceProtocol, String&&, String&&, WebCore::SharedMemory::Handle&&) final;
-    Vector<String> gatherSocketAddresses(unsigned) final;
+    HashMap<WebCore::RiceBackend::Socket, String> gatherSocketAddresses(WebCore::ScriptExecutionContextIdentifier, unsigned) final;
+
     void finalizeStream(unsigned) final;
+    void setSocketTypeOfService(unsigned, unsigned) final;
 
     void refRiceBackend() final { ref(); }
     void derefRiceBackend() final { deref(); }

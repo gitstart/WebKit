@@ -26,6 +26,7 @@
 #include "config.h"
 #include "DatagramByteSource.h"
 
+#include "JSDOMGlobalObject.h"
 #include "JSDOMPromiseDeferred.h"
 #include "ReadableByteStreamController.h"
 #include "ReadableStream.h"
@@ -47,7 +48,7 @@ void DatagramByteSource::receiveDatagram(std::span<const uint8_t> datagram, bool
         return;
 
     if (exception) {
-        m_exception = WTFMove(exception);
+        m_exception = WTF::move(exception);
         closeStreamIfPossible();
         return;
     }
@@ -89,12 +90,12 @@ void DatagramByteSource::pull(JSDOMGlobalObject& globalObject, ReadableByteStrea
         return;
 
     if (m_queue.isEmpty()) {
-        m_promise = WTFMove(promise);
+        m_promise = WTF::move(promise);
         m_controller = &controller;
         return;
     }
 
-    tryEnqueuing(m_queue.takeFirst().get(), controller, WTFMove(promise), &globalObject);
+    tryEnqueuing(m_queue.takeFirst().get(), controller, WTF::move(promise), &globalObject);
 }
 
 void DatagramByteSource::cancel(Ref<DeferredPromise>&& promise)
@@ -179,9 +180,16 @@ void DatagramByteSource::tryEnqueuing(JSC::ArrayBuffer& buffer, ReadableByteStre
         m_currentOffset = 0;
 
     if (m_exception || (m_isClosed && m_queue.isEmpty()))
-        closeStream(*globalObject, controller, WTFMove(promise));
+        closeStream(*globalObject, controller, WTF::move(promise));
     else
         promise->resolve();
 }
 
+void DatagramByteSource::error(JSC::JSGlobalObject& globalObject, JSC::JSValue value)
+{
+    if (RefPtr controller = m_controller) {
+        auto& jsDOMGlobalObject = *JSC::jsCast<JSDOMGlobalObject*>(&globalObject);
+        controller->error(jsDOMGlobalObject, value);
+    }
+}
 }

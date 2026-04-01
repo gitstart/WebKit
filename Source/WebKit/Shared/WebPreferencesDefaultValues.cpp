@@ -399,7 +399,7 @@ bool defaultPreferSpatialAudioExperience()
 bool defaultRTCEncodedStreamsQuirkEnabled()
 {
 #if PLATFORM(MAC)
-    return WTF::MacApplication::isSafariTechnologyPreview();
+    return true;
 #else
     return false;
 #endif
@@ -454,6 +454,16 @@ bool defaultFacebookLiveRecordingQuirkEnabled()
 #endif
 }
 
+bool defaultFontFaceSetConstructorEnabled()
+{
+#if PLATFORM(COCOA)
+    static bool newSDK = linkedOnOrAfterSDKWithBehavior(SDKAlignedBehavior::NoFontFaceSetConstructor);
+    return !newSDK;
+#else
+    return false;
+#endif
+}
+
 #if !PLATFORM(COCOA)
 bool defaultContentInsetBackgroundFillEnabled()
 {
@@ -492,5 +502,12 @@ bool defaultAllowMultipleCommitLayerTreePending()
     return false;
 #endif
 }
+
+#if !PLATFORM(COCOA) && ENABLE(VIDEO)
+bool defaultCaptionDisplaySettingsEnabled()
+{
+    return false;
+}
+#endif
 
 } // namespace WebKit

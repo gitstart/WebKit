@@ -25,14 +25,22 @@
 
 #import "WKBaseScrollView.h"
 #import "WKWebViewInternal.h"
+
+#if !__has_feature(modules) || WK_SUPPORTS_SWIFT_OBJCXX_INTEROP
+
+#import "APINavigation.h"
 #import "_WKTapHandlingResult.h"
 #import <wtf/spi/cocoa/NSObjCRuntimeSPI.h>
+
+#endif // !__has_feature(modules) || WK_SUPPORTS_SWIFT_OBJCXX_INTEROP
 
 #if PLATFORM(IOS_FAMILY)
 
 #import "UIKitSPI.h"
 
 @class WKBEScrollViewScrollUpdate;
+
+#if !__has_feature(modules) || WK_SUPPORTS_SWIFT_OBJCXX_INTEROP
 
 namespace WebKit {
 enum class TapHandlingResult : uint8_t;
@@ -93,13 +101,10 @@ enum class TapHandlingResult : uint8_t;
 - (void)_setHasCustomContentView:(BOOL)hasCustomContentView loadedMIMEType:(const WTF::String&)mimeType;
 - (void)_didFinishLoadingDataForCustomContentProviderWithSuggestedFilename:(const WTF::String&)suggestedFilename data:(NSData *)data;
 
-#if ENABLE(OVERLAY_REGIONS_IN_EVENT_REGION)
-- (void)_updateOverlayRegions;
-#endif
-
 - (void)_willInvokeUIScrollViewDelegateCallback;
 - (void)_didInvokeUIScrollViewDelegateCallback;
 
+- (std::optional<WebKit::VisibleContentRectUpdateInfo>)_createVisibleContentRectUpdate;
 - (void)_scheduleVisibleContentRectUpdate;
 - (void)_scheduleForcedVisibleContentRectUpdate;
 
@@ -162,7 +167,7 @@ enum class TapHandlingResult : uint8_t;
 
 - (void)_incrementFocusPreservationCount;
 - (void)_decrementFocusPreservationCount;
-- (NSUInteger)_resetFocusPreservationCount;
+- (void)_resetFocusPreservationCountAndReleaseActiveFocusState;
 
 - (void)_setOpaqueInternal:(BOOL)opaque;
 - (NSString *)_contentSizeCategory;
@@ -246,6 +251,20 @@ enum class TapHandlingResult : uint8_t;
 
 @end
 
+#endif // !__has_feature(modules) || WK_SUPPORTS_SWIFT_OBJCXX_INTEROP
+
+@interface WKWebView (WKViewInternalIOS_SwiftNonObjCxxSupport)
+
+// No new properties/functions should need to be added to this category anymore.
+
+@property (nonatomic, setter=_setAllowsMagnification:) BOOL _allowsMagnification;
+
+@end
+
+#if !__has_feature(modules) || WK_SUPPORTS_SWIFT_OBJCXX_INTEROP
+
 _WKTapHandlingResult wkTapHandlingResult(WebKit::TapHandlingResult);
+
+#endif
 
 #endif // PLATFORM(IOS_FAMILY)

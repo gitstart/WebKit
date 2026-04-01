@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2009 Nokia Corporation and/or its subsidiary(-ies)
  * Copyright (C) 2009 Antonio Gomes <tonikitoo@webkit.org>
+ * Copyright (C) 2026 Samuel Weinig <sam@webkit.org>
  *
  * All rights reserved.
  *
@@ -46,7 +47,7 @@
 #include "RenderLayer.h"
 #include "RenderLayerScrollableArea.h"
 #include "RenderObjectInlines.h"
-#include "RenderStyleInlines.h"
+#include "RenderStyle+GettersInlines.h"
 #include "Settings.h"
 
 namespace WebCore {
@@ -286,7 +287,7 @@ bool hasOffscreenRect(const Node& node, FocusDirection direction)
     // Get the FrameView in which |node| is (which means the current viewport if |node|
     // is not in an inner document), so we can check if its content rect is visible
     // before we actually move the focus to it.
-    auto* frameView = node.document().view();
+    RefPtr frameView = node.document().view();
     if (!frameView)
         return true;
 
@@ -331,7 +332,7 @@ bool scrollInDirection(LocalFrame* frame, FocusDirection direction)
 {
     ASSERT(frame);
 
-    if (frame && canScrollInDirection(*frame->protectedDocument(), direction)) {
+    if (frame && canScrollInDirection(*protect(frame->document()), direction)) {
         LayoutUnit dx;
         LayoutUnit dy;
         switch (direction) {
@@ -524,9 +525,9 @@ LayoutRect nodeRectInAbsoluteCoordinates(const ContainerNode& containerNode, boo
         // the rect of the focused element.
         if (ignoreBorder) {
             auto& style = renderer->style();
-            rect.move(Style::evaluate<LayoutUnit>(style.borderLeftWidth(), style.usedZoomForLength()), Style::evaluate<LayoutUnit>(style.borderTopWidth(), style.usedZoomForLength()));
-            rect.setWidth(rect.width() - Style::evaluate<LayoutUnit>(style.borderLeftWidth(), style.usedZoomForLength()) - Style::evaluate<LayoutUnit>(style.borderRightWidth(), style.usedZoomForLength()));
-            rect.setHeight(rect.height() - Style::evaluate<LayoutUnit>(style.borderTopWidth(), style.usedZoomForLength()) - Style::evaluate<LayoutUnit>(style.borderBottomWidth(), style.usedZoomForLength()));
+            rect.move(Style::evaluate<LayoutUnit>(style.usedBorderLeftWidth(), Style::ZoomNeeded { }), Style::evaluate<LayoutUnit>(style.usedBorderTopWidth(), Style::ZoomNeeded { }));
+            rect.setWidth(rect.width() - Style::evaluate<LayoutUnit>(style.usedBorderLeftWidth(), Style::ZoomNeeded { }) - Style::evaluate<LayoutUnit>(style.usedBorderRightWidth(), Style::ZoomNeeded { }));
+            rect.setHeight(rect.height() - Style::evaluate<LayoutUnit>(style.usedBorderTopWidth(), Style::ZoomNeeded { }) - Style::evaluate<LayoutUnit>(style.usedBorderBottomWidth(), Style::ZoomNeeded { }));
         }
         return rect;
     }
@@ -696,7 +697,7 @@ void distanceDataForNode(FocusDirection direction, const FocusCandidate& current
 
     float distance = euclidianDistance + sameAxisDistance + 2 * otherAxisDistance;
     candidate.distance = roundf(distance);
-    auto* localMainFrame = dynamicDowncast<LocalFrame>(candidate.visibleNode->document().page()->mainFrame());
+    RefPtr localMainFrame = dynamicDowncast<LocalFrame>(candidate.visibleNode->document().page()->mainFrame());
     if (!localMainFrame)
         return;
     LayoutSize viewSize = localMainFrame->view()->visibleContentRect().size();
@@ -707,7 +708,7 @@ bool canBeScrolledIntoView(FocusDirection direction, const FocusCandidate& candi
 {
     ASSERT(candidate.visibleNode && candidate.isOffscreen);
     LayoutRect candidateRect = candidate.rect;
-    for (ContainerNode* parentNode = candidate.visibleNode->parentNode(); parentNode; parentNode = parentNode->parentNode()) {
+    for (RefPtr<ContainerNode> parentNode = candidate.visibleNode->parentNode(); parentNode; parentNode = parentNode->parentNode()) {
         if (!parentNode->renderer())
             continue;
         LayoutRect parentRect = nodeRectInAbsoluteCoordinates(*parentNode);

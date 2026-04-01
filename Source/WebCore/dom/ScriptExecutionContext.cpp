@@ -39,6 +39,7 @@
 #include "DatabaseContext.h"
 #include "Document.h"
 #include "DocumentPage.h"
+#include "DocumentQuirks.h"
 #include "EmptyScriptExecutionContext.h"
 #include "ErrorEvent.h"
 #include "FontLoadRequest.h"
@@ -55,6 +56,7 @@
 #include "Page.h"
 #include "Performance.h"
 #include "PublicURLManager.h"
+#include "Quirks.h"
 #include "RTCDataChannelRemoteHandlerConnection.h"
 #include "RejectedPromiseTracker.h"
 #include "ResourceRequest.h"
@@ -71,7 +73,6 @@
 #include "SocketProvider.h"
 #include "WebCoreJSClientData.h"
 #include "WebCoreOpaqueRoot.h"
-#include "WebTransport.h"
 #include "WorkerGlobalScope.h"
 #include "WorkerLoaderProxy.h"
 #include "WorkerNavigator.h"
@@ -81,7 +82,6 @@
 #include "WorkerThread.h"
 #include "WorkletGlobalScope.h"
 #include <JavaScriptCore/CallFrame.h>
-#include <JavaScriptCore/CatchScope.h>
 #include <JavaScriptCore/DeferredWorkTimer.h>
 #include <JavaScriptCore/Exception.h>
 #include <JavaScriptCore/JSPromise.h>
@@ -89,6 +89,7 @@
 #include <JavaScriptCore/SourceTaintedOrigin.h>
 #include <JavaScriptCore/StackVisitor.h>
 #include <JavaScriptCore/StrongInlines.h>
+#include <JavaScriptCore/TopExceptionScope.h>
 #include <JavaScriptCore/VM.h>
 #include <wtf/Lock.h>
 #include <wtf/MainThread.h>
@@ -118,7 +119,7 @@ public:
         , m_lineNumber(lineNumber)
         , m_columnNumber(columnNumber)
         , m_sourceURL(sourceURL)
-        , m_callStack(WTFMove(callStack))
+        , m_callStack(WTF::move(callStack))
     {
     }
     String m_errorMessage;
@@ -209,11 +210,11 @@ ScriptExecutionContext::~ScriptExecutionContext()
     m_inScriptExecutionContextDestructor = true;
 #endif // ASSERT_ENABLED
 
-    auto callbacks = WTFMove(m_notificationCallbacks);
+    auto callbacks = WTF::move(m_notificationCallbacks);
     for (auto& callback : callbacks.values())
         callback();
 
-    auto postMessageCompletionHandlers = WTFMove(m_processMessageWithMessagePortsSoonHandlers);
+    auto postMessageCompletionHandlers = WTF::move(m_processMessageWithMessagePortsSoonHandlers);
     for (auto& completionHandler : postMessageCompletionHandlers)
         completionHandler();
 
@@ -232,7 +233,7 @@ ScriptExecutionContext::~ScriptExecutionContext()
 void ScriptExecutionContext::processMessageWithMessagePortsSoon(CompletionHandler<void()>&& completionHandler)
 {
     ASSERT(isContextThread());
-    m_processMessageWithMessagePortsSoonHandlers.append(WTFMove(completionHandler));
+    m_processMessageWithMessagePortsSoonHandlers.append(WTF::move(completionHandler));
 
     if (m_willprocessMessageWithMessagePortsSoon)
         return;
@@ -337,19 +338,14 @@ URL ScriptExecutionContext::currentSourceURL(CallStackPosition position) const
         if (urlString.isEmpty())
             return IterationStatus::Continue;
 
-        auto newSourceURL = URL { WTFMove(urlString) };
+        auto newSourceURL = URL { WTF::move(urlString) };
         if (!newSourceURL.isValid())
             return IterationStatus::Continue;
 
-        sourceURL = WTFMove(newSourceURL);
+        sourceURL = WTF::move(newSourceURL);
         return position == CallStackPosition::BottomMost ? IterationStatus::Continue : IterationStatus::Done;
     });
     return sourceURL;
-}
-
-void ScriptExecutionContext::createdWebTransport(WebTransport& transport)
-{
-    m_activeWebTransports.add(transport);
 }
 
 void ScriptExecutionContext::suspendActiveDOMObjects(ReasonForSuspension why)
@@ -365,11 +361,6 @@ void ScriptExecutionContext::suspendActiveDOMObjects(ReasonForSuspension why)
     }
 
     m_activeDOMObjectsAreSuspended = true;
-
-    if (why == ReasonForSuspension::BackForwardCache) {
-        for (auto& webTransport : m_activeWebTransports)
-            webTransport.cleanupContext(*this);
-    }
 
     forEachActiveDOMObject([why](auto& activeDOMObject) {
         activeDOMObject.suspend(why);
@@ -479,7 +470,7 @@ bool ScriptExecutionContext::canIncludeErrorDetails(CachedScript* script, const 
         ASSERT(securityOrigin()->toString() == script->origin()->toString());
         return script->isCORSSameOrigin();
     }
-    return protectedSecurityOrigin()->canRequest(completeSourceURL, OriginAccessPatternsForWebProcess::singleton());
+    return protect(securityOrigin())->canRequest(completeSourceURL, OriginAccessPatternsForWebProcess::singleton());
 }
 
 void ScriptExecutionContext::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, JSC::Exception* exception, RefPtr<ScriptCallStack>&& callStack, CachedScript* cachedScript, bool fromModule)
@@ -487,7 +478,7 @@ void ScriptExecutionContext::reportException(const String& errorMessage, int lin
     if (m_inDispatchErrorEvent) {
         if (!m_pendingExceptions)
             m_pendingExceptions = makeUnique<Vector<std::unique_ptr<PendingException>>>();
-        m_pendingExceptions->append(makeUnique<PendingException>(errorMessage, lineNumber, columnNumber, sourceURL, WTFMove(callStack)));
+        m_pendingExceptions->append(makeUnique<PendingException>(errorMessage, lineNumber, columnNumber, sourceURL, WTF::move(callStack)));
         return;
     }
 
@@ -498,9 +489,9 @@ void ScriptExecutionContext::reportException(const String& errorMessage, int lin
     if (!m_pendingExceptions)
         return;
 
-    auto pendingExceptions = WTFMove(m_pendingExceptions);
+    auto pendingExceptions = WTF::move(m_pendingExceptions);
     for (auto& exception : *pendingExceptions)
-        logExceptionToConsole(exception->m_errorMessage, exception->m_sourceURL, exception->m_lineNumber, exception->m_columnNumber, WTFMove(exception->m_callStack));
+        logExceptionToConsole(exception->m_errorMessage, exception->m_sourceURL, exception->m_lineNumber, exception->m_columnNumber, WTF::move(exception->m_callStack));
 }
 
 void ScriptExecutionContext::reportUnhandledPromiseRejection(JSC::JSGlobalObject& state, JSC::JSPromise& promise, RefPtr<Inspector::ScriptCallStack>&& callStack)
@@ -514,7 +505,7 @@ void ScriptExecutionContext::reportUnhandledPromiseRejection(JSC::JSGlobalObject
         return;
 
     Ref vm = state.vm();
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     JSC::JSValue result = promise.result();
     String resultMessage = retrieveErrorMessage(state, vm, result, scope);
     String errorMessage;
@@ -540,7 +531,7 @@ void ScriptExecutionContext::reportUnhandledPromiseRejection(JSC::JSGlobalObject
         message = makeUnique<Inspector::ConsoleMessage>(MessageSource::JS, MessageType::Log, MessageLevel::Error, errorMessage, callStack.releaseNonNull());
     else
         message = makeUnique<Inspector::ConsoleMessage>(MessageSource::JS, MessageType::Log, MessageLevel::Error, errorMessage);
-    addConsoleMessage(WTFMove(message));
+    addConsoleMessage(WTF::move(message));
 }
 
 void ScriptExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber, JSC::JSGlobalObject* state, unsigned long requestIdentifier)
@@ -690,7 +681,7 @@ String ScriptExecutionContext::domainForCachePartition() const
     if (m_storageBlockingPolicy != StorageBlockingPolicy::BlockThirdParty)
         return emptyString();
 
-    return protectedTopOrigin()->domainForCachePartition();
+    return protect(topOrigin())->domainForCachePartition();
 }
 
 bool ScriptExecutionContext::allowsMediaDevices() const
@@ -708,7 +699,7 @@ bool ScriptExecutionContext::allowsMediaDevices() const
 
 void ScriptExecutionContext::setActiveServiceWorker(RefPtr<ServiceWorker>&& serviceWorker)
 {
-    m_activeServiceWorker = WTFMove(serviceWorker);
+    m_activeServiceWorker = WTF::move(serviceWorker);
 }
 
 void ScriptExecutionContext::registerServiceWorker(ServiceWorker& serviceWorker)
@@ -717,7 +708,7 @@ void ScriptExecutionContext::registerServiceWorker(ServiceWorker& serviceWorker)
     ASSERT_UNUSED(addResult, addResult.isNewEntry);
 
     ensureOnMainThread([identifier = serviceWorker.identifier()] {
-        ServiceWorkerProvider::singleton().protectedServiceWorkerConnection()->registerServiceWorkerInServer(identifier);
+        protect(ServiceWorkerProvider::singleton().serviceWorkerConnection())->registerServiceWorkerInServer(identifier);
     });
 }
 
@@ -726,7 +717,7 @@ void ScriptExecutionContext::unregisterServiceWorker(ServiceWorker& serviceWorke
     m_serviceWorkers.remove(serviceWorker.identifier());
 
     ensureOnMainThread([identifier = serviceWorker.identifier()] {
-        ServiceWorkerProvider::singleton().protectedServiceWorkerConnection()->unregisterServiceWorkerInServer(identifier);
+        protect(ServiceWorkerProvider::singleton().serviceWorkerConnection())->unregisterServiceWorkerInServer(identifier);
     });
 }
 
@@ -775,7 +766,7 @@ bool ScriptExecutionContext::postTaskTo(ScriptExecutionContextIdentifier identif
     if (!context)
         return false;
 
-    context->postTask(WTFMove(task));
+    context->postTask(WTF::move(task));
     return true;
 }
 
@@ -788,7 +779,7 @@ bool ScriptExecutionContext::postTaskForModeToWorkerOrWorklet(ScriptExecutionCon
     if (!context)
         return false;
 
-    context->postTaskForMode(WTFMove(task), mode);
+    context->postTaskForMode(WTF::move(task), mode);
     return true;
 }
 
@@ -811,7 +802,7 @@ bool ScriptExecutionContext::ensureOnContextThread(ScriptExecutionContextIdentif
             return false;
 
         if (!context->isContextThread()) {
-            context->postTask(WTFMove(task));
+            context->postTask(WTF::move(task));
             return true;
         }
     }
@@ -831,7 +822,7 @@ bool ScriptExecutionContext::ensureOnContextThreadForCrossThreadTask(ScriptExecu
             return false;
 
         if (!context->isContextThread()) {
-            context->postTask([crossThreadTask = WTFMove(crossThreadTask)](ScriptExecutionContext&) mutable {
+            context->postTask([crossThreadTask = WTF::move(crossThreadTask)](ScriptExecutionContext&) mutable {
                 crossThreadTask.performTask();
             });
             return true;
@@ -856,7 +847,7 @@ void ScriptExecutionContext::postTaskToResponsibleDocument(Function<void(Documen
 
     if (RefPtr thread = workerOrWorketGlobalScope->workerOrWorkletThread()) {
         if (CheckedPtr workerLoaderProxy = thread->workerLoaderProxy()) {
-            workerLoaderProxy->postTaskToLoader([callback = WTFMove(callback)](auto&& context) {
+            workerLoaderProxy->postTaskToLoader([callback = WTF::move(callback)](auto&& context) {
                 callback(downcast<Document>(context));
             });
         }
@@ -893,7 +884,7 @@ ScriptExecutionContext::HasResourceAccess ScriptExecutionContext::canAccessResou
     case ResourceType::SessionStorage:
         if (m_storageBlockingPolicy == StorageBlockingPolicy::BlockAll)
             return HasResourceAccess::No;
-        if ((m_storageBlockingPolicy == StorageBlockingPolicy::BlockThirdParty) && !protectedTopOrigin()->isSameOriginAs(*origin) && !origin->hasUniversalAccess())
+        if ((m_storageBlockingPolicy == StorageBlockingPolicy::BlockThirdParty) && !protect(topOrigin())->isSameOriginAs(*origin) && !origin->hasUniversalAccess())
             return HasResourceAccess::DefaultForThirdParty;
         return HasResourceAccess::Yes;
     }
@@ -903,7 +894,7 @@ ScriptExecutionContext::HasResourceAccess ScriptExecutionContext::canAccessResou
 ScriptExecutionContext::NotificationCallbackIdentifier ScriptExecutionContext::addNotificationCallback(CompletionHandler<void()>&& callback)
 {
     auto identifier = NotificationCallbackIdentifier::generate();
-    m_notificationCallbacks.add(identifier, WTFMove(callback));
+    m_notificationCallbacks.add(identifier, WTF::move(callback));
     return identifier;
 }
 
@@ -961,10 +952,10 @@ private:
     void dispatch(Function<void()>&& callback) final
     {
         if (m_threadId == 1) {
-            callOnMainThread(WTFMove(callback));
+            callOnMainThread(WTF::move(callback));
             return;
         }
-        ScriptExecutionContext::postTaskTo(m_identifier, WTFMove(callback));
+        ScriptExecutionContext::postTaskTo(m_identifier, WTF::move(callback));
     }
     bool isCurrent() const final { return m_threadId == Thread::currentSingleton().uid(); }
 
@@ -975,8 +966,13 @@ private:
 GuaranteedSerialFunctionDispatcher& ScriptExecutionContext::nativePromiseDispatcher()
 {
     if (!m_nativePromiseDispatcher)
-        m_nativePromiseDispatcher = ScriptExecutionContextDispatcher::create(*this);
+        lazyInitialize(m_nativePromiseDispatcher, ScriptExecutionContextDispatcher::create(*this));
     return *m_nativePromiseDispatcher;
+}
+
+Ref<GuaranteedSerialFunctionDispatcher> ScriptExecutionContext::protectedNativePromiseDispatcher()
+{
+    return nativePromiseDispatcher();
 }
 
 bool ScriptExecutionContext::requiresScriptTrackingPrivacyProtection(ScriptTrackingPrivacyCategory category, IncludeConsoleLog includeConsoleLog)
@@ -1009,13 +1005,17 @@ bool ScriptExecutionContext::requiresScriptTrackingPrivacyProtection(ScriptTrack
     if (!page)
         return true;
 
-    if (page->shouldAllowScriptAccess(taintedURL, protectedTopOrigin(), category))
+    if (category == ScriptTrackingPrivacyCategory::NetworkRequests && !page->settings().scriptTrackingPrivacyNetworkRequestBlockingEnabled())
+        return false;
+
+    bool shouldApplyConsistently = category == ScriptTrackingPrivacyCategory::QueryParameters && document->quirks().needsConsistentQueryParameterFilteringQuirk(taintedURL);
+    if (page->shouldAllowScriptAccess(taintedURL, protect(topOrigin()), category) && !shouldApplyConsistently)
         return false;
 
     if (!page->settings().scriptTrackingPrivacyLoggingEnabled())
         return true;
 
-    if (includeConsoleLog == IncludeConsoleLog::No || !page->reportScriptTrackingPrivacy(taintedURL, category))
+    if ((includeConsoleLog == IncludeConsoleLog::No || !page->reportScriptTrackingPrivacy(taintedURL, category)) && !shouldApplyConsistently)
         return true;
 
     addConsoleMessage(MessageSource::JS, MessageLevel::Info, makeLogMessage(taintedURL, category));

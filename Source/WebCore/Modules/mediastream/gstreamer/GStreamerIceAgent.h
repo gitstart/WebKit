@@ -65,8 +65,8 @@ public:
     static Ref<RiceBackendClient> create() { return adoptRef(*new RiceBackendClient); }
 
     using IncomingDataCallback = WTF::Function<void(unsigned, RTCIceProtocol, String&&, String&&, WebCore::SharedMemory::Handle&&)>;
-    void setIncomingDataCallback(IncomingDataCallback&& callback) { m_incomingDataCallback = WTFMove(callback); }
-    void notifyIncomingData(unsigned streamId, RTCIceProtocol protocol, String&& from, String&& to, WebCore::SharedMemoryHandle&& data) { m_incomingDataCallback(streamId, protocol, WTFMove(from), WTFMove(to), WTFMove(data)); }
+    void setIncomingDataCallback(IncomingDataCallback&& callback) { m_incomingDataCallback = WTF::move(callback); }
+    void notifyIncomingData(unsigned streamId, RTCIceProtocol protocol, String&& from, String&& to, WebCore::SharedMemoryHandle&& data) { m_incomingDataCallback(streamId, protocol, WTF::move(from), WTF::move(to), WTF::move(data)); }
 
 private:
     RiceBackendClient() = default;
@@ -87,8 +87,10 @@ public:
 
     virtual void send(unsigned, RTCIceProtocol, String&&, String&&, SharedMemory::Handle&&) = 0;
 
-    virtual Vector<String> gatherSocketAddresses(unsigned) = 0;
+    using Socket = std::pair<String, RTCIceProtocol>;
+    virtual HashMap<Socket, String> gatherSocketAddresses(ScriptExecutionContextIdentifier, unsigned) = 0;
     virtual void finalizeStream(unsigned) = 0;
+    virtual void setSocketTypeOfService(unsigned, unsigned) = 0;
 
 protected:
     RiceBackend() = default;
@@ -102,8 +104,9 @@ protected:
 WebKitGstIceAgent* webkitGstWebRTCCreateIceAgent(const String&, WebCore::ScriptExecutionContext*);
 
 const GRefPtr<RiceAgent>& webkitGstWebRTCIceAgentGetRiceAgent(WebKitGstIceAgent*);
+
 Vector<GRefPtr<RiceTurnConfig>> webkitGstWebRTCIceAgentGetTurnConfigs(WebKitGstIceAgent*);
-Vector<String> webkitGstWebRTCIceAgentGatherSocketAddresses(WebKitGstIceAgent*, unsigned);
+HashMap<std::pair<String, WebCore::RTCIceProtocol>, String> webkitGstWebRTCIceAgentGatherSocketAddresses(WebKitGstIceAgent*, unsigned);
 
 GstWebRTCICETransport *webkitGstWebRTCIceAgentCreateTransport(WebKitGstIceAgent*, GThreadSafeWeakPtr<WebKitGstIceStream>&&, WebCore::RTCIceComponent);
 
@@ -115,6 +118,5 @@ void webkitGstWebRTCIceAgentLocalCandidateGatheredForStream(WebKitGstIceAgent*, 
 void webkitGstWebRTCIceAgentComponentStateChangedForStream(WebKitGstIceAgent*, unsigned, RiceAgentComponentStateChange&);
 void webkitGstWebRTCIceAgentNewSelectedPairForStream(WebKitGstIceAgent*, unsigned, RiceAgentSelectedPair&);
 void webkitGstWebRTCIceAgentClosed(WebKitGstIceAgent*);
-void webkitGstWebRTCIceAgentFinalizeStream(WebKitGstIceAgent*, unsigned);
 
 #endif // USE(GSTREAMER_WEBRTC) && USE(LIBRICE)

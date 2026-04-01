@@ -51,13 +51,13 @@ Path::Path(Vector<PathSegment>&& segments)
         return;
 
     if (segments.size() == 1)
-        m_data = WTFMove(segments[0]);
+        m_data = WTF::move(segments[0]);
     else
-        m_data = DataRef<PathImpl> { PathStream::create(WTFMove(segments)) };
+        m_data = DataRef<PathImpl> { PathStream::create(WTF::move(segments)) };
 }
 
 Path::Path(Ref<PathImpl>&& impl)
-    : m_data(WTFMove(impl))
+    : m_data(WTF::move(impl))
 {
 }
 
@@ -75,19 +75,19 @@ bool Path::definitelyEqual(const Path& other) const
             return otherSegment && segment == otherSegment.value();
         },
         [&](const DataRef<PathImpl>& impl) {
-            if (auto singleSegment = impl->singleSegment()) {
+        if (auto singleSegment = Ref { impl.get() }->singleSegment()) {
                 auto otherSegment = other.singleSegment();
                 return otherSegment && singleSegment == otherSegment.value();
             }
 
-            return impl.ptr() && other.asImpl() && impl->definitelyEqual(*other.asImpl());
+        return impl.ptr() && other.asImpl() && Ref { impl.get() }->definitelyEqual(*other.asProtectedImpl());
         });
 }
 
 PathImpl& Path::setImpl(Ref<PathImpl>&& impl)
 {
     auto& platformPathImpl = impl.get();
-    m_data = WTFMove(impl);
+    m_data = WTF::move(impl);
     return platformPathImpl;
 }
 
@@ -105,13 +105,18 @@ PlatformPathImpl& Path::ensurePlatformPathImpl()
     return downcast<PlatformPathImpl>(setImpl(PlatformPathImpl::create()));
 }
 
+Ref<PlatformPathImpl> Path::ensureProtectedPlatformPathImpl()
+{
+    return ensurePlatformPathImpl();
+}
+
 PathImpl& Path::ensureImpl()
 {
     if (auto segment = asSingle())
-        return setImpl(PathStream::create(WTFMove(*segment)));
+        return setImpl(PathStream::create(WTF::move(*segment)));
 
-    if (auto impl = asImpl())
-        return *impl.unsafeGet();
+    if (auto* impl = asImpl())
+        return *impl;
     ASSERT_NOT_REACHED(); // Impl is never empty.
     return setImpl(PathStream::create());
 }
@@ -128,18 +133,34 @@ void Path::ensureImplForTesting()
     ensureImpl();
 }
 
-RefPtr<PathImpl> Path::asImpl()
+PathImpl* Path::asImpl()
 {
     if (auto ref = std::get_if<DataRef<PathImpl>>(&m_data))
         return &ref->access();
     return nullptr;
 }
 
-RefPtr<const PathImpl> Path::asImpl() const
+const PathImpl* Path::asImpl() const
 {
     if (auto ref = std::get_if<DataRef<PathImpl>>(&m_data))
         return ref->ptr();
     return nullptr;
+}
+
+RefPtr<PathImpl> Path::asProtectedImpl()
+{
+    return asImpl();
+}
+
+RefPtr<const PathImpl> Path::asProtectedImpl() const
+{
+    return asImpl();
+}
+
+void Path::setNotTransient()
+{
+    if (RefPtr impl = asImpl())
+        impl->setNotTransient();
 }
 
 static FloatRoundedRect calculateEvenRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii)
@@ -230,14 +251,14 @@ void Path::addPath(const Path& path, const AffineTransform& transform)
         return;
 
     // FIXME: This should inspect the incoming path and add just the segments if possible.
-    ensurePlatformPathImpl().addPath(const_cast<Path&>(path).ensurePlatformPathImpl(), transform);
+    ensureProtectedPlatformPathImpl()->addPath(const_cast<Path&>(path).ensureProtectedPlatformPathImpl(), transform);
 }
 
 void Path::applySegments(const PathSegmentApplier& applier) const
 {
     if (auto segment = asSingle())
         applier(*segment);
-    else if (auto impl = asImpl())
+    else if (RefPtr impl = asImpl())
         impl->applySegments(applier);
 }
 
@@ -250,11 +271,11 @@ void Path::applyElements(const PathElementApplier& applier) const
     if (segment && segment->applyElements(applier))
         return;
 
-    auto impl = asImpl();
+    RefPtr impl = asImpl();
     if (impl && impl->applyElements(applier))
         return;
 
-    const_cast<Path&>(*this).ensurePlatformPathImpl().applyElements(applier);
+    const_cast<Path&>(*this).ensureProtectedPlatformPathImpl()->applyElements(applier);
 }
 
 void Path::clear()
@@ -276,11 +297,11 @@ void Path::transform(const AffineTransform& transform)
     if (segment && segment->transform(transform))
         return;
 
-    auto impl = asImpl();
+    RefPtr impl = asImpl();
     if (impl && impl->transform(transform))
         return;
 
-    ensurePlatformPathImpl().transform(transform);
+    ensureProtectedPlatformPathImpl()->transform(transform);
 }
 
 std::optional<PathSegment> Path::singleSegment() const
@@ -288,7 +309,7 @@ std::optional<PathSegment> Path::singleSegment() const
     if (auto segment = asSingle())
         return *segment;
 
-    if (auto impl = asImpl())
+    if (RefPtr impl = asImpl())
         return impl->singleSegment();
 
     return std::nullopt;
@@ -313,7 +334,11 @@ PlatformPathPtr Path::platformPath() const
     if (isEmpty())
         return PlatformPathImpl::emptyPlatformPath();
 
+#if USE(CG)
+    return const_cast<Path&>(*this).ensureProtectedPlatformPathImpl()->platformPath();
+#else
     return const_cast<Path&>(*this).ensurePlatformPathImpl().platformPath();
+#endif
 }
 
 #if USE(CG)
@@ -325,10 +350,8 @@ RetainPtr<CGPathRef> Path::protectedPlatformPath() const
 
 const Vector<PathSegment>* Path::segmentsIfExists() const
 {
-    if (auto impl = asImpl()) {
-        if (auto* stream = dynamicDowncast<PathStream>((*impl)))
-            return &stream->segments();
-    }
+    if (RefPtr impl = asImpl())
+        return impl->segmentsIfExists();
 
     return nullptr;
 }
@@ -362,7 +385,7 @@ bool Path::isClosed() const
     if (auto segment = asSingle())
         return segment->closesSubpath();
 
-    if (auto impl = asImpl())
+    if (RefPtr impl = asImpl())
         return impl->isClosed();
 
     return false;
@@ -389,7 +412,7 @@ bool Path::contains(const FloatPoint& point, WindRule rule) const
     if (isEmpty())
         return false;
 
-    return const_cast<Path&>(*this).ensurePlatformPathImpl().contains(point, rule);
+    return const_cast<Path&>(*this).ensureProtectedPlatformPathImpl()->contains(point, rule);
 }
 
 bool Path::strokeContains(const FloatPoint& point, NOESCAPE const Function<void(GraphicsContext&)>& strokeStyleApplier) const
@@ -399,7 +422,7 @@ bool Path::strokeContains(const FloatPoint& point, NOESCAPE const Function<void(
     if (isEmpty())
         return false;
 
-    return const_cast<Path&>(*this).ensurePlatformPathImpl().strokeContains(point, strokeStyleApplier);
+    return const_cast<Path&>(*this).ensureProtectedPlatformPathImpl()->strokeContains(point, strokeStyleApplier);
 }
 
 bool Path::hasSubpaths() const
@@ -407,7 +430,7 @@ bool Path::hasSubpaths() const
     if (auto* segment = asSingle())
         return PathStream::computeHasSubpaths(singleElementSpan(*segment));
 
-    if (auto impl = asImpl())
+    if (RefPtr impl = asImpl())
         return impl->hasSubpaths();
 
     return false;
@@ -418,7 +441,7 @@ FloatRect Path::fastBoundingRect() const
     if (auto* segment = asSingle())
         return segment->fastBoundingRect();
 
-    if (auto impl = asImpl())
+    if (RefPtr impl = asImpl())
         return impl->fastBoundingRect();
 
     return { };
@@ -429,7 +452,7 @@ FloatRect Path::boundingRect() const
     if (auto* segment = asSingle())
         return PathStream::computeBoundingRect(singleElementSpan(*segment));
 
-    if (auto impl = asImpl())
+    if (RefPtr impl = asImpl())
         return impl->boundingRect();
 
     return { };
@@ -437,7 +460,7 @@ FloatRect Path::boundingRect() const
 
 FloatRect Path::strokeBoundingRect(NOESCAPE const Function<void(GraphicsContext&)>& strokeStyleApplier) const
 {
-    return const_cast<Path&>(*this).ensurePlatformPathImpl().strokeBoundingRect(strokeStyleApplier);
+    return const_cast<Path&>(*this).ensureProtectedPlatformPathImpl()->strokeBoundingRect(strokeStyleApplier);
 }
 
 TextStream& operator<<(TextStream& ts, const Path& path)

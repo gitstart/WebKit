@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2005-2025 Apple Inc. All rights reserved.
- * Copyright (C) 2025 Samuel Weinig <sam@webkit.org>
+ * Copyright (C) 2025-2026 Samuel Weinig <sam@webkit.org>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -78,7 +78,7 @@
 #import "RenderMeter.h"
 #import "RenderObject.h"
 #import "RenderSlider.h"
-#import "RenderStyleSetters.h"
+#import "RenderStyle+SettersInlines.h"
 #import "RenderView.h"
 #import "Settings.h"
 #import "StylePadding.h"
@@ -113,7 +113,7 @@ RenderThemeIOS::RenderThemeIOS() = default;
 
 RenderThemeIOS::~RenderThemeIOS() = default;
 
-RenderTheme& RenderTheme::singleton()
+RenderThemeIOS& RenderTheme::singleton()
 {
     static NeverDestroyed<RenderThemeIOS> theme;
     return theme;
@@ -159,7 +159,7 @@ bool RenderThemeIOS::isControlStyled(const RenderStyle& style) const
 {
     // Buttons and MenulistButtons are styled if they contain a background image.
     if (style.usedAppearance() == StyleAppearance::PushButton || style.usedAppearance() == StyleAppearance::MenulistButton)
-        return !style.visitedDependentColor(CSSPropertyBackgroundColor).isVisible() || Style::hasImageInAnyLayer(style.backgroundLayers());
+        return !style.visitedDependentBackgroundColor().isVisible() || Style::hasImageInAnyLayer(style.backgroundLayers());
 
     if (style.usedAppearance() == StyleAppearance::TextField || style.usedAppearance() == StyleAppearance::TextArea || style.usedAppearance() == StyleAppearance::SearchField)
         return style.nativeAppearanceDisabled();
@@ -385,7 +385,7 @@ Style::PaddingBox RenderThemeIOS::popupInternalPaddingBox(const RenderStyle& sty
 
     if (style.usedAppearance() == StyleAppearance::MenulistButton) {
         // FIXME: Reduce code duplication with toTruncatedPaddingEdge.
-        auto value = Style::PaddingEdge::Fixed { static_cast<float>(std::trunc(padding + Style::evaluate<float>(style.borderTopWidth(), style.usedZoomForLength()))) / style.usedZoom() };
+        auto value = Style::PaddingEdge::Fixed { static_cast<float>(std::trunc(padding + Style::evaluate<float>(style.usedBorderTopWidth(),  Style::ZoomNeeded { }))) / style.usedZoom() };
 
         if (style.writingMode().isBidiRTL())
             return { 0_css_px, 0_css_px, 0_css_px, value };
@@ -432,7 +432,7 @@ void RenderThemeIOS::adjustRoundBorderRadius(RenderStyle& style, RenderBox& box)
     if (!style.writingMode().isHorizontal())
         borderRadius = { borderRadius.height(), borderRadius.width() };
 
-    style.setBorderRadius(WTFMove(borderRadius));
+    style.setBorderRadius(WTF::move(borderRadius));
 }
 
 static void applyCommonButtonPaddingToStyle(RenderStyle& style, const Element& element)
@@ -446,7 +446,7 @@ static void applyCommonButtonPaddingToStyle(RenderStyle& style, const Element& e
     if (!style.writingMode().isHorizontal())
         paddingBox = { paddingBox.left(), paddingBox.top(), paddingBox.right(), paddingBox.bottom() };
 
-    style.setPaddingBox(WTFMove(paddingBox));
+    style.setPaddingBox(WTF::move(paddingBox));
 }
 
 static void adjustSelectListButtonStyle(RenderStyle& style, const Element& element)
@@ -612,9 +612,9 @@ void RenderThemeIOS::paintMenuListButtonDecorations(const RenderBox& box, const 
     FloatPoint glyphOrigin;
     glyphOrigin.setY(logicalRect.center().y() - glyphSize.height() / 2.0f);
     if (!style.writingMode().isInlineFlipped())
-        glyphOrigin.setX(logicalRect.maxX() - glyphSize.width() - Style::evaluate<float>(box.style().borderEndWidth(), box.style().usedZoomForLength()) - Style::evaluate<float>(box.style().paddingEnd(), logicalRect.width(), box.style().usedZoomForLength()));
+        glyphOrigin.setX(logicalRect.maxX() - glyphSize.width() - Style::evaluate<float>(box.style().usedBorderWidthEnd(), Style::ZoomNeeded { }) - Style::evaluate<float>(box.style().paddingEnd(), logicalRect.width(), box.style().usedZoomForLength()));
     else
-        glyphOrigin.setX(logicalRect.x() + Style::evaluate<float>(box.style().borderEndWidth(), box.style().usedZoomForLength()) + Style::evaluate<float>(box.style().paddingEnd(), logicalRect.width(), box.style().usedZoomForLength()));
+        glyphOrigin.setX(logicalRect.x() + Style::evaluate<float>(box.style().usedBorderWidthEnd(), Style::ZoomNeeded { }) + Style::evaluate<float>(box.style().paddingEnd(), logicalRect.width(), box.style().usedZoomForLength()));
 
     if (!isHorizontalWritingMode)
         glyphOrigin = glyphOrigin.transposedPoint();
@@ -700,7 +700,7 @@ bool RenderThemeIOS::paintSliderTrack(const RenderElement& box, const PaintInfo&
     auto cornerWidth = trackClip.width() < defaultTrackThickness ? trackClip.width() / 2.0f : defaultTrackRadius;
     auto cornerHeight = trackClip.height() < defaultTrackThickness ? trackClip.height() / 2.0f : defaultTrackRadius;
 
-    FloatRoundedRect::Radii cornerRadii(cornerWidth, cornerHeight);
+    CornerRadii cornerRadii(cornerWidth, cornerHeight);
     FloatRoundedRect innerBorder(trackClip, cornerRadii);
 
     FloatRoundedRect outerBorder(innerBorder);
@@ -782,7 +782,7 @@ bool RenderThemeIOS::paintProgressBar(const RenderElement& renderer, const Paint
     constexpr auto barCornerRadiusInlineSize = 2.5f;
     constexpr auto barCornerRadiusBlockSize = 1.5f;
 
-    FloatRoundedRect::Radii barCornerRadii(
+    CornerRadii barCornerRadii(
         isHorizontalWritingMode ? barCornerRadiusInlineSize : barCornerRadiusBlockSize,
         isHorizontalWritingMode ? barCornerRadiusBlockSize : barCornerRadiusInlineSize
     );
@@ -912,9 +912,9 @@ void RenderThemeIOS::adjustButtonLikeControlStyle(RenderStyle& style, const Elem
     if (!style.accentColor().isAuto()) {
         auto tintColor = style.usedAccentColor(element.document().styleColorOptions(&style));
         if (isSubmitStyleButton(&element))
-            style.setBackgroundColor(WTFMove(tintColor));
+            style.setBackgroundColor(WTF::move(tintColor));
         else
-            style.setColor(WTFMove(tintColor));
+            style.setColor(WTF::move(tintColor));
     }
 
     if (!element.active())
@@ -924,7 +924,7 @@ void RenderThemeIOS::adjustButtonLikeControlStyle(RenderStyle& style, const Elem
     if (textColor.isValid())
         style.setColor(textColor.colorWithAlphaMultipliedBy(pressedStateOpacity));
 
-    auto backgroundColor = style.colorResolvingCurrentColor(style.backgroundColor());
+    auto backgroundColor = style.backgroundColorResolvingCurrentColor();
     if (backgroundColor.isValid())
         style.setBackgroundColor(backgroundColor.colorWithAlphaMultipliedBy(pressedStateOpacity));
 }
@@ -963,7 +963,7 @@ void RenderThemeIOS::adjustButtonStyle(RenderStyle& style, const Element* elemen
     if (!style.writingMode().isHorizontal())
         paddingBox = { paddingBox.left(), paddingBox.top(), paddingBox.right(), paddingBox.bottom() };
 
-    style.setPaddingBox(WTFMove(paddingBox));
+    style.setPaddingBox(WTF::move(paddingBox));
 
     if (!element)
         return;
@@ -1189,7 +1189,7 @@ const RenderThemeIOS::CSSValueToSystemColorMap& RenderThemeIOS::cssValueToSystem
                 LocalCurrentTraitCollection localTraitCollection(useDarkAppearance, useElevatedUserInterfaceLevel);
                 for (auto& cssValueSystemColorInformation : cssValueSystemColorInformationList()) {
                     if (auto color = systemColorFromCSSValueSystemColorInformation(cssValueSystemColorInformation, useDarkAppearance))
-                        map.add(CSSValueKey { cssValueSystemColorInformation.cssValueID, useDarkAppearance, useElevatedUserInterfaceLevel }, WTFMove(*color));
+                        map.add(CSSValueKey { cssValueSystemColorInformation.cssValueID, useDarkAppearance, useElevatedUserInterfaceLevel }, WTF::move(*color));
                 }
             }
         }
@@ -1200,7 +1200,7 @@ const RenderThemeIOS::CSSValueToSystemColorMap& RenderThemeIOS::cssValueToSystem
 
 void RenderThemeIOS::setCSSValueToSystemColorMap(CSSValueToSystemColorMap&& colorMap)
 {
-    globalCSSValueToSystemColorMap() = WTFMove(colorMap);
+    globalCSSValueToSystemColorMap() = WTF::move(colorMap);
 }
 
 void RenderThemeIOS::setFocusRingColor(const Color& color)
@@ -1251,7 +1251,7 @@ Color RenderThemeIOS::systemColor(CSSValueID cssValueID, OptionSet<StyleColorOpt
 
 Color RenderThemeIOS::pictureFrameColor(const RenderElement& buttonRenderer)
 {
-    return buttonRenderer.style().visitedDependentColor(CSSPropertyBorderTopColor);
+    return buttonRenderer.style().visitedDependentBorderTopColor();
 }
 
 #if ENABLE(ATTACHMENT_ELEMENT)
@@ -1538,7 +1538,7 @@ bool RenderThemeIOS::paintCheckbox(const RenderElement& box, const PaintInfo& pa
     constexpr auto checkboxHeight = 16.0f;
     constexpr auto checkboxCornerRadius = 5.0f;
 
-    FloatRoundedRect checkboxRect(rect, FloatRoundedRect::Radii(checkboxCornerRadius * rect.height() / checkboxHeight));
+    FloatRoundedRect checkboxRect(rect, CornerRadii(checkboxCornerRadius * rect.height() / checkboxHeight));
 
     auto controlStates = extractControlStyleStatesForRenderer(box);
     auto styleColorOptions = box.styleColorOptions();
@@ -1630,7 +1630,7 @@ bool RenderThemeIOS::paintRadio(const RenderElement& box, const PaintInfo& paint
 
     auto backgroundColor = checkboxRadioBackgroundColor(box.style(), controlStates, styleColorOptions);
 
-    FloatRoundedRect radioRect { rect, FloatRoundedRect::Radii(rect.width() / 2, rect.height() / 2) };
+    FloatRoundedRect radioRect { rect, CornerRadii(rect.width() / 2, rect.height() / 2) };
 
     if (controlStates.contains(ControlStyle::State::Checked)) {
         context.setFillColor(backgroundColor);
@@ -1695,7 +1695,7 @@ bool RenderThemeIOS::paintMeter(const RenderElement& renderer, const PaintInfo& 
     auto isHorizontalWritingMode = renderer.writingMode().isHorizontal();
 
     float cornerRadius = std::min(rect.width(), rect.height()) / 2.0f;
-    FloatRoundedRect roundedFillRect(rect, FloatRoundedRect::Radii(cornerRadius));
+    FloatRoundedRect roundedFillRect(rect, CornerRadii(cornerRadius));
     context.fillRoundedRect(roundedFillRect, systemColor(CSSValueWebkitControlBackground, styleColorOptions));
 
     roundedFillRect.inflateWithRadii(-nativeControlBorderInlineSize);
@@ -1805,7 +1805,7 @@ void RenderThemeIOS::paintSliderTicks(const RenderElement& box, const PaintInfo&
     constexpr int tickCornerRadius = 1;
 
     FloatRect tickRect;
-    FloatRoundedRect::Radii tickCornerRadii(tickCornerRadius);
+    CornerRadii tickCornerRadii(tickCornerRadius);
 
     bool isHorizontal = box.style().usedAppearance() == StyleAppearance::SliderHorizontal;
     if (isHorizontal) {
@@ -1878,7 +1878,7 @@ void RenderThemeIOS::paintColorWellDecorations(const RenderElement& renderer, co
 
     context.setStrokeThickness(strokeThickness);
     context.setStrokeStyle(StrokeStyle::SolidStroke);
-    context.setStrokeGradient(WTFMove(gradient));
+    context.setStrokeGradient(WTF::move(gradient));
     context.strokeEllipse(strokeRect);
 }
 

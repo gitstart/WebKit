@@ -37,6 +37,7 @@
 namespace WebCore {
 
 class Document;
+class Settings;
 
 struct CSSParserContext {
     WTF_DEPRECATED_MAKE_STRUCT_FAST_ALLOCATED(CSSParserContext);
@@ -63,22 +64,17 @@ struct CSSParserContext {
     bool gridLanesEnabled : 1 { false };
     bool cssAppearanceBaseEnabled : 1 { false };
     bool cssPaintingAPIEnabled : 1 { false };
-    bool cssShapeFunctionEnabled : 1 { false };
     bool cssTextDecorationLineErrorValues : 1 { false };
-    bool cssBackgroundClipBorderAreaEnabled : 1 { false };
     bool cssWordBreakAutoPhraseEnabled : 1 { false };
     bool popoverAttributeEnabled : 1 { false };
     bool sidewaysWritingModesEnabled : 1 { false };
     bool cssTextWrapPrettyEnabled : 1 { true };
-    bool thumbAndTrackPseudoElementsEnabled : 1 { false };
 #if ENABLE(SERVICE_CONTROLS)
     bool imageControlsEnabled : 1 { false };
 #endif
     bool colorLayersEnabled : 1 { false };
-    bool contrastColorEnabled : 1 { false };
     bool targetTextPseudoElementEnabled : 1 { false };
-    bool viewTransitionTypesEnabled : 1 { false };
-    bool cssProgressFunctionEnabled : 1 { false };
+    bool htmlEnhancedSelectPseudoElementsEnabled : 1 { false };
     bool cssRandomFunctionEnabled : 1 { false };
     bool cssTreeCountingFunctionsEnabled : 1 { false };
     bool cssURLModifiersEnabled : 1 { false };
@@ -87,7 +83,10 @@ struct CSSParserContext {
     bool cssDynamicRangeLimitMixEnabled : 1 { false };
     bool cssConstrainedDynamicRangeLimitEnabled : 1 { false };
     bool cssTextTransformMathAutoEnabled : 1 { false };
+    bool cssInternalAutoBaseParsingEnabled : 1 { false };
     bool webkitMediaTextTrackDisplayQuirkEnabled : 1 { false };
+    bool cssMathDepthEnabled : 1 { false };
+    bool openPseudoClassEnabled : 1 { false };
 
     // Settings, those affecting properties.
     CSSPropertySettings propertySettings;
@@ -95,6 +94,7 @@ struct CSSParserContext {
     CSSParserContext(CSSParserMode, const URL& baseURL = URL());
     WEBCORE_EXPORT CSSParserContext(const Document&);
     CSSParserContext(const Document&, const URL& baseURL, ASCIILiteral charset = ""_s);
+    CSSParserContext(const Settings&);
 
     void setUASheetMode();
 

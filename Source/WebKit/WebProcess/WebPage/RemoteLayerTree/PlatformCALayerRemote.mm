@@ -125,12 +125,12 @@ PlatformCALayerRemote::PlatformCALayerRemote(const PlatformCALayerRemote& other,
 Ref<PlatformCALayer> PlatformCALayerRemote::clone(PlatformCALayerClient* owner) const
 {
     RELEASE_ASSERT(m_context.get());
-    Ref clone = PlatformCALayerRemote::create(*this, owner, *protectedContext());
+    Ref clone = PlatformCALayerRemote::create(*this, owner, *protect(context()));
 
     updateClonedLayerProperties(clone);
 
     clone->setClonedLayer(this);
-    return WTFMove(clone);
+    return WTF::move(clone);
 }
 
 PlatformCALayerRemote::~PlatformCALayerRemote()
@@ -486,7 +486,7 @@ void PlatformCALayerRemote::adoptSublayers(PlatformCALayer& source)
 
 void PlatformCALayerRemote::addAnimationForKey(const String& key, PlatformCAAnimation& animation)
 {
-    auto addResult = m_animations.set(key, &animation);
+    auto addResult = m_animations.set(key, animation);
     bool appendToAddedAnimations = true;
     if (!addResult.isNewEntry) {
         // There is already an animation for this key. If the animation has not been sent to the UI
@@ -536,8 +536,8 @@ void PlatformCALayerRemote::animationStarted(const String& key, MonotonicTime be
 {
     auto it = m_animations.find(key);
     if (it != m_animations.end())
-        downcast<PlatformCAAnimationRemote>(*it->value).didStart(currentTimeToMediaTime(beginTime));
-    
+        downcast<PlatformCAAnimationRemote>(it->value.get()).didStart(currentTimeToMediaTime(beginTime));
+
     if (m_owner)
         m_owner->platformCALayerAnimationStarted(key, beginTime);
 }
@@ -553,7 +553,7 @@ void PlatformCALayerRemote::setMaskLayer(RefPtr<WebCore::PlatformCALayer>&& laye
     if (isEquivalentLayer(layer.get(), m_properties.maskLayerID))
         return;
 
-    PlatformCALayer::setMaskLayer(WTFMove(layer));
+    PlatformCALayer::setMaskLayer(WTF::move(layer));
 
     if (RefPtr layer = maskLayer())
         m_properties.maskLayerID = layer->layerID();
@@ -968,6 +968,20 @@ void PlatformCALayerRemote::setCornerRadius(float value)
     m_properties.notePropertiesChanged(LayerChange::CornerRadiusChanged);
 }
 
+WebCore::Path PlatformCALayerRemote::shadowPath() const
+{
+    return m_properties.shadowPath;
+}
+
+void PlatformCALayerRemote::setShadowPath(const WebCore::Path& path)
+{
+    if (m_properties.shadowPath.definitelyEqual(path))
+        return;
+
+    m_properties.shadowPath = path;
+    m_properties.notePropertiesChanged(LayerChange::ShadowPathChanged);
+}
+
 void PlatformCALayerRemote::setAntialiasesEdges(bool antialiases)
 {
     if (antialiases == m_properties.antialiasesEdges)
@@ -1164,7 +1178,7 @@ void PlatformCALayerRemote::setAppleVisualEffectData(WebCore::AppleVisualEffectD
 Ref<PlatformCALayer> PlatformCALayerRemote::createCompatibleLayer(PlatformCALayer::LayerType layerType, PlatformCALayerClient* client) const
 {
     RELEASE_ASSERT(m_context.get());
-    return PlatformCALayerRemote::create(layerType, client, *protectedContext());
+    return PlatformCALayerRemote::create(layerType, client, *protect(context()));
 }
 
 void PlatformCALayerRemote::enumerateRectsBeingDrawn(WebCore::GraphicsContext& context, void (^block)(WebCore::FloatRect))

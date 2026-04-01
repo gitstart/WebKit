@@ -70,13 +70,13 @@ public:
     void deref() const;
 
 private:
-    Ref<NetworkProcessProxy> protectedProcess();
+    NetworkProcessProxy& process() const { return m_process; }
 
     void platformCreate();
     void platformDestroy();
 
     WeakRef<NetworkProcessProxy> m_process;
-    HashMap<DownloadID, RefPtr<DownloadProxy>> m_downloads;
+    HashMap<DownloadID, Ref<DownloadProxy>> m_downloads;
 
     bool m_shouldTakeAssertion { false };
     RefPtr<ProcessAssertion> m_downloadUIAssertion;

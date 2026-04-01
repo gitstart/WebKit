@@ -44,32 +44,32 @@ struct CreateInternalTransformStreamResult {
 
 static ExceptionOr<CreateInternalTransformStreamResult> createInternalTransformStream(JSDOMGlobalObject&, JSC::JSValue transformer, JSC::JSValue writableStrategy, JSC::JSValue readableStrategy);
 
-ExceptionOr<Ref<TransformStream>> TransformStream::create(JSC::JSGlobalObject& globalObject, std::optional<JSC::Strong<JSC::JSObject>>&& transformer, std::optional<JSC::Strong<JSC::JSObject>>&& writableStrategy, std::optional<JSC::Strong<JSC::JSObject>>&& readableStrategy)
+ExceptionOr<Ref<TransformStream>> TransformStream::create(JSC::JSGlobalObject& globalObject, JSC::Strong<JSC::JSObject>&& transformer, JSC::Strong<JSC::JSObject>&& writableStrategy, JSC::Strong<JSC::JSObject>&& readableStrategy)
 {
     JSC::JSValue transformerValue = JSC::jsUndefined();
     if (transformer)
-        transformerValue = transformer->get();
+        transformerValue = transformer.get();
 
     JSC::JSValue writableStrategyValue = JSC::jsUndefined();
     if (writableStrategy)
-        writableStrategyValue = writableStrategy->get();
+        writableStrategyValue = writableStrategy.get();
 
     JSC::JSValue readableStrategyValue = JSC::jsUndefined();
     if (readableStrategy)
-        readableStrategyValue = readableStrategy->get();
+        readableStrategyValue = readableStrategy.get();
 
     auto result = createInternalTransformStream(*JSC::jsCast<JSDOMGlobalObject*>(&globalObject), transformerValue, writableStrategyValue, readableStrategyValue);
     if (result.hasException())
         return result.releaseException();
 
     auto transformResult = result.releaseReturnValue();
-    return adoptRef(*new TransformStream(transformResult.transform, WTFMove(transformResult.readable), WTFMove(transformResult.writable)));
+    return adoptRef(*new TransformStream(transformResult.transform, WTF::move(transformResult.readable), WTF::move(transformResult.writable)));
 }
 
 TransformStream::TransformStream(JSC::JSValue internalTransformStream, Ref<ReadableStream>&& readable, Ref<WritableStream>&& writable)
     : m_internalTransformStream(internalTransformStream)
-    , m_readable(WTFMove(readable))
-    , m_writable(WTFMove(writable))
+    , m_readable(WTF::move(readable))
+    , m_writable(WTF::move(writable))
 {
 }
 
@@ -80,7 +80,7 @@ static ExceptionOr<JSC::JSValue> invokeTransformStreamFunction(JSC::JSGlobalObje
     JSC::VM& vm = globalObject.vm();
     JSC::JSLockHolder lock(vm);
 
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
     auto function = globalObject.get(&globalObject, identifier);
     ASSERT(function.isCallable());

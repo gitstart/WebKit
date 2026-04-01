@@ -246,6 +246,16 @@ inline bool isProxyObjectSpeculation(SpeculatedType value)
     return value == SpecProxyObject;
 }
 
+inline bool isSetObjectSpeculation(SpeculatedType value)
+{
+    return value == SpecSetObject;
+}
+
+inline bool isMapIteratorSpeculation(SpeculatedType value)
+{
+    return value == SpecMapIteratorObject;
+}
+
 inline bool isGlobalProxySpeculation(SpeculatedType value)
 {
     return value == SpecGlobalProxy;

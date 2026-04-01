@@ -66,7 +66,7 @@ public:
         return adoptRef(*new VideoPresentationInterfaceMac(playbackSessionInterface));
     }
     ~VideoPresentationInterfaceMac();
-    PlaybackSessionInterfaceMac& playbackSessionInterface() const { return m_playbackSessionInterface.get(); }
+    PlaybackSessionInterfaceMac& playbackSessionInterface() const { return m_playbackSessionInterface; }
     RefPtr<VideoPresentationModel> videoPresentationModel() const { return m_videoPresentationModel.get(); }
     PlaybackSessionModel* playbackSessionModel() const { return m_playbackSessionInterface->playbackSessionModel(); }
     CheckedPtr<PlaybackSessionModel> checkedPlaybackSessionModel() const { return playbackSessionModel(); }
@@ -137,7 +137,7 @@ public:
     void decrementCheckedPtrCount() const final { CanMakeCheckedPtr::decrementCheckedPtrCount(); }
     void setDidBeginCheckedPtrDeletion() final { CanMakeCheckedPtr::setDidBeginCheckedPtrDeletion(); }
 
-    void setDocumentBecameVisibleCallback(Function<void()>&& callback) { m_documentBecameVisibleCallback = WTFMove(callback); }
+    void setDocumentBecameVisibleCallback(Function<void()>&& callback) { m_documentBecameVisibleCallback = WTF::move(callback); }
 
 private:
     WEBCORE_EXPORT VideoPresentationInterfaceMac(PlaybackSessionInterfaceMac&);

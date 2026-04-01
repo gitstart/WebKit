@@ -66,6 +66,7 @@ class SharedBuffer;
 class CustomUndoStep;
 class DataTransfer;
 class DeleteButtonController;
+class DocumentFragment;
 class DocumentMarker;
 class EditCommand;
 class EditCommandComposition;
@@ -73,6 +74,7 @@ class EditorClient;
 class EditorInternalCommand;
 class File;
 class HTMLElement;
+class HTMLImageElement;
 class HitTestResult;
 class KeyboardEvent;
 class KillRing;
@@ -212,8 +214,8 @@ public:
 
     CompositeEditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
 
-    Document& document() const { return m_document.get(); }
-    Ref<Document> protectedDocument() const { return m_document.get(); }
+    Document& document() const { return m_document; }
+    Ref<Document> protectedDocument() const { return m_document; }
 
     WEBCORE_EXPORT void ref() const;
     WEBCORE_EXPORT void deref() const;
@@ -316,7 +318,7 @@ public:
 #endif
 
     // Returns whether or not we should proceed with editing.
-    bool willApplyEditing(CompositeEditCommand&, Vector<RefPtr<StaticRange>>&&);
+    bool willApplyEditing(CompositeEditCommand&, Vector<Ref<StaticRange>>&&);
     bool willUnapplyEditing(const EditCommandComposition&) const;
     bool willReapplyEditing(const EditCommandComposition&) const;
 
@@ -442,6 +444,7 @@ public:
     WEBCORE_EXPORT bool cancelCompositionIfSelectionIsInvalid();
     WEBCORE_EXPORT std::optional<SimpleRange> compositionRange() const;
     WEBCORE_EXPORT bool getCompositionSelection(unsigned& selectionStart, unsigned& selectionEnd) const;
+    bool hasDeadKeyComposition() const;
 
     // getting international text input composition state (for use by LegacyInlineTextBox)
     Text* compositionNode() const { return m_compositionNode.get(); }
@@ -691,6 +694,7 @@ private:
     void selectComposition();
     enum SetCompositionMode { ConfirmComposition, CancelComposition };
     void setComposition(const String&, SetCompositionMode);
+    String compositionText() const;
 
     void changeSelectionAfterCommand(const VisibleSelection& newSelection, OptionSet<FrameSelection::SetSelectionOption>);
 
@@ -777,7 +781,7 @@ private:
 
     bool m_isGettingDictionaryPopupInfo { false };
     bool m_hasHandledAnyEditing { false };
-    HashSet<RefPtr<HTMLImageElement>> m_imageElementsToLoadBeforeRevealingSelection;
+    HashSet<Ref<HTMLImageElement>> m_imageElementsToLoadBeforeRevealingSelection;
 };
 
 inline void Editor::setStartNewKillRingSequence(bool flag)

@@ -123,7 +123,7 @@ static bool shouldSuppressEventDispatchInDOM(Node& node, Event& event)
     if (!event.isTrusted())
         return false;
 
-    RefPtr localMainFrame = node.protectedDocument()->localMainFrame();
+    RefPtr localMainFrame = protect(node.document())->localMainFrame();
     if (!localMainFrame)
         return false;
 
@@ -257,7 +257,7 @@ void EventDispatcher::dispatchEvent(Node& node, Event& event)
         RefPtr finalTarget = event.target();
         event.setTarget(RefPtr { EventPath::eventTargetRespectingTargetRules(node) });
         callDefaultEventHandlersInBubblingOrder(event, eventPath);
-        event.setTarget(WTFMove(finalTarget));
+        event.setTarget(WTF::move(finalTarget));
     }
 
     if (shouldClearTargetsAfterDispatch)

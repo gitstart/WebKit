@@ -26,6 +26,7 @@
 #pragma once
 
 #include "PageClient.h"
+#include <WebCore/LayerHostingContextIdentifier.h>
 #include <WebCore/PlatformTextAlternatives.h>
 #include <wtf/Forward.h>
 #include <wtf/WeakObjCPtr.h>
@@ -51,6 +52,7 @@ struct TextAnimationData;
 enum class TextAnimationType : uint8_t;
 
 class PageClientImplCocoa : public PageClient {
+    WTF_MAKE_TZONE_ALLOCATED(PageClientImplCocoa);
 public:
     PageClientImplCocoa(WKWebView *);
     virtual ~PageClientImplCocoa();
@@ -78,7 +80,9 @@ public:
 #endif
 
 #if ENABLE(MODEL_ELEMENT_IMMERSIVE)
-    void canEnterImmersiveElementFromURL(const URL&, CompletionHandler<void(bool)>&&) final;
+    void allowImmersiveElementFromURL(const URL&, CompletionHandler<void(bool)>&&) const final;
+    void presentImmersiveElement(const WebCore::LayerHostingContextIdentifier, CompletionHandler<void(bool)>&&) const final;
+    void dismissImmersiveElement(CompletionHandler<void()>&&) const final;
 #endif
 
     void underPageBackgroundColorWillChange() final;

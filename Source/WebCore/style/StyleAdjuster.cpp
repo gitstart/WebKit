@@ -58,7 +58,8 @@
 #include "Page.h"
 #include "PathOperation.h"
 #include "RenderBox.h"
-#include "RenderStyleSetters.h"
+#include "RenderStyle+GettersInlines.h"
+#include "RenderStyle+SettersInlines.h"
 #include "RenderTheme.h"
 #include "RenderView.h"
 #include "SVGElement.h"
@@ -69,6 +70,8 @@
 #include "Settings.h"
 #include "ShadowRoot.h"
 #include "StylableInlines.h"
+#include "StyleComputedStyle+InitialInlines.h"
+#include "StylePrimitiveNumericTypes+Evaluation.h"
 #include "StyleSelfAlignmentData.h"
 #include "StyleTextDecorationLine.h"
 #include "StyleUpdate.h"
@@ -245,7 +248,7 @@ static bool shouldInheritTextDecorationsInEffect(const RenderStyle& style, const
 #if ENABLE(VIDEO)
         if (!element)
             return false;
-        auto* parentNode = element->parentNode();
+        RefPtr parentNode = element->parentNode();
         return parentNode && parentNode->isUserAgentShadowRoot() && parentNode->parentOrShadowHostElement()->isMediaElement();
 #else
         return false;
@@ -289,10 +292,10 @@ static Style::TouchAction computeUsedTouchAction(const RenderStyle& style, Style
 
     bool hasDefaultTouchBehavior = isScrollableOverflow(style.overflowX()) || isScrollableOverflow(style.overflowY());
     if (hasDefaultTouchBehavior)
-        usedTouchAction = RenderStyle::initialTouchAction();
+        usedTouchAction = Style::ComputedStyle::initialTouchAction();
 
     auto touchAction = style.touchAction();
-    if (touchAction == RenderStyle::initialTouchAction())
+    if (touchAction == Style::ComputedStyle::initialTouchAction())
         return usedTouchAction;
 
     if (usedTouchAction.isNone() || touchAction.isNone())
@@ -318,6 +321,14 @@ bool Adjuster::adjustEventListenerRegionTypesForRootStyle(RenderStyle& rootStyle
     auto regionTypes = computeEventListenerRegionTypes(document, rootStyle, document, { });
     if (RefPtr window = document.window())
         regionTypes.add(computeEventListenerRegionTypes(document, rootStyle, *window, { }));
+
+#if ENABLE(TOUCH_EVENT_REGIONS)
+    // https://html.spec.whatwg.org/multipage/popover.html#popover-light-dismiss
+    if (document.needsPointerEventHandlingForPopover()) {
+        regionTypes.add(EventListenerRegionType::PointerDown);
+        regionTypes.add(EventListenerRegionType::PointerUp);
+    }
+#endif
 
     bool changed = regionTypes != rootStyle.eventListenerRegionTypes();
     rootStyle.setEventListenerRegionTypes(regionTypes);
@@ -358,8 +369,11 @@ OptionSet<EventListenerRegionType> Adjuster::computeEventListenerRegionTypes(con
     if (eventTarget.hasEventListeners()) {
         findListeners(eventNames().touchstartEvent, EventListenerRegionType::TouchStart, EventListenerRegionType::NonPassiveTouchStart);
         findListeners(eventNames().touchendEvent, EventListenerRegionType::TouchEnd, EventListenerRegionType::NonPassiveTouchEnd);
-        findListeners(eventNames().touchcancelEvent, EventListenerRegionType::TouchCancel, EventListenerRegionType::NonPassiveTouchCancel);
+        // `touchcancel` is sent after the event has already been cancelled. Calling preventDefault() has no effect, so we don't
+        // need a synchronous version.
+        findListeners(eventNames().touchcancelEvent, EventListenerRegionType::TouchCancel, EventListenerRegionType::TouchCancel);
         findListeners(eventNames().touchmoveEvent, EventListenerRegionType::TouchMove, EventListenerRegionType::NonPassiveTouchMove);
+        findListeners(eventNames().touchforcechangeEvent, EventListenerRegionType::TouchForceChange, EventListenerRegionType::NonPassiveTouchForceChange);
 
         findListeners(eventNames().pointerdownEvent, EventListenerRegionType::PointerDown, EventListenerRegionType::NonPassivePointerDown);
         findListeners(eventNames().pointerenterEvent, EventListenerRegionType::PointerEnter, EventListenerRegionType::NonPassivePointerEnter);
@@ -382,10 +396,11 @@ OptionSet<EventListenerRegionType> Adjuster::computeEventListenerRegionTypes(con
     if (eventTarget.hasInternalTouchEventHandling()) {
         types.add(EventListenerRegionType::TouchCancel);
         types.add(EventListenerRegionType::TouchEnd);
+        types.add(EventListenerRegionType::TouchForceChange);
         types.add(EventListenerRegionType::TouchMove);
         types.add(EventListenerRegionType::TouchStart);
-        types.add(EventListenerRegionType::NonPassiveTouchCancel);
         types.add(EventListenerRegionType::NonPassiveTouchEnd);
+        types.add(EventListenerRegionType::NonPassiveTouchForceChange);
         types.add(EventListenerRegionType::NonPassiveTouchMove);
         types.add(EventListenerRegionType::NonPassiveTouchStart);
     }
@@ -512,6 +527,15 @@ void Adjuster::adjustFirstLetterStyle(RenderStyle& style)
     style.setEffectiveDisplay(style.isFloating() ? DisplayType::Block : DisplayType::Inline);
 }
 
+void Adjuster::adjustFirstLineStyle(RenderStyle& style)
+{
+    if (style.pseudoElementType() != PseudoElementType::FirstLine)
+        return;
+
+    // Force inline display.
+    style.setEffectiveDisplay(DisplayType::Inline);
+}
+
 void Adjuster::adjust(RenderStyle& style) const
 {
     if (style.display() == DisplayType::Contents)
@@ -553,6 +577,7 @@ void Adjuster::adjust(RenderStyle& style) const
             style.setEffectiveDisplay(equivalentBlockDisplay(style));
 
         adjustFirstLetterStyle(style);
+        adjustFirstLineStyle(style);
 
         // FIXME: Don't support this mutation for pseudo styles like first-letter or first-line, since it's not completely
         // clear how that should work.
@@ -809,7 +834,7 @@ void Adjuster::adjust(RenderStyle& style) const
 
     // If the inherited value of justify-items includes the 'legacy' keyword (plus 'left', 'right' or
     // 'center'), 'legacy' computes to the the inherited value. Otherwise, 'auto' computes to 'normal'.
-    if (m_parentBoxStyle.justifyItems().resolve().positionType() == ItemPositionType::Legacy && style.justifyItems().resolve().position() == ItemPosition::Legacy)
+    if (m_parentBoxStyle.justifyItems().isLegacy() && style.justifyItems().isLegacyNone())
         style.setJustifyItems(m_parentBoxStyle.justifyItems());
 
 #if HAVE(CORE_MATERIAL)
@@ -939,7 +964,7 @@ void Adjuster::adjustSVGElementStyle(RenderStyle& style, const SVGElement& svgEl
 {
     // Only the root <svg> element in an SVG document fragment tree honors css position
     if (!svgElement.isOutermostSVGSVGElement())
-        style.setPosition(RenderStyle::initialPosition());
+        style.setPosition(Style::ComputedStyle::initialPosition());
 
     // SVG2: A new stacking context must be established at an SVG element for its descendants if:
     // - it is the root element
@@ -975,7 +1000,7 @@ void Adjuster::adjustSVGElementStyle(RenderStyle& style, const SVGElement& svgEl
     // (Legacy)RenderSVGRoot handles zooming for the whole SVG subtree, so foreignObject content should
     // not be scaled again.
     if (svgElement.hasTagName(SVGNames::foreignObjectTag))
-        style.setUsedZoom(RenderStyle::initialZoom());
+        style.setUsedZoom(Style::evaluate<float>(Style::ComputedStyle::initialZoom()));
 
     // SVG text layout code expects us to be a block-level style element.
     // While in theory any block level element would work (flex, grid etc), since we construct RenderBlockFlow for both foreign object and svg text,
@@ -1053,6 +1078,13 @@ void Adjuster::adjustForSiteSpecificQuirks(RenderStyle& style) const
             style.setOverflowY(Overflow::Auto);
     }
 
+    if (documentQuirks.needsGeforcenowWarningDisplayNoneQuirk()) {
+        static MainThreadNeverDestroyed<const AtomString> overlayClassName("cdk-overlay-container"_s);
+        static MainThreadNeverDestroyed<const AtomString> unsupportedClassName("unsupported-scenario-container"_s);
+        if (is<HTMLDivElement>(*m_element) && (m_element->hasClassName(overlayClassName) || m_element->hasClassName(unsupportedClassName)))
+            style.setEffectiveDisplay(DisplayType::None);
+    }
+
 #if PLATFORM(IOS_FAMILY)
     if (documentQuirks.needsGoogleMapsScrollingQuirk()) {
         static MainThreadNeverDestroyed<const AtomString> className("PUtLdf"_s);
@@ -1123,8 +1155,8 @@ void Adjuster::adjustForSiteSpecificQuirks(RenderStyle& style) const
         menuFadeInAnimation.setFillMode(AnimationFillMode::Forwards);
 
         auto& animations = style.ensureAnimations();
-        animations.append(WTFMove(menuGrowLeftAnimation));
-        animations.append(WTFMove(menuFadeInAnimation));
+        animations.append(WTF::move(menuGrowLeftAnimation));
+        animations.append(WTF::move(menuFadeInAnimation));
     }
 
 #if PLATFORM(IOS_FAMILY)
@@ -1141,11 +1173,14 @@ void Adjuster::adjustForSiteSpecificQuirks(RenderStyle& style) const
             style.setBackgroundColor({ WebCore::Color::transparentBlack });
     }
 #endif
+
+    if (documentQuirks.needsInstagramResizingReelsQuirk(*m_element, style, m_parentStyle))
+        style.setFlexGrow(1);
 }
 
 void Adjuster::propagateToDocumentElementAndInitialContainingBlock(Update& update, const Document& document)
 {
-    auto* body = document.body();
+    RefPtr body = document.body();
     auto* bodyStyle = body ? update.elementStyle(*body) : nullptr;
     auto* documentElementStyle = update.elementStyle(*document.documentElement());
 
@@ -1166,7 +1201,7 @@ void Adjuster::propagateToDocumentElementAndInitialContainingBlock(Update& updat
             return bodyStyle->writingMode().computedWritingMode();
         if (documentElementStyle->hasExplicitlySetWritingMode())
             return documentElementStyle->writingMode().computedWritingMode();
-        return RenderStyle::initialWritingMode();
+        return Style::ComputedStyle::initialWritingMode();
     }();
 
     auto direction = [&] {
@@ -1174,7 +1209,7 @@ void Adjuster::propagateToDocumentElementAndInitialContainingBlock(Update& updat
             return documentElementStyle->writingMode().computedTextDirection();
         if (shouldPropagateFromBody && bodyStyle && bodyStyle->hasExplicitlySetDirection())
             return bodyStyle->writingMode().computedTextDirection();
-        return RenderStyle::initialDirection();
+        return Style::ComputedStyle::initialDirection();
     }();
 
     // https://drafts.csswg.org/css-writing-modes-3/#icb
@@ -1184,7 +1219,7 @@ void Adjuster::propagateToDocumentElementAndInitialContainingBlock(Update& updat
         newRootStyle->setWritingMode(writingMode);
         newRootStyle->setDirection(direction);
         newRootStyle->setColumnStylesFromPaginationMode(document.view()->pagination().mode);
-        update.addInitialContainingBlockUpdate(WTFMove(newRootStyle));
+        update.addInitialContainingBlockUpdate(WTF::move(newRootStyle));
     }
 
     // https://drafts.csswg.org/css-writing-modes-3/#principal-flow
@@ -1202,14 +1237,14 @@ void Adjuster::propagateToDocumentElementAndInitialContainingBlock(Update& updat
 
 std::unique_ptr<RenderStyle> Adjuster::restoreUsedDocumentElementStyleToComputed(const RenderStyle& style)
 {
-    if (style.writingMode().computedWritingMode() == RenderStyle::initialWritingMode() && style.writingMode().computedTextDirection() == RenderStyle::initialDirection())
+    if (style.writingMode().computedWritingMode() == Style::ComputedStyle::initialWritingMode() && style.writingMode().computedTextDirection() == Style::ComputedStyle::initialDirection())
         return { };
 
     auto adjusted = RenderStyle::clonePtr(style);
     if (!style.hasExplicitlySetWritingMode())
-        adjusted->setWritingMode(RenderStyle::initialWritingMode());
+        adjusted->setWritingMode(Style::ComputedStyle::initialWritingMode());
     if (!style.hasExplicitlySetDirection())
-        adjusted->setDirection(RenderStyle::initialDirection());
+        adjusted->setDirection(Style::ComputedStyle::initialDirection());
 
     return adjusted;
 }
@@ -1228,10 +1263,10 @@ auto Adjuster::adjustmentForTextAutosizing(const RenderStyle& style, const Eleme
 {
     AdjustmentForTextAutosizing adjustmentForTextAutosizing;
 
-    auto& document = element.document();
-    if (!document.settings().textAutosizingEnabled()
-        || !document.settings().textAutosizingUsesIdempotentMode()
-        || document.settings().idempotentModeAutosizingOnlyHonorsPercentages())
+    Ref document = element.document();
+    if (!document->settings().textAutosizingEnabled()
+        || !document->settings().textAutosizingUsesIdempotentMode()
+        || document->settings().idempotentModeAutosizingOnlyHonorsPercentages())
         return adjustmentForTextAutosizing;
 
     auto newStatus = AutosizeStatus::computeStatus(style);
@@ -1241,7 +1276,7 @@ auto Adjuster::adjustmentForTextAutosizing(const RenderStyle& style, const Eleme
     if (style.textSizeAdjust().isNone())
         return adjustmentForTextAutosizing;
 
-    float initialScale = document.page() ? document.page()->initialScaleIgnoringContentSize() : 1;
+    float initialScale = document->page() ? document->page()->initialScaleIgnoringContentSize() : 1;
     auto adjustLineHeightIfNeeded = [&](auto computedFontSize) {
         auto lineHeight = style.specifiedLineHeight();
         constexpr static unsigned eligibleFontSize = 12;
@@ -1250,7 +1285,7 @@ auto Adjuster::adjustmentForTextAutosizing(const RenderStyle& style, const Eleme
 
         constexpr static float boostFactor = 1.25;
         auto minimumLineHeight = boostFactor * computedFontSize;
-        if (auto fixedLineHeight = lineHeight.tryFixed(); !fixedLineHeight || fixedLineHeight->resolveZoom(ZoomFactor { 1.0f, style.deviceScaleFactor() }) >= minimumLineHeight)
+        if (auto fixedLineHeight = lineHeight.tryFixed(); !fixedLineHeight || fixedLineHeight->resolveZoom(ZoomFactor { 1.0f }) >= minimumLineHeight)
             return;
 
         if (AutosizeStatus::probablyContainsASmallFixedNumberOfLines(style))
@@ -1290,7 +1325,7 @@ bool Adjuster::adjustForTextAutosizing(RenderStyle& style, AdjustmentForTextAuto
     if (auto newFontSize = adjustment.newFontSize) {
         auto fontDescription = style.fontDescription();
         fontDescription.setComputedSize(*newFontSize);
-        style.setFontDescription(WTFMove(fontDescription));
+        style.setFontDescription(WTF::move(fontDescription));
     }
     if (auto newLineHeight = adjustment.newLineHeight)
         style.setLineHeight(LineHeight::Fixed { *newLineHeight });

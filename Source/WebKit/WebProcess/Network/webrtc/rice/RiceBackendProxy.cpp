@@ -32,17 +32,23 @@
 namespace WebKit {
 using namespace WebCore;
 
-Ref<RiceBackendProxy> RiceBackendProxy::create(WebPageProxyIdentifier webPageProxyID, WebCore::RiceBackendClient& client)
+RefPtr<RiceBackendProxy> RiceBackendProxy::create(WebPageProxyIdentifier webPageProxyID, WebCore::RiceBackendClient& client)
 {
     Ref connection = WebProcess::singleton().ensureNetworkProcessConnection().connection();
     auto sendResult = connection->sendSync(Messages::NetworkConnectionToWebProcess::InitializeRiceBackend(webPageProxyID), 0);
+    if (!sendResult.succeeded())
+        return nullptr;
+
     auto [identifier] = sendResult.takeReply();
-    return adoptRef(*new RiceBackendProxy(WTFMove(connection), webPageProxyID, *identifier, client));
+    if (!identifier)
+        return nullptr;
+
+    return adoptRef(*new RiceBackendProxy(WTF::move(connection), webPageProxyID, *identifier, client));
 }
 
 RiceBackendProxy::RiceBackendProxy(Ref<IPC::Connection>&& connection, WebPageProxyIdentifier webPageProxyID, RiceBackendIdentifier identifier, WebCore::RiceBackendClient& client)
     : RiceBackend()
-    , m_connection(WTFMove(connection))
+    , m_connection(WTF::move(connection))
     , m_webPageProxyID(webPageProxyID)
     , m_client(&client)
     , m_identifier(identifier)
@@ -69,20 +75,23 @@ uint64_t RiceBackendProxy::messageSenderDestinationID() const
 
 void RiceBackendProxy::resolveAddress(const String& address, RiceBackend::ResolveAddressCallback&& callback)
 {
-    m_connection->sendWithAsyncReply(Messages::RiceBackend::ResolveAddress { address }, [callback = WTFMove(callback)](auto&& valueOrException) mutable {
+    m_connection->sendWithAsyncReply(Messages::RiceBackend::ResolveAddress { address }, [callback = WTF::move(callback)](auto&& valueOrException) mutable {
         if (!valueOrException.has_value()) {
             callback(valueOrException.error().toException());
             return;
         }
-        callback(WTFMove(*valueOrException));
+        callback(WTF::move(*valueOrException));
     }, messageSenderDestinationID());
 }
 
-Vector<String> RiceBackendProxy::gatherSocketAddresses(unsigned streamId)
+HashMap<WebCore::RiceBackend::Socket, String> RiceBackendProxy::gatherSocketAddresses(WebCore::ScriptExecutionContextIdentifier identifier, unsigned streamId)
 {
-    Vector<String> addresses;
+    HashMap<WebCore::RiceBackend::Socket, String> addresses;
     callOnMainRunLoopAndWait([&] {
-        auto sendResult = m_connection->sendSync(Messages::RiceBackend::GatherSocketAddresses { streamId }, messageSenderDestinationID());
+        auto sendResult = m_connection->sendSync(Messages::RiceBackend::GatherSocketAddresses { identifier, streamId }, messageSenderDestinationID(), 3_s);
+        if (!sendResult.succeeded())
+            return;
+
         auto [reply] = sendResult.takeReply();
         addresses = reply;
     });
@@ -91,17 +100,22 @@ Vector<String> RiceBackendProxy::gatherSocketAddresses(unsigned streamId)
 
 void RiceBackendProxy::notifyIncomingData(unsigned streamId, RTCIceProtocol protocol, String&& from, String&& to, WebCore::SharedMemory::Handle&& data)
 {
-    m_client->notifyIncomingData(streamId, protocol, WTFMove(from), WTFMove(to), WTFMove(data));
+    m_client->notifyIncomingData(streamId, protocol, WTF::move(from), WTF::move(to), WTF::move(data));
 }
 
 void RiceBackendProxy::send(unsigned streamId, RTCIceProtocol protocol, String&& from, String&& to, WebCore::SharedMemory::Handle&& data)
 {
-    MessageSender::send(Messages::RiceBackend::SendData { streamId, protocol, WTFMove(from), WTFMove(to), WTFMove(data) });
+    MessageSender::send(Messages::RiceBackend::SendData { streamId, protocol, WTF::move(from), WTF::move(to), WTF::move(data) });
 }
 
 void RiceBackendProxy::finalizeStream(unsigned streamId)
 {
     MessageSender::send(Messages::RiceBackend::FinalizeStream { streamId });
+}
+
+void RiceBackendProxy::setSocketTypeOfService(unsigned streamId, unsigned value)
+{
+    MessageSender::send(Messages::RiceBackend::SetSocketTypeOfService { streamId, value });
 }
 
 } // namespace WebKit

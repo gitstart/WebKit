@@ -57,7 +57,7 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(History);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(History);
 
 History::History(LocalDOMWindow& window)
     : LocalDOMWindowProperty(&window)
@@ -66,7 +66,7 @@ History::History(LocalDOMWindow& window)
 
 static bool isDocumentFullyActive(LocalFrame* frame)
 {
-    return frame && frame->protectedDocument()->isFullyActive();
+    return frame && protect(frame->document())->isFullyActive();
 }
 
 static Exception documentNotFullyActive()
@@ -306,12 +306,12 @@ ExceptionOr<void> History::stateObjectAdded(RefPtr<SerializedScriptValue>&& data
         return result.releaseException();
 
     if (document->settings().navigationAPIEnabled()) {
-        Ref navigation = document->protectedWindow()->navigation();
+        Ref navigation = protect(document->window())->navigation();
         if (!navigation->dispatchPushReplaceReloadNavigateEvent(fullURL, historyBehavior == NavigationHistoryBehavior::Push ? NavigationNavigationType::Push : NavigationNavigationType::Replace, true, nullptr, data.get()))
             return { };
     }
 
-    frame->loader().updateURLAndHistory(fullURL, WTFMove(data), historyBehavior);
+    frame->loader().updateURLAndHistory(fullURL, WTF::move(data), historyBehavior);
     return { };
 }
 

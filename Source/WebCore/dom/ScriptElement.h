@@ -47,9 +47,9 @@ class ScriptElement {
 public:
     virtual ~ScriptElement() = default;
 
-    Element& element() { return m_element.get(); }
-    const Element& element() const { return m_element.get(); }
-    Ref<Element> protectedElement() const { return m_element.get(); }
+    Element& element() { return m_element; }
+    const Element& element() const { return m_element; }
+    Ref<Element> protectedElement() const { return m_element; }
 
     bool prepareScript(const TextPosition& scriptStartPosition = TextPosition());
 
@@ -59,6 +59,7 @@ public:
     void executeModuleScript(LoadableModuleScript&);
     void registerImportMap(const ScriptSourceCode&);
     void registerSpeculationRules(const ScriptSourceCode&);
+    void unregisterSpeculationRules();
 
     void executePendingScript(PendingScript&);
 

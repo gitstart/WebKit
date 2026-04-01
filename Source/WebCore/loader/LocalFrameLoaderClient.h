@@ -39,6 +39,7 @@
 #include <wtf/Expected.h>
 #include <wtf/Forward.h>
 #include <wtf/Platform.h>
+#include <wtf/TZoneMalloc.h>
 #include <wtf/WallTime.h>
 #include <wtf/WeakRef.h>
 #include <wtf/text/WTFString.h>
@@ -114,7 +115,7 @@ struct StringWithDirection;
 using BackForwardItemIdentifier = ProcessQualified<ObjectIdentifier<BackForwardItemIdentifierType>>;
 
 class WEBCORE_EXPORT LocalFrameLoaderClient : public FrameLoaderClient {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(LocalFrameLoaderClient, Loader);
+    WTF_MAKE_TZONE_ALLOCATED(LocalFrameLoaderClient);
 public:
     ~LocalFrameLoaderClient();
 
@@ -245,6 +246,7 @@ public:
     virtual void didFinishLoad() = 0;
     virtual void prepareForDataSourceReplacement() = 0;
 
+    virtual Ref<DocumentLoader> createDocumentLoader(ResourceRequest&&, SubstituteData&&, ResourceRequest&&) = 0;
     virtual Ref<DocumentLoader> createDocumentLoader(ResourceRequest&&, SubstituteData&&) = 0;
     virtual void updateCachedDocumentLoader(DocumentLoader&) = 0;
     virtual void setTitle(const StringWithDirection&, const URL&) = 0;
@@ -284,6 +286,7 @@ public:
     virtual IntPoint accessibilityRemoteFrameOffset() = 0;
 #if ENABLE(ACCESSIBILITY_ISOLATED_TREE)
     virtual void setIsolatedTree(Ref<WebCore::AXIsolatedTree>&&) = 0;
+    virtual RefPtr<WebCore::AXIsolatedTree> isolatedTree() const = 0;
 #endif
     virtual void willCacheResponse(DocumentLoader*, ResourceLoaderIdentifier, NSCachedURLResponse*, CompletionHandler<void(NSCachedURLResponse *)>&&) const = 0;
     virtual std::optional<double> dataDetectionReferenceDate() { return std::nullopt; }

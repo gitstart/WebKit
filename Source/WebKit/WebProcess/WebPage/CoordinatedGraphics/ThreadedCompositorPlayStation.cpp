@@ -27,7 +27,7 @@
 #include "ThreadedCompositorPlayStation.h"
 
 #if USE(COORDINATED_GRAPHICS)
-#include "AcceleratedSurface.h"
+#include "AcceleratedSurfacePlayStation.h"
 #include "CompositingRunLoop.h"
 #include "CoordinatedSceneState.h"
 #include "LayerTreeHostPlayStation.h"
@@ -263,10 +263,10 @@ void ThreadedCompositor::paintToCurrentGLContext(const TransformationMatrix& mat
         if (m_damage.shouldNotifyFrameDamageForTesting && m_layerTreeHost)
             m_layerTreeHost->notifyFrameDamageForTesting(frameDamage.regionForTesting());
 
-        m_surface->setFrameDamage(WTFMove(frameDamage));
+        m_surface->setFrameDamage(WTF::move(frameDamage));
 
         if (m_damage.flags->contains(DamagePropagationFlags::UseForCompositing)) {
-            const auto& damageSinceLastSurfaceUse = m_surface->frameDamageSinceLastUse();
+            const auto& damageSinceLastSurfaceUse = m_surface->renderTargetDamage();
             if (damageSinceLastSurfaceUse && !FloatRect(damageSinceLastSurfaceUse->bounds()).contains(clipRect))
                 rectContainingRegionThatActuallyChanged = FloatRoundedRect(damageSinceLastSurfaceUse->bounds());
 
@@ -277,6 +277,8 @@ void ThreadedCompositor::paintToCurrentGLContext(const TransformationMatrix& mat
     if (rectContainingRegionThatActuallyChanged)
         m_textureMapper->beginClip(TransformationMatrix(), *rectContainingRegionThatActuallyChanged);
 #endif
+
+    m_surface->clear({ });
 
     WTFBeginSignpost(this, PaintTextureMapperLayerTree);
     currentRootLayer.paint(*m_textureMapper);

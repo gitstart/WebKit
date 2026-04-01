@@ -111,8 +111,8 @@ namespace TestWebKitAPI {
 
 static IMP makeFingerprintingScriptsRequestHandler(NSArray<NSString *> *hostNames, Vector<WPScriptAccessCategories>&& allowedCategories)
 {
-    return imp_implementationWithBlock([hostNames = RetainPtr { hostNames }, allowedCategories = WTFMove(allowedCategories)](WPResources *, WPResourceRequestOptions *, void(^completion)(NSArray<WPFingerprintingScript *> *, NSError *)) mutable {
-        RunLoop::mainSingleton().dispatch([hostNames = WTFMove(hostNames), allowedCategories = WTFMove(allowedCategories), completion = makeBlockPtr(completion)] mutable {
+    return imp_implementationWithBlock([hostNames = RetainPtr { hostNames }, allowedCategories = WTF::move(allowedCategories)](WPResources *, WPResourceRequestOptions *, void(^completion)(NSArray<WPFingerprintingScript *> *, NSError *)) mutable {
+        RunLoop::mainSingleton().dispatch([hostNames = WTF::move(hostNames), allowedCategories = WTF::move(allowedCategories), completion = makeBlockPtr(completion)] mutable {
             RetainPtr scripts = [NSMutableArray arrayWithCapacity:[hostNames count]];
             size_t index = 0;
             for (NSString *host in hostNames.get()) {
@@ -138,7 +138,7 @@ public:
         m_swizzler = makeUnique<InstanceMethodSwizzler>(
             PAL::getWPResourcesClassSingleton(),
             @selector(requestFingerprintingScripts:completionHandler:),
-            makeFingerprintingScriptsRequestHandler(hosts, WTFMove(allowedCategories))
+            makeFingerprintingScriptsRequestHandler(hosts, WTF::move(allowedCategories))
         );
     }
 
@@ -157,7 +157,9 @@ static RetainPtr<TestWKWebView> setUpWebViewForFingerprintingTests(NSString *pag
 {
     RetainPtr configuration = [WKWebViewConfiguration _test_configurationWithTestPlugInClassName:@"WebProcessPlugInWithInternals" configureJSCForTesting:YES];
     for (_WKFeature *feature in WKPreferences._features) {
-        if ([feature.key isEqualToString:@"ScriptTrackingPrivacyProtectionsEnabled"])
+        if ([feature.key isEqualToString:@"ScriptTrackingPrivacyProtectionsEnabled"]
+            || [feature.key isEqualToString:@"ScriptTrackingPrivacyNetworkRequestBlockingEnabled"]
+            || [feature.key isEqualToString:@"ConsistentQueryParameterFilteringQuirkEnabled"])
             [[configuration preferences] _setEnabled:YES forFeature:feature];
     }
 
@@ -295,6 +297,23 @@ TEST(ScriptTrackingPrivacyTests, QueryParameters)
 
     EXPECT_WK_STREQ("test://top-domain.org/index.html?uid=Hv9U23Hfco08", [webView stringByEvaluatingJavaScript:@"window.urlForPureScript"]);
     EXPECT_WK_STREQ("test://top-domain.org/index.html", [webView stringByEvaluatingJavaScript:@"window.urlForTaintedScript"]);
+}
+
+TEST(ScriptTrackingPrivacyTests, ConsistentQueryParameters)
+{
+    if (!supportsFingerprintingScriptRequests())
+        return;
+
+    auto simpleConsistentIndexHTML = makeStringByReplacingAll(simpleIndexHTML, "tainted.net"_s, "consistentQueryParameterFiltering.internal"_s);
+
+    RetainPtr webView = setUpWebViewForFingerprintingTests(@"test://top-domain.org/index.html?uid=Hv9U23Hfco08", @{
+        @"test://top-domain.org/index.html?uid=Hv9U23Hfco08" : simpleConsistentIndexHTML.createNSString().autorelease(),
+        @"test://pure.com/script.js" : @"window.urlForPureScript = document.URL;",
+        @"test://consistentQueryParameterFiltering.internal/script.js" : @"window.urlFor3PScript = document.URL;"
+    });
+
+    EXPECT_WK_STREQ("test://top-domain.org/index.html?uid=Hv9U23Hfco08", [webView stringByEvaluatingJavaScript:@"window.urlForPureScript"]);
+    EXPECT_WK_STREQ("test://top-domain.org/index.html", [webView stringByEvaluatingJavaScript:@"window.urlFor3PScript"]);
 }
 
 TEST(ScriptTrackingPrivacyTests, Canvas2D)
@@ -691,7 +710,7 @@ TEST(ScriptTrackingPrivacyTests, ScriptAccessCategories)
         @"test://top-domain.org/script.js" : @"internals.enableMockSpeechSynthesizer()",
         @"test://pure.com/script.js" : makeTestScript(@"pure"),
         @"test://tainted.net/script.js" : makeTestScript(@"tainted"),
-    });
+    }, nil, _WKWebsiteNetworkConnectionIntegrityPolicyEnabled);
 
     RetainPtr pureTextFieldValue = [webView stringByEvaluatingJavaScript:@"window.pureTextFieldValue"];
     EXPECT_WK_STREQ(pureTextFieldValue.get(), @"textFieldValue");
@@ -704,6 +723,201 @@ TEST(ScriptTrackingPrivacyTests, ScriptAccessCategories)
 
     auto taintedNumberOfVoices = [[webView objectByEvaluatingJavaScript:@"window.taintedNumberOfVoices"] intValue];
     EXPECT_EQ(taintedNumberOfVoices, 0);
+}
+
+TEST(ScriptTrackingPrivacyTests, ScriptAccessCategoriesAppendTaintedInlineScript)
+{
+    if (!supportsFingerprintingScriptRequests())
+        return;
+
+    FingerprintingScriptsRequestSwizzler swizzler {
+        @[ @"tainted.net" ],
+        { WPScriptAccessCategoryFormControls | WPScriptAccessCategoryQueryParameters }
+    };
+
+    static constexpr auto testHTML = R"markup(
+        <!DOCTYPE html>
+        <html>
+            <head><script src="test://top-domain.org/script.js"></script></head>
+            <body>
+                <input type="text" id="textField" value="textFieldValue">
+                <script src="test://tainted.net/script.js"></script>
+            </body>
+        </html>
+    )markup"_s;
+
+    auto taintedAppendScript = @"(function() {"
+        "  var script = document.createElement('script');"
+        "  script.textContent = 'window.appendedNumberOfVoices = speechSynthesis.getVoices().length; window.appendedTextFieldValue = document.getElementById(\"textField\").value;';"
+        "  document.body.appendChild(script);"
+        "})()";
+
+    RetainPtr webView = setUpWebViewForFingerprintingTests(@"test://top-domain.org/index.html", @{
+        @"test://top-domain.org/index.html" : testHTML.createNSString().autorelease(),
+        @"test://top-domain.org/script.js" : @"internals.enableMockSpeechSynthesizer()",
+        @"test://tainted.net/script.js" : taintedAppendScript,
+    }, nil, _WKWebsiteNetworkConnectionIntegrityPolicyEnabled);
+
+    EXPECT_EQ([[webView objectByEvaluatingJavaScript:@"window.appendedNumberOfVoices"] intValue], 0);
+    EXPECT_WK_STREQ([webView stringByEvaluatingJavaScript:@"window.appendedTextFieldValue"], @"textFieldValue");
+}
+
+TEST(ScriptTrackingPrivacyTests, ScriptAccessCategoriesWithTimeout)
+{
+    if (!supportsFingerprintingScriptRequests())
+        return;
+
+    FingerprintingScriptsRequestSwizzler swizzler {
+        @[ @"tainted.net" ],
+        { WPScriptAccessCategoryFormControls | WPScriptAccessCategoryQueryParameters }
+    };
+
+    static constexpr auto testHTML = R"markup(
+        <!DOCTYPE html>
+        <html>
+            <head><script src="test://top-domain.org/script.js"></script></head>
+            <body>
+                <input type="text" id="textField" value="textFieldValue">
+                <script src="test://tainted.net/script.js"></script>
+            </body>
+        </html>
+    )markup"_s;
+
+    auto taintedTimeoutScript = @"(function() {"
+        "  setTimeout(function() {"
+        "    window.taintedNumberOfVoices = speechSynthesis.getVoices().length;"
+        "    window.taintedTextFieldValue = document.getElementById('textField').value;"
+        "  }, 0);"
+        "})()";
+
+    RetainPtr webView = setUpWebViewForFingerprintingTests(@"test://top-domain.org/index.html", @{
+        @"test://top-domain.org/index.html" : testHTML.createNSString().autorelease(),
+        @"test://top-domain.org/script.js" : @"internals.enableMockSpeechSynthesizer()",
+        @"test://tainted.net/script.js" : taintedTimeoutScript,
+    }, nil, _WKWebsiteNetworkConnectionIntegrityPolicyEnabled);
+
+    Util::waitForConditionWithLogging([&] -> bool {
+        return ![[webView objectByEvaluatingJavaScript:@"window.taintedNumberOfVoices"] isEqual:[NSNull null]];
+    }, 5, @"Timed out waiting for setTimeout callback.");
+
+    EXPECT_EQ([[webView objectByEvaluatingJavaScript:@"window.taintedNumberOfVoices"] intValue], 0);
+    EXPECT_WK_STREQ([webView stringByEvaluatingJavaScript:@"window.taintedTextFieldValue"], @"textFieldValue");
+}
+
+TEST(ScriptTrackingPrivacyTests, FetchBlocked)
+{
+    if (!supportsFingerprintingScriptRequests())
+        return;
+
+    FingerprintingScriptsRequestSwizzler swizzler { @[ @"tainted.net" ] };
+
+    auto makeFetchScript = ^(NSString *pureOrTainted) {
+        return [NSString stringWithFormat:@"(async function() {"
+            "  try {"
+            "    const response = await fetch('test://top-domain.org/data.json');"
+            "    const data = await response.text();"
+            "    window.%@FetchResult = 'success: ' + data;"
+            "  } catch (e) {"
+            "    window.%@FetchResult = 'error: ' + e.message;"
+            "  }"
+            "})()", pureOrTainted, pureOrTainted];
+    };
+
+    RetainPtr webView = setUpWebViewForFingerprintingTests(@"test://top-domain.org/index.html", @{
+        @"test://top-domain.org/index.html" : simpleIndexHTML.createNSString().autorelease(),
+        @"test://top-domain.org/data.json" : @"{\"value\": 42}",
+        @"test://pure.com/script.js" : makeFetchScript(@"pure"),
+        @"test://tainted.net/script.js" : makeFetchScript(@"tainted"),
+    });
+
+    Util::waitForConditionWithLogging([&] -> bool {
+        return [[webView stringByEvaluatingJavaScript:@"window.pureFetchResult || ''"] length] > 0
+            && [[webView stringByEvaluatingJavaScript:@"window.taintedFetchResult || ''"] length] > 0;
+    }, 10, @"Timed out waiting for fetch results.");
+
+    RetainPtr pureFetchResult = [webView stringByEvaluatingJavaScript:@"window.pureFetchResult"];
+    EXPECT_TRUE([pureFetchResult hasPrefix:@"success:"]);
+
+    RetainPtr taintedFetchResult = [webView stringByEvaluatingJavaScript:@"window.taintedFetchResult"];
+    EXPECT_TRUE([taintedFetchResult hasPrefix:@"error:"]);
+}
+
+TEST(ScriptTrackingPrivacyTests, XHRBlocked)
+{
+    if (!supportsFingerprintingScriptRequests())
+        return;
+
+    FingerprintingScriptsRequestSwizzler swizzler { @[ @"tainted.net" ] };
+
+    auto makeXHRScript = ^(NSString *pureOrTainted) {
+        return [NSString stringWithFormat:@"(function() {"
+            "  var xhr = new XMLHttpRequest();"
+            "  xhr.open('GET', 'test://top-domain.org/data.json', true);"
+            "  xhr.onload = function() {"
+            "    window.%@XHRResult = 'success: ' + xhr.responseText;"
+            "  };"
+            "  xhr.onerror = function() {"
+            "    window.%@XHRResult = 'error';"
+            "  };"
+            "  try {"
+            "    xhr.send();"
+            "  } catch (e) {"
+            "    window.%@XHRResult = 'exception: ' + e.message;"
+            "  }"
+            "})()", pureOrTainted, pureOrTainted, pureOrTainted];
+    };
+
+    RetainPtr webView = setUpWebViewForFingerprintingTests(@"test://top-domain.org/index.html", @{
+        @"test://top-domain.org/index.html" : simpleIndexHTML.createNSString().autorelease(),
+        @"test://top-domain.org/data.json" : @"{\"value\": 42}",
+        @"test://pure.com/script.js" : makeXHRScript(@"pure"),
+        @"test://tainted.net/script.js" : makeXHRScript(@"tainted"),
+    });
+
+    Util::waitForConditionWithLogging([&] -> bool {
+        return [[webView stringByEvaluatingJavaScript:@"window.pureXHRResult || ''"] length] > 0
+            && [[webView stringByEvaluatingJavaScript:@"window.taintedXHRResult || ''"] length] > 0;
+    }, 10, @"Timed out waiting for XHR results.");
+
+    RetainPtr pureXHRResult = [webView stringByEvaluatingJavaScript:@"window.pureXHRResult"];
+    EXPECT_TRUE([pureXHRResult hasPrefix:@"success:"]);
+
+    RetainPtr taintedXHRResult = [webView stringByEvaluatingJavaScript:@"window.taintedXHRResult"];
+    EXPECT_TRUE([taintedXHRResult isEqualToString:@"error"]);
+}
+
+TEST(ScriptTrackingPrivacyTests, SyncXHRBlocked)
+{
+    if (!supportsFingerprintingScriptRequests())
+        return;
+
+    FingerprintingScriptsRequestSwizzler swizzler { @[ @"tainted.net" ] };
+
+    auto makeSyncXHRScript = ^(NSString *pureOrTainted) {
+        return [NSString stringWithFormat:@"(function() {"
+            "  var xhr = new XMLHttpRequest();"
+            "  xhr.open('GET', 'test://top-domain.org/data.json', false);"
+            "  try {"
+            "    xhr.send();"
+            "    window.%@SyncXHRResult = 'success: ' + xhr.responseText;"
+            "  } catch (e) {"
+            "    window.%@SyncXHRResult = 'exception: ' + e.name;"
+            "  }"
+            "})()", pureOrTainted, pureOrTainted];
+    };
+
+    RetainPtr webView = setUpWebViewForFingerprintingTests(@"test://top-domain.org/index.html", @{
+        @"test://top-domain.org/index.html" : simpleIndexHTML.createNSString().autorelease(),
+        @"test://top-domain.org/data.json" : @"{\"value\": 42}",
+        @"test://pure.com/script.js" : makeSyncXHRScript(@"pure"),
+        @"test://tainted.net/script.js" : makeSyncXHRScript(@"tainted"),
+    });
+
+    RetainPtr pureSyncXHRResult = [webView stringByEvaluatingJavaScript:@"window.pureSyncXHRResult"];
+    EXPECT_TRUE([pureSyncXHRResult hasPrefix:@"success:"]);
+
+    RetainPtr taintedSyncXHRResult = [webView stringByEvaluatingJavaScript:@"window.taintedSyncXHRResult"];
+    EXPECT_WK_STREQ(taintedSyncXHRResult.get(), @"exception: NetworkError");
 }
 
 } // namespace TestWebKitAPI

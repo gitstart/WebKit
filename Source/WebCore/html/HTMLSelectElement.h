@@ -3,7 +3,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004-2025 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2026 Apple Inc. All rights reserved.
  * Copyright (C) 2010-2015 Google Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
@@ -27,19 +27,38 @@
 
 #include <WebCore/HTMLFormControlElement.h>
 #include <WebCore/HTMLOptionElement.h>
+#include <WebCore/PopupMenuClient.h>
 #include <WebCore/TypeAhead.h>
 #include <wtf/CompletionHandler.h>
+
+#if PLATFORM(COCOA)
+#define POPUP_MENU_PULLS_DOWN 0
+#else
+#define POPUP_MENU_PULLS_DOWN 1
+#endif
 
 namespace WebCore {
 
 class HTMLOptionsCollection;
+class ShadowRoot;
 
-class HTMLSelectElement : public HTMLFormControlElement, private TypeAheadDataSource {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(HTMLSelectElement);
+#if !PLATFORM(IOS_FAMILY)
+class PopupMenu;
+#endif
+
+class HTMLSelectElement final : public HTMLFormControlElement, public PopupMenuClient, private TypeAheadDataSource {
+    WTF_MAKE_TZONE_ALLOCATED(HTMLSelectElement);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(HTMLSelectElement);
 public:
+    USING_CAN_MAKE_WEAKPTR(HTMLElement);
+
+    // PopupMenuClient ref-counting (disambiguate from FormAssociatedElement)
+    void ref() const final { HTMLFormControlElement::ref(); }
+    void deref() const final { HTMLFormControlElement::deref(); }
+
     static Ref<HTMLSelectElement> create(const QualifiedName&, Document&, HTMLFormElement*);
     static Ref<HTMLSelectElement> create(Document&);
+    ~HTMLSelectElement();
 
     enum class ExcludeOptGroup : bool { No, Yes };
     static HTMLSelectElement* findOwnerSelect(ContainerNode*, ExcludeOptGroup);
@@ -90,13 +109,45 @@ public:
 
     ExceptionOr<void> showPicker();
 
+    void showPopup();
+#if !PLATFORM(IOS_FAMILY)
+    void hidePopup();
+    bool popupIsVisible() const { return m_popupIsVisible; }
+#endif
+
+    void didUpdateActiveOption(int optionIndex);
+
+    // PopupMenuClient methods
+    void valueChanged(unsigned listIndex, bool fireOnChange = true) override;
+    String itemText(unsigned listIndex) const override;
+    String itemToolTip(unsigned listIndex) const override;
+    String itemAccessibilityText(unsigned listIndex) const override;
+    bool itemIsEnabled(unsigned listIndex) const override;
+    PopupMenuStyle itemStyle(unsigned listIndex) const override;
+    PopupMenuStyle menuStyle() const override;
+    int listSize() const override;
+    void popupDidHide() override;
+    bool itemIsSeparator(unsigned listIndex) const override;
+    bool itemIsLabel(unsigned listIndex) const override;
+    bool itemIsSelected(unsigned listIndex) const override;
+    bool shouldPopOver() const override { return !POPUP_MENU_PULLS_DOWN; }
+#if !PLATFORM(COCOA)
+    void setTextFromItem(unsigned listIndex) override;
+#endif
+#if PLATFORM(WIN)
+    int clientInsetLeft() const override;
+    int clientInsetRight() const override;
+    LayoutUnit clientPaddingLeft() const override;
+    LayoutUnit clientPaddingRight() const override;
+    FontSelector* fontSelector() const override;
+    HostWindow* hostWindow() const override;
+#endif
+
     WEBCORE_EXPORT HTMLOptionElement* namedItem(const AtomString& name);
     WEBCORE_EXPORT HTMLOptionElement* item(unsigned index);
     bool isSupportedPropertyIndex(unsigned index);
 
     void scrollToSelection();
-
-    void listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow = true);
 
     bool canSelectAll() const;
     void selectAll();
@@ -185,6 +236,7 @@ private:
     bool platformHandleKeydownEvent(KeyboardEvent*);
     void listBoxDefaultEventHandler(Event&);
     void setOptionsChangedOnRenderer();
+    void updateButtonText();
     size_t searchOptionsForValue(const String&, size_t listIndexStart, size_t listIndexEnd) const;
 
     enum SkipDirection { SkipBackwards = -1, SkipForwards = 1 };
@@ -196,6 +248,10 @@ private:
     int nextSelectableListIndexPageAway(int startIndex, SkipDirection) const;
 
     void childrenChanged(const ChildChange&) final;
+
+    void didDetachRenderers() final;
+
+    void didAddUserAgentShadowRoot(ShadowRoot&) final;
 
     // TypeAheadDataSource functions.
     int indexOfSelectedOption() const final;
@@ -217,6 +273,13 @@ private:
     bool m_activeSelectionState;
     bool m_allowsNonContiguousSelection;
     mutable bool m_shouldRecalcListItems;
+
+    std::optional<int> m_lastActiveIndex;
+
+#if !PLATFORM(IOS_FAMILY)
+    RefPtr<PopupMenu> m_popup;
+    bool m_popupIsVisible { false };
+#endif
 };
 
 } // namespace

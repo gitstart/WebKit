@@ -42,13 +42,13 @@
 namespace WebCore {
 using namespace JSC;
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(DataCue);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(DataCue);
 
 DataCue::DataCue(Document& document, const MediaTime& start, const MediaTime& end, ArrayBuffer& data, const String& type)
     : TextTrackCue(document, start, end)
     , m_type(type)
 {
-    setData(data);
+    setData(&data);
 }
 
 DataCue::DataCue(Document& document, const MediaTime& start, const MediaTime& end, std::span<const uint8_t> data)
@@ -60,7 +60,7 @@ DataCue::DataCue(Document& document, const MediaTime& start, const MediaTime& en
 DataCue::DataCue(Document& document, const MediaTime& start, const MediaTime& end, Ref<SerializedPlatformDataCue>&& platformValue, const String& type)
     : TextTrackCue(document, start, end)
     , m_type(type)
-    , m_platformValue(WTFMove(platformValue))
+    , m_platformValue(WTF::move(platformValue))
 {
 }
 
@@ -80,7 +80,7 @@ Ref<DataCue> DataCue::create(Document& document, const MediaTime& start, const M
 
 Ref<DataCue> DataCue::create(Document& document, const MediaTime& start, const MediaTime& end, Ref<SerializedPlatformDataCue>&& platformValue, const String& type)
 {
-    auto dataCue = adoptRef(*new DataCue(document, start, end, WTFMove(platformValue), type));
+    auto dataCue = adoptRef(*new DataCue(document, start, end, WTF::move(platformValue), type));
     dataCue->suspendIfNeeded();
     return dataCue;
 }
@@ -112,11 +112,15 @@ RefPtr<ArrayBuffer> DataCue::data() const
     return ArrayBuffer::create(*RefPtr { m_data });
 }
 
-void DataCue::setData(ArrayBuffer& data)
+ExceptionOr<void> DataCue::setData(ArrayBuffer* data)
 {
+    if (!data)
+        return Exception { ExceptionCode::TypeError, "The DataCue.data attribute must be an instance of ArrayBuffer"_s };
+
     m_platformValue = nullptr;
     m_value.clear();
-    m_data = ArrayBuffer::create(data);
+    m_data = ArrayBuffer::create(*data);
+    return { };
 }
 
 bool DataCue::cueContentsMatch(const TextTrackCue& cue) const

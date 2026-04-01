@@ -44,19 +44,19 @@ namespace WebCore {
 
 Ref<ResizeObserver> ResizeObserver::create(Document& document, Ref<ResizeObserverCallback>&& callback)
 {
-    return adoptRef(*new ResizeObserver(document, { RefPtr<ResizeObserverCallback> { WTFMove(callback) } }));
+    return adoptRef(*new ResizeObserver(document, { RefPtr<ResizeObserverCallback> { WTF::move(callback) } }));
 }
 
 Ref<ResizeObserver> ResizeObserver::createNativeObserver(Document& document, NativeResizeObserverCallback&& nativeCallback)
 {
-    return adoptRef(*new ResizeObserver(document, { WTFMove(nativeCallback) }));
+    return adoptRef(*new ResizeObserver(document, { WTF::move(nativeCallback) }));
 }
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(ResizeObserver);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(ResizeObserver);
 
 ResizeObserver::ResizeObserver(Document& document, JSOrNativeResizeObserverCallback&& callback)
     : m_document(document)
-    , m_JSOrNativeCallback(WTFMove(callback))
+    , m_JSOrNativeCallback(WTF::move(callback))
 {
 }
 
@@ -219,7 +219,7 @@ void ResizeObserver::deliverObservations()
 bool ResizeObserver::isReachableFromOpaqueRoots(JSC::AbstractSlotVisitor& visitor) const
 {
     for (auto& observation : m_observations) {
-        if (auto* target = observation->target(); target && containsWebCoreOpaqueRoot(visitor, target))
+        if (SUPPRESS_UNCOUNTED_LOCAL auto* target = observation->target(); target && containsWebCoreOpaqueRoot(visitor, target))
             return true;
     }
 
@@ -231,7 +231,7 @@ bool ResizeObserver::isReachableFromOpaqueRoots(JSC::AbstractSlotVisitor& visito
             return true;
     }
     for (const auto& weakTarget : m_targetsWaitingForFirstObservation) {
-        if (auto* element = weakTarget.get(); element && containsWebCoreOpaqueRoot(visitor, element))
+        if (SUPPRESS_UNCOUNTED_LOCAL auto* element = weakTarget.get(); element && containsWebCoreOpaqueRoot(visitor, element))
             return true;
     }
     return false;

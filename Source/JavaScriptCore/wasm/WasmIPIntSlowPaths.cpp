@@ -44,6 +44,7 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 #include "WasmCallee.h"
 #include "WasmCallingConvention.h"
 #include "WasmDebugServer.h"
+#include "WasmExecutionHandler.h"
 #include "WasmIPIntGenerator.h"
 #include "WasmModuleInformation.h"
 #include "WasmOSREntryPlan.h"
@@ -52,6 +53,7 @@ WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
 #include "WasmWorklist.h"
 #include "WebAssemblyFunction.h"
 #include <bit>
+#include <wtf/LEBDecoder.h>
 
 namespace JSC { namespace IPInt {
 
@@ -68,19 +70,36 @@ namespace JSC { namespace IPInt {
 #define IPINT_CALLEE(callFrame) \
     (uncheckedDowncast<Wasm::IPIntCallee>(uncheckedDowncast<Wasm::Callee>(callFrame->callee().asNativeCallee())))
 
+#if ENABLE(WEBASSEMBLY_DEBUGGER)
 // Sets a breakpoint at the callee entry when stepping into a call.
 // Should Call this before WASM_CALL_RETURN in prepare_call* functions.
-#define IPINT_HANDLE_STEP_INTO_CALL(vmValue, boxedCalleeValue, targetInstanceValue) do { \
-        if (Options::enableWasmDebugger()) [[unlikely]] \
-            Wasm::DebugServer::singleton().setStepIntoBreakpointForCall((vmValue), (boxedCalleeValue), (targetInstanceValue)); \
+#define IPINT_HANDLE_STEP_INTO_CALL(callerVM, boxedCallee, calleeInstance) do { \
+        if (Options::enableWasmDebugger()) [[unlikely]] { \
+            Wasm::DebugServer& debugServer = Wasm::DebugServer::singleton(); \
+            if (debugServer.isConnected()) \
+                debugServer.execution().setStepIntoBreakpointForCall((callerVM), (boxedCallee), (calleeInstance)); \
+        } \
     } while (false)
 
 // Sets a breakpoint at the exception handler when stepping into a throw.
 // Should Call this after genericUnwind() in throw/rethrow/throw_ref functions.
-#define IPINT_HANDLE_STEP_INTO_THROW(vm, instance) do { \
-        if (Options::enableWasmDebugger()) [[unlikely]] \
-            Wasm::DebugServer::singleton().setStepIntoBreakpointForThrow((vm), (instance)); \
+#define IPINT_HANDLE_STEP_INTO_THROW(throwVM) do { \
+        if (Options::enableWasmDebugger()) [[unlikely]] { \
+            Wasm::DebugServer& debugServer = Wasm::DebugServer::singleton(); \
+            if (debugServer.isConnected()) \
+                debugServer.execution().setStepIntoBreakpointForThrow((throwVM)); \
+        } \
     } while (false)
+#else
+#define IPINT_HANDLE_STEP_INTO_CALL(callerVM, boxedCallee, calleeInstance) do { \
+        UNUSED_PARAM(callerVM); \
+        UNUSED_PARAM(boxedCallee); \
+        UNUSED_PARAM(calleeInstance); \
+    } while (false)
+#define IPINT_HANDLE_STEP_INTO_THROW(throwVM) do { \
+        UNUSED_PARAM(throwVM); \
+    } while (false)
+#endif
 
 
 // For operation calls that may throw an exception, we return (<val>, 0)
@@ -211,26 +230,19 @@ WASM_IPINT_EXTERN_CPP_DECL(prologue_osr, CallFrame* callFrame)
 }
 
 // This needs to be kept in sync with BBQJIT::makeStackMap.
-template<SavedFPWidth savedFPWidth>
-static ALWAYS_INLINE uint64_t* buildEntryBufferForLoopOSR(Wasm::IPIntCallee* ipintCallee, Wasm::BBQCallee* bbqCallee, JSWebAssemblyInstance* instance, const Wasm::IPIntTierUpCounter::OSREntryData& osrEntryData, IPIntLocal* pl)
+static ALWAYS_INLINE Wasm::Context::ScratchBufferEntry* buildEntryBufferForLoopOSR(Wasm::IPIntCallee* ipintCallee, Wasm::BBQCallee* bbqCallee, JSWebAssemblyInstance* instance, const Wasm::IPIntTierUpCounter::OSREntryData& osrEntryData, IPIntLocal* pl)
 {
     ASSERT(bbqCallee->compilationMode() == Wasm::CompilationMode::BBQMode);
     size_t osrEntryScratchBufferSize = bbqCallee->osrEntryScratchBufferSize();
 
-    constexpr unsigned valueSize = Wasm::Context::scratchBufferSlotsPerValue(savedFPWidth);
-    RELEASE_ASSERT(osrEntryScratchBufferSize >= valueSize * (ipintCallee->numLocals() + osrEntryData.numberOfStackValues + osrEntryData.tryDepth + Wasm::BBQCallee::extraOSRValuesForLoopIndex));
+    RELEASE_ASSERT(osrEntryScratchBufferSize >= ipintCallee->numLocals() + osrEntryData.numberOfStackValues + osrEntryData.tryDepth + Wasm::BBQCallee::extraOSRValuesForLoopIndex);
 
-    uint64_t* buffer = instance->vm().wasmContext.scratchBufferForSize(osrEntryScratchBufferSize);
+    auto* buffer = instance->vm().wasmContext.scratchBufferForSize(osrEntryScratchBufferSize);
     if (!buffer)
         return nullptr;
-
-    size_t bufferIndex = 0;
+    auto* currentEntry = buffer;
     auto copyValueToBuffer = [&](const IPIntLocal& local) ALWAYS_INLINE_LAMBDA {
-        if constexpr (savedFPWidth == SavedFPWidth::SaveVectors)
-            *std::bit_cast<v128_t*>(buffer + bufferIndex) = local.v128;
-        else
-            buffer[bufferIndex] = local.i64;
-        bufferIndex += valueSize;
+        *std::bit_cast<v128_t*>(currentEntry++) = local.v128;
     };
 
     // The loop index isn't really an IPIntLocal value, but it occupies the first slot of the OSR scratch buffer
@@ -291,12 +303,7 @@ WASM_IPINT_EXTERN_CPP_DECL(loop_osr, CallFrame* callFrame, uint8_t* pc, IPIntLoc
     auto* bbqCallee = uncheckedDowncast<Wasm::BBQCallee>(compiledCallee.get());
     ASSERT(bbqCallee->compilationMode() == Wasm::CompilationMode::BBQMode);
 
-    uint64_t* buffer;
-    if (bbqCallee->savedFPWidth() == SavedFPWidth::SaveVectors)
-        buffer = buildEntryBufferForLoopOSR<SavedFPWidth::SaveVectors>(callee, bbqCallee, instance, osrEntryData, pl);
-    else
-        buffer = buildEntryBufferForLoopOSR<SavedFPWidth::DontSaveVectors>(callee, bbqCallee, instance, osrEntryData, pl);
-
+    auto* buffer = buildEntryBufferForLoopOSR(callee, bbqCallee, instance, osrEntryData, pl);
     if (!buffer)
         WASM_RETURN_TWO(nullptr, nullptr);
 
@@ -375,7 +382,7 @@ WASM_IPINT_EXTERN_CPP_DECL(retrieve_and_clear_exception, CallFrame* callFrame, I
     // We want to clear the exception here rather than in the catch prologue
     // JIT code because clearing it also entails clearing a bit in an Atomic
     // bit field in VMTraps.
-    throwScope.clearException();
+    (void)throwScope.tryClearException();
 
     WASM_RETURN_TWO(nullptr, nullptr);
 }
@@ -398,7 +405,7 @@ WASM_IPINT_EXTERN_CPP_DECL(retrieve_clear_and_push_exception, CallFrame* callFra
     // We want to clear the exception here rather than in the catch prologue
     // JIT code because clearing it also entails clearing a bit in an Atomic
     // bit field in VMTraps.
-    throwScope.clearException();
+    (void)throwScope.tryClearException();
 
     WASM_RETURN_TWO(nullptr, nullptr);
 }
@@ -426,7 +433,7 @@ WASM_IPINT_EXTERN_CPP_DECL(retrieve_clear_and_push_exception_and_arguments, Call
     // We want to clear the exception here rather than in the catch prologue
     // JIT code because clearing it also entails clearing a bit in an Atomic
     // bit field in VMTraps.
-    throwScope.clearException();
+    (void)throwScope.tryClearException();
 
     WASM_RETURN_TWO(nullptr, nullptr);
 }
@@ -446,14 +453,14 @@ WASM_IPINT_EXTERN_CPP_DECL(throw_exception, CallFrame* callFrame, IPIntStackEntr
     copyExceptionStackToPayload(tag->type(), arguments, values);
 
     ASSERT(tag->type().returnsVoid());
-    JSWebAssemblyException* exception = JSWebAssemblyException::create(vm, globalObject->webAssemblyExceptionStructure(), WTFMove(tag), WTFMove(values));
+    JSWebAssemblyException* exception = JSWebAssemblyException::create(vm, globalObject->webAssemblyExceptionStructure(), WTF::move(tag), WTF::move(values));
     throwException(globalObject, throwScope, exception);
 
     genericUnwind(vm, callFrame);
     ASSERT(!!vm.callFrameForCatch);
     ASSERT(!!vm.targetMachinePCForThrow);
 
-    IPINT_HANDLE_STEP_INTO_THROW(vm, instance);
+    IPINT_HANDLE_STEP_INTO_THROW(vm);
     WASM_RETURN_TWO(vm.targetMachinePCForThrow, nullptr);
 }
 
@@ -479,7 +486,7 @@ WASM_IPINT_EXTERN_CPP_DECL(rethrow_exception, CallFrame* callFrame, IPIntStackEn
     ASSERT(!!vm.callFrameForCatch);
     ASSERT(!!vm.targetMachinePCForThrow);
 
-    IPINT_HANDLE_STEP_INTO_THROW(vm, instance);
+    IPINT_HANDLE_STEP_INTO_THROW(vm);
     WASM_RETURN_TWO(vm.targetMachinePCForThrow, nullptr);
 }
 
@@ -499,7 +506,7 @@ WASM_IPINT_EXTERN_CPP_DECL(throw_ref, CallFrame* callFrame, EncodedJSValue exnre
     ASSERT(!!vm.callFrameForCatch);
     ASSERT(!!vm.targetMachinePCForThrow);
 
-    IPINT_HANDLE_STEP_INTO_THROW(vm, instance);
+    IPINT_HANDLE_STEP_INTO_THROW(vm);
     WASM_RETURN_TWO(vm.targetMachinePCForThrow, nullptr);
 }
 
@@ -548,7 +555,7 @@ WASM_IPINT_EXTERN_CPP_DECL(table_grow, IPIntStackEntry* sp, TableGrowMetadata* m
     WASM_RETURN_TWO(std::bit_cast<void*>(Wasm::tableGrow(instance, metadata->tableIndex, fill, n)), 0);
 }
 
-WASM_IPINT_EXTERN_CPP_DECL(memory_grow, int32_t delta)
+WASM_IPINT_EXTERN_CPP_DECL(memory_grow, int64_t delta)
 {
     WASM_RETURN_TWO(reinterpret_cast<void*>(Wasm::growMemory(instance, delta)), 0);
 }
@@ -557,7 +564,7 @@ WASM_IPINT_EXTERN_CPP_DECL(memory_init, int32_t dataIndex, IPIntStackEntry* sp)
 {
     int32_t n = sp[0].i32;
     int32_t s = sp[1].i32;
-    int32_t d = sp[2].i32;
+    int64_t d = sp[2].i64;
 
     if (!Wasm::memoryInit(instance, dataIndex, d, s, n))
         IPINT_THROW(Wasm::ExceptionType::OutOfBoundsMemoryAccess);
@@ -570,14 +577,14 @@ WASM_IPINT_EXTERN_CPP_DECL(data_drop, int32_t dataIndex)
     IPINT_END();
 }
 
-WASM_IPINT_EXTERN_CPP_DECL(memory_copy, int32_t dst, int32_t src, int32_t count)
+WASM_IPINT_EXTERN_CPP_DECL(memory_copy, int64_t dst, int64_t src, int64_t count)
 {
     if (!Wasm::memoryCopy(instance, dst, src, count))
         IPINT_THROW(Wasm::ExceptionType::OutOfBoundsMemoryAccess);
     IPINT_END();
 }
 
-WASM_IPINT_EXTERN_CPP_DECL(memory_fill, int32_t dst, int32_t targetValue, int32_t count)
+WASM_IPINT_EXTERN_CPP_DECL(memory_fill, int64_t dst, int32_t targetValue, int64_t count)
 {
     if (!Wasm::memoryFill(instance, dst, targetValue, count))
         IPINT_THROW(Wasm::ExceptionType::OutOfBoundsMemoryAccess);
@@ -610,6 +617,7 @@ WASM_IPINT_EXTERN_CPP_DECL(table_size, int32_t tableIndex)
 // Wasm-GC
 WASM_IPINT_EXTERN_CPP_DECL(struct_new, uint32_t type, IPIntStackEntry* sp)
 {
+    WasmSlowPathWithoutCallFrameTracer tracer(instance->vm());
     WebAssemblyGCStructure* structure = instance->gcObjectStructure(type);
     JSValue result = Wasm::structNew(instance, structure, false, sp);
     if (result.isNull()) [[unlikely]]
@@ -619,6 +627,7 @@ WASM_IPINT_EXTERN_CPP_DECL(struct_new, uint32_t type, IPIntStackEntry* sp)
 
 WASM_IPINT_EXTERN_CPP_DECL(struct_new_default, uint32_t type)
 {
+    WasmSlowPathWithoutCallFrameTracer tracer(instance->vm());
     WebAssemblyGCStructure* structure = instance->gcObjectStructure(type);
     JSValue result = Wasm::structNew(instance, structure, true, nullptr);
     if (result.isNull()) [[unlikely]]
@@ -668,6 +677,7 @@ WASM_IPINT_EXTERN_CPP_DECL(struct_set, EncodedJSValue object, uint32_t fieldInde
 
 WASM_IPINT_EXTERN_CPP_DECL(array_new, uint32_t type, uint32_t size, IPIntStackEntry* defaultValue)
 {
+    WasmSlowPathWithoutCallFrameTracer tracer(instance->vm());
     WebAssemblyGCStructure* structure = instance->gcObjectStructure(type);
     const Wasm::TypeDefinition& arraySignature = structure->typeDefinition();
     Wasm::StorageType elementType = arraySignature.as<Wasm::ArrayType>()->elementType().type;
@@ -684,6 +694,7 @@ WASM_IPINT_EXTERN_CPP_DECL(array_new, uint32_t type, uint32_t size, IPIntStackEn
 
 WASM_IPINT_EXTERN_CPP_DECL(array_new_default, uint32_t type, uint32_t size)
 {
+    WasmSlowPathWithoutCallFrameTracer tracer(instance->vm());
     UNUSED_PARAM(instance);
     WebAssemblyGCStructure* structure = instance->gcObjectStructure(type);
     const Wasm::TypeDefinition& arraySignature = structure->typeDefinition();
@@ -707,6 +718,7 @@ WASM_IPINT_EXTERN_CPP_DECL(array_new_default, uint32_t type, uint32_t size)
 
 WASM_IPINT_EXTERN_CPP_DECL(array_new_fixed, uint32_t type, uint32_t size, IPIntStackEntry* arguments)
 {
+    WasmSlowPathWithoutCallFrameTracer tracer(instance->vm());
     WebAssemblyGCStructure* structure = instance->gcObjectStructure(type);
 
     JSValue result = Wasm::arrayNewFixed(instance, structure, size, arguments);
@@ -718,6 +730,7 @@ WASM_IPINT_EXTERN_CPP_DECL(array_new_fixed, uint32_t type, uint32_t size, IPIntS
 
 WASM_IPINT_EXTERN_CPP_DECL(array_new_data, IPInt::ArrayNewDataMetadata* metadata, uint32_t offset, uint32_t size)
 {
+    WasmSlowPathWithoutCallFrameTracer tracer(instance->vm());
     EncodedJSValue result = Wasm::arrayNewData(instance, metadata->type, metadata->dataSegmentIndex, size, offset);
     if (JSValue::decode(result).isNull()) [[unlikely]]
         IPINT_THROW(Wasm::ExceptionType::BadArrayNewInitData);
@@ -727,6 +740,7 @@ WASM_IPINT_EXTERN_CPP_DECL(array_new_data, IPInt::ArrayNewDataMetadata* metadata
 
 WASM_IPINT_EXTERN_CPP_DECL(array_new_elem, IPInt::ArrayNewElemMetadata* metadata, uint32_t offset, uint32_t size)
 {
+    WasmSlowPathWithoutCallFrameTracer tracer(instance->vm());
     EncodedJSValue result = Wasm::arrayNewElem(instance, metadata->type, metadata->elemSegmentIndex, size, offset);
     if (JSValue::decode(result).isNull()) [[unlikely]]
         IPINT_THROW(Wasm::ExceptionType::BadArrayNewInitElem);
@@ -855,6 +869,60 @@ WASM_IPINT_EXTERN_CPP_DECL(array_copy, IPIntStackEntry* sp)
 
     if (!Wasm::arrayCopy(instance, dst, dstOffset, src, srcOffset, size)) [[unlikely]]
         IPINT_THROW(Wasm::ExceptionType::OutOfBoundsArrayCopy);
+    IPINT_END();
+}
+
+namespace {
+ASCIILiteral opcodeName(uint8_t* pc)
+{
+    Wasm::OpType opcode = static_cast<Wasm::OpType>(*pc);
+
+    size_t extOffset = 1;
+    switch (opcode) {
+    case Wasm::OpType::ExtGC: {
+        unsigned extOpcode;
+        if (!WTF::LEBDecoder::decodeUInt(unsafeMakeSpan(pc, 2), extOffset, extOpcode))
+            return "! bad gc opcode !"_s;
+        return makeString(static_cast<Wasm::ExtGCOpType>(extOpcode));
+    }
+    case Wasm::OpType::Ext1: {
+        unsigned extOpcode;
+        if (!WTF::LEBDecoder::decodeUInt(unsafeMakeSpan(pc, 2), extOffset, extOpcode))
+            return "! bad ext1 opcode !"_s;
+        return makeString(static_cast<Wasm::Ext1OpType>(extOpcode));
+    }
+    case Wasm::OpType::ExtSIMD: {
+        unsigned extOpcode;
+        if (!WTF::LEBDecoder::decodeUInt(unsafeMakeSpan(pc, 3), extOffset, extOpcode))
+            return "! bad simd opcode !"_s;
+        return makeString(static_cast<Wasm::ExtSIMDOpType>(extOpcode));
+    }
+    case Wasm::OpType::ExtAtomic: {
+        unsigned extOpcode;
+        if (!WTF::LEBDecoder::decodeUInt(unsafeMakeSpan(pc, 2), extOffset, extOpcode))
+            return "! bad atomic opcode !"_s;
+        return makeString(static_cast<Wasm::ExtAtomicOpType>(extOpcode));
+    }
+    default:
+        return makeString(opcode);
+    }
+}
+} // namespace
+
+WASM_IPINT_EXTERN_CPP_DECL(trace, CallFrame* callFrame, uint8_t* pc, uint8_t* mc)
+{
+    if (!Options::traceWasmIPIntExecution())
+        IPINT_END();
+
+    Wasm::IPIntCallee* callee = IPINT_CALLEE(callFrame);
+    dataLogF("<%p> %p%s / %p: executing +0x%x, %s, pc = %p, mc = %p\n",
+        &Thread::currentSingleton(),
+        instance,
+        makeString(callee->indexOrName()).ascii().data(),
+        callFrame,
+        static_cast<uint32_t>(pc - callee->bytecode()),
+        opcodeName(pc).characters(),
+        pc, mc);
     IPINT_END();
 }
 
@@ -1183,6 +1251,14 @@ extern "C" UGPRPair SYSV_ABI slow_path_wasm_popcountll(const void* pc, uint64_t 
 WASM_IPINT_EXTERN_CPP_DECL(check_stack_and_vm_traps, void* candidateNewStackPointer, Wasm::IPIntCallee* callee)
 {
     VM& vm = instance->vm();
+
+#if ENABLE(WEBASSEMBLY_DEBUGGER)
+    if (Options::enableWasmDebugger()) [[unlikely]]
+        vm.debugState()->setPrologueStopData(instance, callee);
+#else
+    UNUSED_PARAM(callee);
+#endif
+
     if (vm.traps().handleTrapsIfNeeded()) {
         if (vm.hasPendingTerminationException())
             IPINT_THROW(Wasm::ExceptionType::Termination);
@@ -1190,17 +1266,13 @@ WASM_IPINT_EXTERN_CPP_DECL(check_stack_and_vm_traps, void* candidateNewStackPoin
     }
 
     // Redo stack check because we may really have gotten here due to an imminent StackOverflow.
-    if (vm.softStackLimit() <= candidateNewStackPointer) {
-        if (Options::enableWasmDebugger()) [[unlikely]] {
-            if (vm.isWasmStopWorldActive())
-                Wasm::DebugServer::singleton().setInterruptBreakpoint(instance, callee);
-        }
+    if (vm.softStackLimit() <= candidateNewStackPointer)
         IPINT_RETURN(encodedJSValue()); // No stack overflow. Carry on.
-    }
 
     IPINT_THROW(Wasm::ExceptionType::StackOverflow);
 }
 
+#if ENABLE(WEBASSEMBLY_DEBUGGER)
 static UNUSED_FUNCTION void displayWasmDebugState(JSWebAssemblyInstance* instance, Wasm::IPIntCallee* callee, IPIntStackEntry* sp, IPIntLocal* pl)
 {
     dataLogLn("=== WASM Debug State ===");
@@ -1227,12 +1299,13 @@ static UNUSED_FUNCTION void displayWasmDebugState(JSWebAssemblyInstance* instanc
         dataLogLn("WASM Stack: Invalid stack pointers");
     dataLogLn("=== End WASM Debug State ===");
 }
-
+#endif
 
 WASM_IPINT_EXTERN_CPP_DECL(unreachable_breakpoint_handler, CallFrame* callFrame, Register* sp)
 {
     dataLogLnIf(Options::verboseWasmDebugger(), "[Code][unreachable] Start");
     bool breakpointHandled = false;
+#if ENABLE(WEBASSEMBLY_DEBUGGER)
     if (Options::enableWasmDebugger()) [[unlikely]] {
         Wasm::DebugServer& debugServer = Wasm::DebugServer::singleton();
         if (debugServer.needToHandleBreakpoints()) {
@@ -1240,13 +1313,18 @@ WASM_IPINT_EXTERN_CPP_DECL(unreachable_breakpoint_handler, CallFrame* callFrame,
             uint8_t* mc = static_cast<uint8_t*>(sp[3].pointer());
             IPIntLocal* pl = static_cast<IPIntLocal*>(sp[0].pointer());
             Wasm::IPIntCallee* callee = static_cast<Wasm::IPIntCallee*>(sp[1].pointer());
-    
+
             IPIntStackEntry* stackPointer = reinterpret_cast<IPIntStackEntry*>(sp + 4);
             if (Options::verboseWasmDebugger())
                 displayWasmDebugState(instance, callee, stackPointer, pl);
-            breakpointHandled = debugServer.stopCode(callFrame, instance, callee, pc, mc, pl, stackPointer);
+            breakpointHandled = debugServer.execution().hitBreakpoint(callFrame, instance, callee, pc, mc, pl, stackPointer);
         }
     }
+#else
+    UNUSED_PARAM(instance);
+    UNUSED_PARAM(callFrame);
+    UNUSED_PARAM(sp);
+#endif
     dataLogLnIf(Options::verboseWasmDebugger(), "[Code][unreachable] Done with breakpointHandled=", breakpointHandled);
     IPINT_RETURN(static_cast<EncodedJSValue>(static_cast<int32_t>(breakpointHandled)));
 }

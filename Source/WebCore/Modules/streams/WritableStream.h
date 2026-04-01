@@ -41,7 +41,7 @@ template<typename> class ExceptionOr;
 
 class WritableStream : public RefCountedAndCanMakeWeakPtr<WritableStream> {
 public:
-    static ExceptionOr<Ref<WritableStream>> create(JSC::JSGlobalObject&, std::optional<JSC::Strong<JSC::JSObject>>&&, std::optional<JSC::Strong<JSC::JSObject>>&&);
+    static ExceptionOr<Ref<WritableStream>> create(JSC::JSGlobalObject&, JSC::Strong<JSC::JSObject>&&, JSC::Strong<JSC::JSObject>&&);
     static ExceptionOr<Ref<WritableStream>> create(JSDOMGlobalObject&, Ref<WritableStreamSink>&&);
     static Ref<WritableStream> create(Ref<InternalWritableStream>&&);
 
@@ -52,6 +52,7 @@ public:
 
     void closeIfPossible();
     void errorIfPossible(Exception&&);
+    void errorIfPossible(JSC::JSGlobalObject&, JSC::JSValue);
 
     InternalWritableStream& internalWritableStream();
     enum class Type : uint8_t {

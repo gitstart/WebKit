@@ -149,7 +149,7 @@ void RangeInputType::handleMouseDownEvent(MouseEvent& event)
         return;
 
     ASSERT(element->shadowRoot());
-    if (targetNode != element.ptr() && !targetNode->isDescendantOf(element->protectedUserAgentShadowRoot().get()))
+    if (targetNode != element.ptr() && !targetNode->isDescendantOf(protect(element->userAgentShadowRoot()).get()))
         return;
     Ref thumb = typedSliderThumbElement();
     if (targetNode == thumb.ptr())
@@ -317,7 +317,7 @@ RenderPtr<RenderElement> RangeInputType::createInputRenderer(RenderStyle&& style
 {
     ASSERT(element());
     // FIXME: https://github.com/llvm/llvm-project/pull/142471 Moving style is not unsafe.
-    SUPPRESS_UNCOUNTED_ARG return createRenderer<RenderSlider>(*protectedElement(), WTFMove(style));
+    SUPPRESS_UNCOUNTED_ARG return createRenderer<RenderSlider>(*protectedElement(), WTF::move(style));
 }
 
 Decimal RangeInputType::parseToNumber(const String& src, const Decimal& defaultValue) const

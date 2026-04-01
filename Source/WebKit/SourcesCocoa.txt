@@ -314,6 +314,7 @@ UIProcess/API/Cocoa/_WKSpatialBackdropSource.mm @nonARC
 UIProcess/API/Cocoa/_WKSystemPreferences.mm @nonARC
 UIProcess/API/Cocoa/_WKTargetedElementInfo.mm @nonARC
 UIProcess/API/Cocoa/_WKTargetedElementRequest.mm @nonARC
+UIProcess/API/Cocoa/_WKTextExtraction.mm @nonARC
 UIProcess/API/Cocoa/_WKTextInputContext.mm @nonARC
 UIProcess/API/Cocoa/_WKTextManipulationConfiguration.mm @nonARC
 UIProcess/API/Cocoa/_WKTextManipulationExclusionRule.mm @nonARC
@@ -432,7 +433,6 @@ UIProcess/Cocoa/AppKitSoftLink.mm @nonARC
 UIProcess/Cocoa/AutomationClient.mm @nonARC
 UIProcess/Cocoa/AutomationSessionClient.mm @nonARC
 UIProcess/Cocoa/BrowsingWarningCocoa.mm @nonARC
-UIProcess/Cocoa/SafeBrowsingSoftLink.mm @nonARC
 UIProcess/Cocoa/CoreTelephonyUtilities.mm @nonARC
 UIProcess/Cocoa/DiagnosticLoggingClient.mm @nonARC
 UIProcess/Cocoa/DownloadProxyMapCocoa.mm @nonARC
@@ -454,6 +454,7 @@ UIProcess/Cocoa/PlatformXRCoordinator.mm @nonARC
 UIProcess/Cocoa/PlaybackSessionManagerProxy.mm @nonARC
 UIProcess/Cocoa/ProcessAssertionCocoa.mm @nonARC
 UIProcess/Cocoa/ResourceLoadDelegate.mm @nonARC
+UIProcess/Cocoa/SafeBrowsingUtilities.mm @nonARC
 UIProcess/Cocoa/SessionStateCoding.mm @nonARC
 UIProcess/Cocoa/SystemPreviewControllerCocoa.mm @nonARC
 UIProcess/Cocoa/TextCheckingController.mm @nonARC
@@ -639,7 +640,7 @@ UIProcess/mac/WebProcessProxyMac.mm @nonARC
 UIProcess/mac/WindowServerConnection.mm @nonARC
 UIProcess/mac/WKFullScreenWindowController.mm @nonARC
 UIProcess/mac/WKImmediateActionController.mm @nonARC
-UIProcess/mac/WKPanGestureController.mm @nonARC
+UIProcess/mac/WKAppKitGestureController.mm @nonARC
 UIProcess/mac/WKPrintingView.mm @nonARC
 UIProcess/mac/WKQuickLookPreviewController.mm @nonARC
 UIProcess/mac/WKRevealItemPresenter.mm @nonARC
@@ -971,7 +972,8 @@ RemoteLegacyCDMSessionProxyMessageReceiver.cpp
 RemoteMediaEngineConfigurationFactoryProxyMessageReceiver.cpp
 RemoteMediaPlayerManagerProxyMessageReceiver.cpp
 RemoteMediaPlayerProxyMessageReceiver.cpp
-RemoteMediaResourceManagerMessageReceiver.cpp
+RemoteMediaResourceLoaderMessageReceiver.cpp
+RemoteMediaResourceLoaderProxyMessageReceiver.cpp
 RemoteMediaSessionCoordinatorMessageReceiver.cpp
 RemoteMediaSessionCoordinatorProxyMessageReceiver.cpp
 RemoteMediaSessionHelperMessageReceiver.cpp

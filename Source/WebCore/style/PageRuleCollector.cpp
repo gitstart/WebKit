@@ -40,7 +40,7 @@ namespace Style {
 
 static inline bool comparePageRules(const StyleRulePage* r1, const StyleRulePage* r2)
 {
-    return r1->selector()->specificityForPage() < r2->selector()->specificityForPage();
+    return r1->selector().specificityForPage() < r2->selector().specificityForPage();
 }
 
 bool PageRuleCollector::isLeftPage(int pageIndex) const
@@ -66,8 +66,8 @@ void PageRuleCollector::matchAllPageRules(int pageIndex)
     const bool isLeft = isLeftPage(pageIndex);
     const bool isFirst = isFirstPage(pageIndex);
     const String page = pageName(pageIndex);
-    
-    matchPageRules(UserAgentStyle::defaultPrintStyle, isLeft, isFirst, page);
+
+    matchPageRules(UserAgentStyle::defaultPrintStyle().get(), isLeft, isFirst, page);
     matchPageRules(m_ruleSets.userStyle(), isLeft, isFirst, page);
     // Only consider the global author RuleSet for @page rules, as per the HTML5 spec.
     if (m_ruleSets.isAuthorStyleDefined())
@@ -91,9 +91,9 @@ void PageRuleCollector::matchPageRules(RuleSet* rules, bool isLeftPage, bool isF
     });
 }
 
-static bool checkPageSelectorComponents(const CSSSelector* selector, bool isLeftPage, bool isFirstPage, const String& pageName)
+static bool checkPageSelectorComponents(const CSSSelector& selector, bool isLeftPage, bool isFirstPage, const String& pageName)
 {
-    for (const CSSSelector* component = selector; component; component = component->precedingInComplexSelector()) {
+    for (const CSSSelector* component = &selector; component; component = component->precedingInComplexSelector()) {
         if (component->match() == CSSSelector::Match::Tag) {
             const AtomString& localName = component->tagQName().localName();
             if (localName != starAtom() && localName != pageName)
@@ -114,14 +114,14 @@ static bool checkPageSelectorComponents(const CSSSelector* selector, bool isLeft
 void PageRuleCollector::matchPageRulesForList(Vector<StyleRulePage*>& matchedRules, const Vector<StyleRulePage*>& rules, bool isLeftPage, bool isFirstPage, const String& pageName)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
-        StyleRulePage* rule = rules[i];
+        RefPtr rule = rules[i];
 
         if (!checkPageSelectorComponents(rule->selector(), isLeftPage, isFirstPage, pageName))
             continue;
 
         // If the rule has no properties to apply, then ignore it.
-        const StyleProperties& properties = rule->properties();
-        if (properties.isEmpty())
+        const Ref properties = rule->properties();
+        if (properties->isEmpty())
             continue;
 
         // Add this rule to our list of matched rules.

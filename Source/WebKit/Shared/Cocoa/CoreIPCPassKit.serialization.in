@@ -38,6 +38,7 @@ webkit_platform_headers: "CoreIPCPKSecureElementPass.h"
     Vector<uint8_t> ipcData()
 }
 
+#if !HAVE(WK_SECURE_CODING_PKPAYMENTMERCHANTSESSION)
 [WebKitSecureCodingClass=PAL::getPKPaymentMerchantSessionClassSingleton(), SupportWKKeyedCoder, WebKitPlatform] webkit_secure_coding PKPaymentMerchantSession {
     merchantIdentifier: String
     merchantSessionIdentifier: String
@@ -53,7 +54,12 @@ webkit_platform_headers: "CoreIPCPKSecureElementPass.h"
     ampEnrollmentPinning: Data
     operationalAnalyticsIdentifier: String
     signedFields: Array<String>?
+#if ENABLE(APPLE_PAY_DELEGATED_REQUEST)
+    isDelegatedSession: Number
+    delegateDisplayName: String
+#endif
 }
+#endif
 
 [WebKitSecureCodingClass=PAL::getPKPaymentClassSingleton(), SupportWKKeyedCoder, WebKitPlatform] webkit_secure_coding PKPayment {
     token: PKPaymentToken
@@ -66,6 +72,7 @@ webkit_platform_headers: "CoreIPCPKSecureElementPass.h"
     installmentAuthorizationToken: String
 }
 
+#if !HAVE(WK_SECURE_CODING_PKPAYMENTTOKEN)
 [WebKitSecureCodingClass=PAL::getPKPaymentTokenClassSingleton(), SupportWKKeyedCoder, WebKitPlatform] webkit_secure_coding PKPaymentToken {
     paymentInstrumentName: String?
     paymentNetwork: String?
@@ -75,6 +82,7 @@ webkit_platform_headers: "CoreIPCPKSecureElementPass.h"
     redeemURL: URL
     retryNonce: String
 }
+#endif
 
 [WebKitSecureCodingClass=PAL::getPKShippingMethodClassSingleton(), SupportWKKeyedCoder, WebKitPlatform] webkit_secure_coding PKShippingMethod {
     label: String

@@ -68,14 +68,15 @@ void JSObservableArray::finishCreation(VM& vm, Ref<ObservableArray>&& array)
 {
     Base::finishCreation(vm);
     ASSERT(inherits(info()));
-    m_array = WTFMove(array);
+    m_array = WTF::move(array);
 }
 
 JSObservableArray::~JSObservableArray() = default;
 
 void JSObservableArray::destroy(JSCell* cell)
 {
-    static_cast<JSObservableArray*>(cell)->JSObservableArray::~JSObservableArray();
+    // We cannot rely on jsCast() during JSObject destruction.
+    SUPPRESS_MEMORY_UNSAFE_CAST static_cast<JSObservableArray*>(cell)->JSObservableArray::~JSObservableArray();
 }
 
 JSC_DEFINE_CUSTOM_GETTER(arrayLengthGetter, (JSGlobalObject* lexicalGlobalObject, EncodedJSValue thisValue, PropertyName))

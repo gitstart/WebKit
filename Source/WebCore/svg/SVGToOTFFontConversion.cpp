@@ -65,7 +65,7 @@ public:
 
     Vector<uint8_t> releaseResult()
     {
-        return WTFMove(m_result);
+        return WTF::move(m_result);
     }
 
     bool error() const
@@ -1061,11 +1061,11 @@ void SVGToOTFFontConverter::addKerningPair(Vector<KerningData>& data, SVGKerning
 template<typename T> inline size_t SVGToOTFFontConverter::appendKERNSubtable(std::optional<SVGKerningPair> (T::*buildKerningPair)() const, uint16_t coverage)
 {
     Vector<KerningData> kerningData;
-    for (auto& element : childrenOfType<T>(protectedFontElement())) {
-        if (auto kerningPair = (element.*buildKerningPair)())
-            addKerningPair(kerningData, WTFMove(*kerningPair));
+    for (Ref element : childrenOfType<T>(protectedFontElement())) {
+        if (auto kerningPair = (element.get().*buildKerningPair)())
+            addKerningPair(kerningData, WTF::move(*kerningPair));
     }
-    return finishAppendingKERNSubtable(WTFMove(kerningData), coverage);
+    return finishAppendingKERNSubtable(WTF::move(kerningData), coverage);
 }
 
 size_t SVGToOTFFontConverter::finishAppendingKERNSubtable(Vector<KerningData> kerningData, uint16_t coverage)
@@ -1297,7 +1297,7 @@ void SVGToOTFFontConverter::processGlyphElement(const SVGElement& glyphOrMissing
     if (glyphBoundingBox)
         m_minRightSideBearing = std::min(m_minRightSideBearing, horizontalAdvance - glyphBoundingBox.value().maxX());
 
-    m_glyphs.append(GlyphData(WTFMove(path), glyphElement, horizontalAdvance, verticalAdvance, valueOrDefault(glyphBoundingBox), codepoints));
+    m_glyphs.append(GlyphData(WTF::move(path), glyphElement, horizontalAdvance, verticalAdvance, valueOrDefault(glyphBoundingBox), codepoints));
 }
 
 void SVGToOTFFontConverter::appendLigatureGlyphs()
@@ -1414,10 +1414,10 @@ SVGToOTFFontConverter::SVGToOTFFontConverter(const SVGFontElement& fontElement)
         boundingBox = FloatRect(0, 0, s_outputUnitsPerEm, s_outputUnitsPerEm);
     }
 
-    for (auto& glyphElement : childrenOfType<SVGGlyphElement>(protectedFontElement())) {
-        auto& unicodeAttribute = glyphElement.attributeWithoutSynchronization(SVGNames::unicodeAttr);
+    for (Ref glyphElement : childrenOfType<SVGGlyphElement>(protectedFontElement())) {
+        auto& unicodeAttribute = glyphElement->attributeWithoutSynchronization(SVGNames::unicodeAttr);
         if (!unicodeAttribute.isEmpty()) // If we can never actually trigger this glyph, ignore it completely
-            processGlyphElement(glyphElement, &glyphElement, defaultHorizontalAdvance, defaultVerticalAdvance, unicodeAttribute, boundingBox);
+            processGlyphElement(glyphElement.get(), glyphElement.ptr(), defaultHorizontalAdvance, defaultVerticalAdvance, unicodeAttribute, boundingBox);
     }
 
     m_boundingBox = valueOrDefault(boundingBox);

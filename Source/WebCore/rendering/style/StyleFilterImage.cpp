@@ -36,9 +36,9 @@
 #include "HostWindow.h"
 #include "ImageBuffer.h"
 #include "NullGraphicsContext.h"
-#include "ReferenceFilterOperation.h"
 #include "RenderElement.h"
 #include "RenderObjectInlines.h"
+#include "Settings.h"
 #include "StyleFilter.h"
 #include <wtf/PointerComparison.h>
 
@@ -48,8 +48,8 @@ namespace WebCore {
 
 StyleFilterImage::StyleFilterImage(RefPtr<StyleImage>&& image, Style::Filter&& filter)
     : StyleGeneratedImage { Type::FilterImage, StyleFilterImage::isFixedSize }
-    , m_image { WTFMove(image) }
-    , m_filter { WTFMove(filter) }
+    , m_image { WTF::move(image) }
+    , m_filter { WTF::move(filter) }
     , m_inputImageIsReady { false }
 {
 }
@@ -109,16 +109,20 @@ void StyleFilterImage::load(CachedResourceLoader& cachedResourceLoader, const Re
     }
 
     for (auto& value : m_filter) {
-        Ref operation = value.value;
-        if (RefPtr referenceFilterOperation = dynamicDowncast<Style::ReferenceFilterOperation>(operation))
-            referenceFilterOperation->loadExternalDocumentIfNeeded(cachedResourceLoader, options);
+        WTF::switchOn(value,
+            [&](Style::FilterReference& filterReference) {
+                filterReference.loadExternalDocumentIfNeeded(cachedResourceLoader, options);
+            },
+            []<CSSValueID C, typename T>(FunctionNotation<C, T>&) { }
+        );
     }
 
     m_inputImageIsReady = true;
 }
 
-RefPtr<Image> StyleFilterImage::image(const RenderElement* renderer, const FloatSize& size, const GraphicsContext& destinationContext, bool isForFirstLine) const
+RefPtr<Image> StyleFilterImage::image(const RenderElement* renderElement, const FloatSize& size, const GraphicsContext& destinationContext, bool isForFirstLine) const
 {
+    CheckedPtr renderer = renderElement;
     if (!renderer)
         return &Image::nullImage();
 
@@ -129,14 +133,18 @@ RefPtr<Image> StyleFilterImage::image(const RenderElement* renderer, const Float
     if (!styleImage)
         return &Image::nullImage();
 
-    auto image = styleImage->image(renderer, size, destinationContext, isForFirstLine);
+    auto image = styleImage->image(renderer.get(), size, destinationContext, isForFirstLine);
     if (!image || image->isNull())
         return &Image::nullImage();
 
-    auto preferredFilterRenderingModes = renderer->protectedPage()->preferredFilterRenderingModes(destinationContext);
+    auto preferredFilterRenderingModes = protect(renderer->page())->preferredFilterRenderingModes(destinationContext);
     auto sourceImageRect = FloatRect { { }, size };
 
-    auto cssFilter = CSSFilterRenderer::create(const_cast<RenderElement&>(*renderer), m_filter, preferredFilterRenderingModes, FloatSize { 1, 1 }, sourceImageRect, NullGraphicsContext());
+    auto cssFilter = CSSFilterRenderer::create(const_cast<RenderElement&>(*renderer), m_filter, {
+            .referenceBox = sourceImageRect,
+            .filterRegion = sourceImageRect,
+            .scale = { 1, 1 },
+        }, preferredFilterRenderingModes, Ref { renderer->settings() }->showDebugBorders(), NullGraphicsContext());
     if (!cssFilter)
         return &Image::nullImage();
 
@@ -151,7 +159,7 @@ RefPtr<Image> StyleFilterImage::image(const RenderElement* renderer, const Float
     });
     if (!filteredImage)
         return &Image::nullImage();
-    return BitmapImage::create(WTFMove(filteredImage));
+    return BitmapImage::create(WTF::move(filteredImage));
 }
 
 bool StyleFilterImage::knownToBeOpaque(const RenderElement&) const

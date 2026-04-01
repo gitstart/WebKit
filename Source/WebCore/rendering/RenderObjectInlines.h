@@ -30,7 +30,7 @@
 #include <WebCore/RenderObjectNode.h>
 #include <WebCore/RenderObjectStyle.h>
 #include <WebCore/RenderReplaced.h>
-#include <WebCore/RenderStyleInlines.h>
+#include <WebCore/RenderStyle+GettersInlines.h>
 #include <WebCore/RenderView.h>
 #include <WebCore/VisibleRectContext.h>
 
@@ -94,7 +94,7 @@ inline void RenderObject::setNeedsLayout(MarkingBehavior markParents)
         return;
     m_stateBitfields.setFlag(StateFlag::NeedsLayout);
     if (markParents == MarkContainingBlockChain)
-        scheduleLayout(CheckedPtr { markContainingBlocksForLayout() }.get());
+        scheduleLayout(CheckedPtr { markContainingBlocksForLayout() });
     if (hasLayer())
         setLayerNeedsFullRepaint();
 }

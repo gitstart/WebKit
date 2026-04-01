@@ -48,7 +48,7 @@
 
 namespace WebCore {
 
-WTF_MAKE_TZONE_OR_ISO_ALLOCATED_IMPL(SpinButtonElement);
+WTF_MAKE_TZONE_ALLOCATED_IMPL(SpinButtonElement);
 
 using namespace HTMLNames;
 
@@ -210,7 +210,7 @@ void SpinButtonElement::releaseCapture()
 
 bool SpinButtonElement::matchesReadWritePseudoClass() const
 {
-    return protectedShadowHost()->matchesReadWritePseudoClass();
+    return protect(shadowHost())->matchesReadWritePseudoClass();
 }
 
 void SpinButtonElement::startRepeatingTimer()

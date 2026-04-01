@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2016-2026 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -39,19 +39,22 @@ class PlaybackSessionInterfaceIOS;
 @class AVTimeRange;
 
 @interface WebAVMediaSelectionOption : NSObject
-- (instancetype)initWithMediaType:(AVMediaType)type displayName:(NSString *)displayName;
+- (instancetype)initWithMediaType:(AVMediaType)type displayName:(NSString *)displayName extendedLanguageTag:(NSString *)extendedLanguageTag;
 
 @property (nonatomic, readonly) NSString *displayName;
 @property (nonatomic, readonly) NSString *localizedDisplayName;
 @property (nonatomic, readonly) AVMediaType mediaType;
-
+@property (nonatomic, readonly, nullable) NSString *extendedLanguageTag;
 @end
 
 @interface WebAVPlayerController : NSObject
 
 - (void)setAllowsPictureInPicture:(BOOL)allowsPictureInPicture;
 
+#if !__has_feature(modules)
 @property (retain) AVPlayerController *playerControllerProxy;
+#endif
+
 @property (assign, nullable /*weak*/) WebCore::PlaybackSessionModel* delegate;
 @property (assign, nullable /*weak*/) WebCore::PlaybackSessionInterfaceIOS* playbackSessionInterface;
 
@@ -141,8 +144,10 @@ class PlaybackSessionInterfaceIOS;
 
 @end
 
-Class webAVPlayerControllerClassSingleton();
+namespace WebCore {
 RetainPtr<WebAVPlayerController> createWebAVPlayerController();
+WEBCORE_EXPORT Class webAVPlayerControllerClassSingleton();
+}
 
 NS_ASSUME_NONNULL_END
 

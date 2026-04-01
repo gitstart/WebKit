@@ -1602,7 +1602,7 @@ class CppStyleTest(CppStyleTestBase):
             'void f()\n'
             '{\n'
             '    if (auto createdHandle = SandboxExtension::createHandle(URL.fileSystemPath(), SandboxExtension::Type::ReadWrite))\n'
-            '        handle = WTFMove(*createdHandle);\n'
+            '        handle = WTF::move(*createdHandle);\n'
             '    else\n'
             '        ASSERT_NOT_REACHED();\n\n'
             '    m_dataStore->networkProcess().send(Messages::NetworkProcess::PublishDownloadProgress(m_downloadID, URL, handle), 0);]\n'
@@ -1615,7 +1615,7 @@ class CppStyleTest(CppStyleTestBase):
             'void f()\n'
             '{\n'
             '    if (auto createdHandle = SandboxExtension::createHandle(URL.fileSystemPath(), SandboxExtension::Type::ReadWrite))\n'
-            '        handle = WTFMove(*createdHandle);\n'
+            '        handle = WTF::move(*createdHandle);\n'
             '    else\n'
             '        RELEASE_ASSERT_NOT_REACHED();\n\n'
             '    m_dataStore->networkProcess().send(Messages::NetworkProcess::PublishDownloadProgress(m_downloadID, URL, handle), 0);]\n'
@@ -2238,6 +2238,17 @@ class CppStyleTest(CppStyleTestBase):
             '')
         self.assert_multi_line_lint(
             'int foo() final\n'
+            '{\n'
+            '}\n',
+            '')
+        # Test LIFETIME_BOUND allows braces on next line
+        self.assert_multi_line_lint(
+            'T& getValue() LIFETIME_BOUND\n'
+            '{\n'
+            '}\n',
+            '')
+        self.assert_multi_line_lint(
+            'const T& getValue() const LIFETIME_BOUND\n'
             '{\n'
             '}\n',
             '')
@@ -4935,8 +4946,8 @@ class WebKitStyleTest(CppStyleTestBase):
             'Decoder::Decoder(std::span<const uint8_t> buffer, BufferDeallocator&& bufferDeallocator, Vector<Attachment>&& attachments)\n'
             '    : m_buffer { buffer }\n'
             '    , m_bufferPosition { m_buffer.begin() }\n'
-            '    , m_bufferDeallocator { WTFMove(bufferDeallocator) }\n'
-            '    , m_attachments { WTFMove(attachments) }\n'
+            '    , m_bufferDeallocator { WTF::move(bufferDeallocator) }\n'
+            '    , m_attachments { WTF::move(attachments) }\n'
             '{ }',
             '',
             'Decoder.cpp')
@@ -5942,6 +5953,54 @@ class WebKitStyleTest(CppStyleTestBase):
             "  [build/using_std] [4]",
             'foo.mm')
 
+    def test_variant_usage(self):
+        # Test detection of <variant> include
+        self.assert_lint(
+            '#include <variant>',
+            "Use '#include <wtf/Variant.h>' and 'WTF::Variant' instead of '#include <variant>' and 'std::variant'."
+            "  [build/variant] [4]",
+            'foo.cpp')
+
+        # Test detection of std::variant usage
+        self.assert_lint(
+            'using MyVariant = std::variant<int, double>;',
+            "Use 'WTF::Variant' instead of 'std::variant'. WTF::Variant provides better code size and performance."
+            "  [build/variant] [4]",
+            'foo.cpp')
+
+        self.assert_lint(
+            'std::variant<Foo, Bar> m_data;',
+            "Use 'WTF::Variant' instead of 'std::variant'. WTF::Variant provides better code size and performance."
+            "  [build/variant] [4]",
+            'foo.h')
+
+        # Test that WTF::Variant is acceptable
+        self.assert_lint(
+            'using MyVariant = Variant<int, double>;',
+            '',
+            'foo.cpp')
+
+        self.assert_lint(
+            '#include <wtf/Variant.h>',
+            '',
+            'foo.cpp')
+
+        self.assert_lint(
+            'Variant<Foo, Bar> m_data;',
+            '',
+            'foo.h')
+
+        # Test that the check doesn't apply to C files
+        self.assert_lint(
+            '#include <variant>',
+            '',
+            'foo.c')
+
+        self.assert_lint(
+            'std::variant<int, double> data;',
+            '',
+            'foo.c')
+
     def test_using_namespace(self):
         self.assert_lint(
             'using namespace foo;',
@@ -6071,21 +6130,112 @@ class WebKitStyleTest(CppStyleTestBase):
 
     def test_wtf_move(self):
         self.assert_lint(
-             'A a = WTFMove(b);',
-             '',
-             'foo.cpp')
+            'A a = WTF::move(b);',
+            '',
+            'foo.cpp')
 
         self.assert_lint(
-            'A a = std::move(b);',
-            "Use 'WTFMove()' instead of 'std::move()'."
+            'A a = WTFMove(b);',
+            "Use 'WTF::move()' instead of 'WTFMove()'."
             "  [runtime/wtf_move] [4]",
             'foo.cpp')
 
         self.assert_lint(
             'A a = std::move(b);',
-            "Use 'WTFMove()' instead of 'std::move()'."
+            "Use 'WTF::move()' instead of 'std::move()'."
+            "  [runtime/wtf_move] [4]",
+            'foo.cpp')
+
+        self.assert_lint(
+            'A a = std::move(b);',
+            "Use 'WTF::move()' instead of 'std::move()'."
             "  [runtime/wtf_move] [4]",
             'foo.mm')
+
+    def test_protected_getter(self):
+        # Regular getter is fine.
+        self.assert_lint(
+            'Foo* foo();',
+            '',
+            'foo.h')
+
+        # protectedFoo() getter with RefPtr should trigger error.
+        self.assert_lint(
+            'RefPtr<Foo> protectedFoo();',
+            "Do not add new protected*() getter functions. Call the regular getter and use protect() at the call site instead."
+            "  [readability/protected_getter] [4]",
+            'foo.h')
+
+        # protectedDocument() with Ref should trigger error.
+        self.assert_lint(
+            'Ref<Document> protectedDocument();',
+            "Do not add new protected*() getter functions. Call the regular getter and use protect() at the call site instead."
+            "  [readability/protected_getter] [4]",
+            'foo.h')
+
+        # protectedOwner() should trigger error.
+        self.assert_lint(
+            'RefPtr<Owner> protectedOwner() const;',
+            "Do not add new protected*() getter functions. Call the regular getter and use protect() at the call site instead."
+            "  [readability/protected_getter] [4]",
+            'foo.h')
+
+        # Function implementation should not trigger (only declarations).
+        self.assert_lint(
+            'Ref<Document> protectedDocument() { return m_document.get(); }',
+            '',
+            'foo.cpp')
+
+        # Functions with parameters should not trigger (not getter-style).
+        self.assert_lint(
+            'RefPtr<Node> protectedThis(this);',
+            '',
+            'foo.h')
+
+        self.assert_lint(
+            'RefPtr<Foo> protectedFoo(int arg);',
+            '',
+            'foo.h')
+
+    def test_checked_getter(self):
+        # Regular getter is fine.
+        self.assert_lint(
+            'Foo* foo();',
+            '',
+            'foo.h')
+
+        # checkedFoo() getter with CheckedPtr should trigger error.
+        self.assert_lint(
+            'CheckedPtr<Foo> checkedFoo();',
+            "Do not add new checked*() getter functions. Call the regular getter and use protect() at the call site instead."
+            "  [readability/checked_getter] [4]",
+            'foo.h')
+
+        # checkedDocument() with CheckedRef should trigger error.
+        self.assert_lint(
+            'CheckedRef<Document> checkedDocument();',
+            "Do not add new checked*() getter functions. Call the regular getter and use protect() at the call site instead."
+            "  [readability/checked_getter] [4]",
+            'foo.h')
+
+        # checkedOwner() should trigger error.
+        self.assert_lint(
+            'CheckedPtr<Owner> checkedOwner() const;',
+            "Do not add new checked*() getter functions. Call the regular getter and use protect() at the call site instead."
+            "  [readability/checked_getter] [4]",
+            'foo.h')
+
+        # Function implementation should not trigger (only declarations).
+        self.assert_lint(
+            'CheckedRef<Document> checkedDocument() { return m_document.get(); }',
+            '',
+            'foo.cpp')
+
+        # Functions with parameters should not trigger (not getter-style).
+        self.assert_lint(
+            'CheckedPtr<Foo> checkedFoo(int arg);',
+            '',
+            'foo.h')
 
     def test_unsafe_get(self):
         self.assert_lint(
@@ -6256,32 +6406,30 @@ class WebKitStyleTest(CppStyleTestBase):
 
     def test_wtf_xpc_object_ptr(self):
         self.assert_lint(
-            'XPCObjectPtr<xpc_connection_t> connection = adoptXPCObject(xpc_connection_create_from_endpoint(endpoint));',
+            'OSObjectPtr<xpc_connection_t> connection = adoptOSObject(xpc_connection_create_from_endpoint(endpoint));',
             '',
             'foo.cpp')
 
         self.assert_lint(
             'RetainPtr<xpc_connection_t> m_connection;',
-            "Use 'XPCObjectPtr' instead of 'RetainPtr' for XPC objects."
+            "Use 'OSObjectPtr' instead of 'RetainPtr' for XPC objects."
             "  [runtime/wtf_xpc_object_ptr] [4]",
             'foo.mm')
 
         self.assert_lint(
             'OSObjectPtr<xpc_connection_t> m_connection;',
-            "Use 'XPCObjectPtr' instead of 'OSObjectPtr' for XPC objects."
-            "  [runtime/wtf_xpc_object_ptr] [4]",
+            '',
             'foo.mm')
 
         self.assert_lint(
             'auto connection = adoptNS(xpc_connection_create_from_endpoint(endpoint));',
-            "Use 'adoptXPCObject()' instead of 'adoptNS()' for XPC objects."
+            "Use 'adoptOSObject()' instead of 'adoptNS()' for XPC objects."
             "  [runtime/wtf_xpc_object_ptr] [4]",
             'foo.mm')
 
         self.assert_lint(
             'auto connection = adoptOSObject(xpc_connection_create_from_endpoint(endpoint));',
-            "Use 'adoptXPCObject()' instead of 'adoptOSObject()' for XPC objects."
-            "  [runtime/wtf_xpc_object_ptr] [4]",
+            '',
             'foo.mm')
 
     def test_lock_guard(self):
@@ -6493,6 +6641,22 @@ class WebKitStyleTest(CppStyleTestBase):
         self.assert_lint(
             'snprintf(buffer, "%s", s);',
             'snprintf is unsafe. Use SAFE_SPRINTF instead.  [safercpp/printf] [4]',
+            'foo.cpp')
+
+        # Method calls should not trigger warnings (PrintStream::printf is safe)
+        self.assert_lint(
+            'out.printf("%s", s);',
+            '',
+            'foo.cpp')
+
+        self.assert_lint(
+            'stream->printf("%s", s);',
+            '',
+            'foo.cpp')
+
+        self.assert_lint(
+            'm_out.printf("test %d", value);',
+            '',
             'foo.cpp')
 
         self.assert_lint(
@@ -6923,9 +7087,15 @@ class WebKitStyleTest(CppStyleTestBase):
         self.assert_lint('RefPtr<Widget> create();', '')
         self.assert_lint('Ref<GeolocationPermissionRequestProxy> createRequest(GeolocationIdentifier);', '')
         self.assert_lint('Ref<TypeName> createSomething(OtherTypeName);', '')
-        self.assert_lint('Ref<Settings> protectedSettings() const;', '')
-        self.assert_lint('RefPtr<Settings> protectedSettings() const;', '')
-        self.assert_lint('RefPtr<Settings> protectedSettings();', '')
+        self.assert_lint('Ref<Settings> protectedSettings() const;',
+                         "Do not add new protected*() getter functions. Call the regular getter and use protect() at the call site instead."
+                         "  [readability/protected_getter] [4]")
+        self.assert_lint('RefPtr<Settings> protectedSettings() const;',
+                         "Do not add new protected*() getter functions. Call the regular getter and use protect() at the call site instead."
+                         "  [readability/protected_getter] [4]")
+        self.assert_lint('RefPtr<Settings> protectedSettings();',
+                         "Do not add new protected*() getter functions. Call the regular getter and use protect() at the call site instead."
+                         "  [readability/protected_getter] [4]")
         self.assert_lint('RefPtr<Settings> protectedSettings() { return m_settings.get(); }', '')
 
     def test_parameter_names(self):

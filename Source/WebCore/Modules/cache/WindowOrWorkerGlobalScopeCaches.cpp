@@ -86,7 +86,7 @@ DOMWindowCaches* DOMWindowCaches::from(LocalDOMWindow& window)
     if (!supplement) {
         auto newSupplement = makeUnique<DOMWindowCaches>(window);
         supplement = newSupplement.get();
-        provideTo(&window, supplementName(), WTFMove(newSupplement));
+        provideTo(&window, supplementName(), WTF::move(newSupplement));
     }
     return supplement;
 }
@@ -96,7 +96,7 @@ DOMCacheStorage* DOMWindowCaches::caches() const
     ASSERT(frame());
     ASSERT(frame()->document());
     if (!m_caches && frame()->page())
-        m_caches = DOMCacheStorage::create(*frame()->protectedDocument(), frame()->page()->cacheStorageProvider().createCacheStorageConnection());
+        m_caches = DOMCacheStorage::create(*protect(frame()->document()), frame()->page()->cacheStorageProvider().createCacheStorageConnection());
     return m_caches.get();
 }
 
@@ -115,7 +115,7 @@ WorkerGlobalScopeCaches* WorkerGlobalScopeCaches::from(WorkerGlobalScope& scope)
     if (!supplement) {
         auto newSupplement = makeUnique<WorkerGlobalScopeCaches>(scope);
         supplement = newSupplement.get();
-        provideTo(&scope, supplementName(), WTFMove(newSupplement));
+        provideTo(&scope, supplementName(), WTF::move(newSupplement));
     }
     return supplement;
 }

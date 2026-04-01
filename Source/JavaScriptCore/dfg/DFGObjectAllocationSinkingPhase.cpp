@@ -42,11 +42,11 @@
 #include "DFGValidate.h"
 #include "JSArrayIterator.h"
 #include "JSAsyncFromSyncIterator.h"
+#include "JSAsyncGenerator.h"
+#include "JSGenerator.h"
 #include "JSInternalPromise.h"
 #include "JSIteratorHelper.h"
 #include "JSMapIterator.h"
-#include "JSPromiseAllContext.h"
-#include "JSPromiseAllGlobalContext.h"
 #include "JSPromiseReaction.h"
 #include "JSRegExpStringIterator.h"
 #include "JSSetIterator.h"
@@ -294,7 +294,7 @@ public:
 
     bool isFunctionAllocation() const
     {
-        return m_kind == Kind::Function || m_kind == Kind::GeneratorFunction || m_kind == Kind::AsyncFunction;
+        return m_kind == Kind::Function || m_kind == Kind::GeneratorFunction || m_kind == Kind::AsyncFunction || m_kind == Kind::AsyncGeneratorFunction;
     }
 
     bool isInternalFieldObjectAllocation() const
@@ -466,7 +466,7 @@ public:
 
     UncheckedKeyHashMap<Node*, Allocation> takeEscapees()
     {
-        return WTFMove(m_escapees);
+        return WTF::move(m_escapees);
     }
 
     void escape(Node* node)
@@ -734,14 +734,14 @@ private:
         if (allocation.isEscapedAllocation())
             return;
 
-        Allocation unescaped = WTFMove(allocation);
+        Allocation unescaped = WTF::move(allocation);
         allocation = Allocation(unescaped.identifier(), Allocation::Kind::Escaped);
 
         for (const auto& entry : unescaped.fields())
             escapeAllocation(entry.value);
 
         if (m_wantEscapees)
-            m_escapees.add(unescaped.identifier(), WTFMove(unescaped));
+            m_escapees.add(unescaped.identifier(), WTF::move(unescaped));
     }
 
     void prune()
@@ -1141,14 +1141,14 @@ private:
             case JSAsyncFromSyncIteratorType:
                 target = handleInternalFieldClass<JSAsyncFromSyncIterator>(node, writes);
                 break;
-            case JSPromiseAllContextType:
-                target = handleInternalFieldClass<JSPromiseAllContext>(node, writes);
-                break;
-            case JSPromiseAllGlobalContextType:
-                target = handleInternalFieldClass<JSPromiseAllGlobalContext>(node, writes);
-                break;
             case JSRegExpStringIteratorType:
                 target = handleInternalFieldClass<JSRegExpStringIterator>(node, writes);
+                break;
+            case JSGeneratorType:
+                target = handleInternalFieldClass<JSGenerator>(node, writes);
+                break;
+            case JSAsyncGeneratorType:
+                target = handleInternalFieldClass<JSAsyncGenerator>(node, writes);
                 break;
             case JSPromiseType:
                 if (node->structure()->classInfoForCells() == JSInternalPromise::info())
@@ -1632,7 +1632,7 @@ escapeChildren:
 
         // Create the materialization nodes.
         forEachEscapee([&] (UncheckedKeyHashMap<Node*, Allocation>& escapees, Node* where) {
-            placeMaterializations(WTFMove(escapees), where);
+            placeMaterializations(WTF::move(escapees), where);
         });
 
         return hasUnescapedReads || !m_sinkCandidates.isEmpty();
@@ -1750,7 +1750,7 @@ escapeChildren:
         auto materializeFirst = [&] (Allocation&& allocation) {
             RELEASE_ASSERT(firstIndex < lastIndex);
             materialize(allocation.identifier());
-            toMaterialize[firstIndex] = WTFMove(allocation);
+            toMaterialize[firstIndex] = WTF::move(allocation);
             ++firstIndex;
         };
 
@@ -1762,7 +1762,7 @@ escapeChildren:
             RELEASE_ASSERT(firstIndex < lastIndex);
             RELEASE_ASSERT(lastIndex);
             --lastIndex;
-            toMaterialize[lastIndex] = WTFMove(allocation);
+            toMaterialize[lastIndex] = WTF::move(allocation);
         };
 
         // These are the promoted locations that contains some of the
@@ -1783,12 +1783,12 @@ escapeChildren:
                     continue;
 
                 if (dependencies.find(entry.key)->value.isEmpty()) {
-                    materializeFirst(WTFMove(entry.value));
+                    materializeFirst(WTF::move(entry.value));
                     continue;
                 }
 
                 if (reverseDependencies.find(entry.key)->value.isEmpty()) {
-                    materializeLast(WTFMove(entry.value));
+                    materializeLast(WTF::move(entry.value));
                     continue;
                 }
             }
@@ -1813,7 +1813,7 @@ escapeChildren:
                 }
                 RELEASE_ASSERT(maxEvaluation > 0);
 
-                materializeFirst(WTFMove(*bestAllocation));
+                materializeFirst(WTF::move(*bestAllocation));
             }
             RELEASE_ASSERT(!materialized.isEmpty());
 
@@ -2134,6 +2134,9 @@ escapeChildren:
                     return nullptr;
 
                 Node* phiNode = m_graph.addNode(SpecHeapTop, Phi, block->at(0)->origin.withInvalidExit());
+
+                // It shouldn't be possible to get a butterfly here since it should also be a sink candidate.
+                ASSERT(location.kind() != ArrayButterflyPLoc);
                 if (location.kind() == ArrayIndexedPropertyPLoc && hasDouble(allocation.indexingType())) {
                     ASSERT(allocation.kind() == Allocation::Kind::Array);
                     phiNode->mergeFlags(NodeResultDouble);
@@ -2155,7 +2158,7 @@ escapeChildren:
                     return nullptr;
 
                 Node* phiNode = m_graph.addNode(SpecHeapTop, Phi, block->at(0)->origin.withInvalidExit());
-                phiNode->mergeFlags(NodeResultJS);
+                phiNode->mergeFlags(identifier->result());
                 return phiNode;
             });
 
@@ -2567,7 +2570,7 @@ escapeChildren:
                 }
                 case ArrayButterflyPLoc: {
                     Node* butterfly = resolve(block, location);
-                    m_graph.m_varArgChildren[butterflyChild] = Edge(butterfly);
+                    m_graph.m_varArgChildren[butterflyChild] = Edge(butterfly, KnownStorageUse);
 
                     ASSERT(butterfly->op() == NewButterflyWithSize);
                     m_graph.m_varArgChildren[lengthChild] = butterfly->child1();
@@ -2825,7 +2828,7 @@ escapeChildren:
                     PutByOffset,
                     origin.takeValidExit(canExit),
                     OpInfo(data),
-                    Edge(storage, KnownCellUse),
+                    Edge(storage, KnownStorageUse),
                     Edge(base, KnownCellUse),
                     value->defaultEdge());
             }

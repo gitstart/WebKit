@@ -67,10 +67,10 @@ private:
             return;
 
         Ref vm = globalObject->vm();
-        auto scope = DECLARE_CATCH_SCOPE(vm);
+        auto scope = DECLARE_THROW_SCOPE(vm);
         auto chunkOrException = convert<IDLUint8Array>(*globalObject, value);
         if (chunkOrException.hasException(scope)) [[unlikely]] {
-            scope.clearException();
+            TRY_CLEAR_EXCEPTION(scope, void());
             sink->error(Exception { ExceptionCode::TypeError, "Unable to convert chunk to Uin8Array"_s });
             return;
         }
@@ -93,7 +93,7 @@ private:
     void runErrorSteps(Exception&& exception) final
     {
         if (RefPtr sink = m_sink.get())
-            sink->error(WTFMove(exception));
+            sink->error(WTF::move(exception));
     }
 
     WeakPtr<ReadableStreamToSharedBufferSink> m_sink;
@@ -101,7 +101,7 @@ private:
 };
 
 ReadableStreamToSharedBufferSink::ReadableStreamToSharedBufferSink(Callback&& callback)
-    : m_callback { WTFMove(callback) }
+    : m_callback { WTF::move(callback) }
 {
 }
 
@@ -111,8 +111,8 @@ void ReadableStreamToSharedBufferSink::pipeFrom(ReadableStream& stream)
 {
     RefPtr context = stream.scriptExecutionContext();
     auto* globalObject = context ? JSC::jsCast<JSDOMGlobalObject*>(context->globalObject()): nullptr;
-    if (!context) {
-        error(Exception { ExceptionCode::InvalidStateError, "no global object"_s });
+    if (!globalObject) {
+        error(Exception { ExceptionCode::TypeError, "no global object"_s });
         return;
     }
 
@@ -176,7 +176,7 @@ void ReadableStreamToSharedBufferSink::error(Exception&& exception)
         return;
 
     auto callback = std::exchange(m_callback, { });
-    callback(WTFMove(exception));
+    callback(WTF::move(exception));
 }
 
 void ReadableStreamToSharedBufferSink::clearCallback()

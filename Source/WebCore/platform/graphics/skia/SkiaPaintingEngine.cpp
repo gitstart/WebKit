@@ -168,7 +168,7 @@ Ref<SkiaRecordingResult> SkiaPaintingEngine::record(const GraphicsLayerCoordinat
     auto picture = pictureRecorder.finishRecordingAsPicture();
     WTFEndSignpost(this, RecordTile);
 
-    return SkiaRecordingResult::create(WTFMove(picture), WTFMove(imageToFenceMap), recordRect, renderingMode, contentsOpaque, contentsScale);
+    return SkiaRecordingResult::create(WTF::move(picture), WTF::move(imageToFenceMap), recordRect, renderingMode, contentsOpaque, contentsScale);
 }
 
 Ref<CoordinatedTileBuffer> SkiaPaintingEngine::replay(const GraphicsLayerCoordinated& layer, const RefPtr<SkiaRecordingResult>& recording, const IntRect& dirtyRect)
@@ -183,7 +183,7 @@ Ref<CoordinatedTileBuffer> SkiaPaintingEngine::replay(const GraphicsLayerCoordin
     auto buffer = createBuffer(renderingMode, dirtyRect.size(), recording->contentsOpaque());
     buffer->beginPainting();
 
-    m_workerPool->postTask([platformLayer = WTFMove(platformLayer), buffer = Ref { buffer }, dirtyRect, recording = RefPtr { recording }]() mutable {
+    m_workerPool->postTask([platformLayer = WTF::move(platformLayer), buffer = Ref { buffer }, dirtyRect, recording = RefPtr { recording }]() mutable {
         if (auto* canvas = buffer->canvas()) {
             auto replayPicture = [](const sk_sp<SkPicture>& picture, SkCanvas* canvas, const IntRect& recordRect, const IntRect& paintRect) {
                 canvas->save();
@@ -267,6 +267,22 @@ bool SkiaPaintingEngine::shouldUseLinearTileTextures()
     });
 
     return shouldUseLinearTextures;
+}
+
+bool SkiaPaintingEngine::shouldUseVivanteSuperTiledTileTextures()
+{
+    static std::once_flag onceFlag;
+    static bool shouldUseVivanteSuperTiledTextures = false;
+
+    std::call_once(onceFlag, [] {
+        if (const char* envString = getenv("WEBKIT_SKIA_USE_VIVANTE_SUPER_TILED_TILE_TEXTURES")) {
+            auto envStringView = StringView::fromLatin1(envString);
+            if (envStringView == "1"_s)
+                shouldUseVivanteSuperTiledTextures = true;
+        }
+    });
+
+    return shouldUseVivanteSuperTiledTextures;
 }
 
 } // namespace WebCore

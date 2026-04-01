@@ -500,33 +500,81 @@ void TextureMapper::drawTexture(const BitmapTexture& texture, const FloatRect& t
 
     SetForScope filterOperation(data().filterOperation, texture.filterOperation());
 
+    // For tiled textures, allocated size may be larger than logical size.
+    // Adjust texture coordinates to sample only the logical region.
+    if (texture.size() != texture.allocatedSize()) [[unlikely]] {
+        drawTextureWithPhysicalSize(texture, targetRect, matrix, opacity, allEdgesExposed);
+        return;
+    }
+
     drawTexture(texture.id(), texture.colorConvertFlags() | (texture.isOpaque() ? OptionSet<TextureMapperFlags> { } : TextureMapperFlags::ShouldBlend), targetRect, matrix, opacity, allEdgesExposed);
+}
+
+void TextureMapper::drawTextureWithPhysicalSize(const BitmapTexture& texture, const FloatRect& targetRect, const TransformationMatrix& modelViewMatrix, float opacity, AllEdgesExposed allEdgesExposed)
+{
+    // When allocated size differs from logical size (e.g., super-tiled textures aligned to 64x64),
+    // we need to adjust UV coordinates to sample only the logical region of the texture. The UV bounds
+    // need to be passed to the shader, to clamp the sampling region precisely, avoiding floating-point
+    // precision artifacts.
+    const auto& size = texture.size();
+    const auto& allocatedSize = texture.allocatedSize();
+
+    float uvMaxX = static_cast<float>(size.width()) / allocatedSize.width();
+    float uvMaxY = static_cast<float>(size.height()) / allocatedSize.height();
+
+    // Scale pattern transform to map [0,1] -> [0, uvMax].
+    TransformationMatrix adjustedPatternTransform = patternTransform();
+    adjustedPatternTransform.scaleNonUniform(uvMaxX, uvMaxY);
+    SetForScope patternTransformScope(m_patternTransform, adjustedPatternTransform);
+
+    // Set UV clamp state for shader-side clamping.
+    SetForScope uvClampMaxScope(m_uvClampMax, FloatSize(uvMaxX, uvMaxY));
+    SetForScope uvClampTexelSizeScope(m_uvClampTexelSize, FloatSize(1.f / allocatedSize.width(), 1.f / allocatedSize.height()));
+
+    drawTexture(texture.id(), texture.colorConvertFlags() | (texture.isOpaque() ? OptionSet<TextureMapperFlags> { } : TextureMapperFlags::ShouldBlend), targetRect, modelViewMatrix, opacity, allEdgesExposed);
 }
 
 #if ENABLE(DAMAGE_TRACKING)
 void TextureMapper::drawTextureFragment(const BitmapTexture& sourceTexture, const FloatRect& sourceRect, const FloatRect& targetRect)
 {
-    Ref<TextureMapperShaderProgram> program = data().getShaderProgram({ TextureMapperShaderProgram::TextureRGB });
     const auto& textureSize = sourceTexture.size();
+    const auto& allocatedSize = sourceTexture.allocatedSize();
+    bool needsUVClamping = textureSize != allocatedSize;
+
+    TextureMapperShaderProgram::Options options = TextureMapperShaderProgram::TextureRGB;
+    if (needsUVClamping) [[unlikely]]
+        options.add(TextureMapperShaderProgram::ClampUVBounds);
+
+    Ref<TextureMapperShaderProgram> program = data().getShaderProgram(options);
 
     glUseProgram(program->programID());
+
+    // When allocated size differs from logical size, use allocated size for coordinate calculations
+    // so UV coordinates map to the correct physical texels.
+    const auto& coordSize = needsUVClamping ? allocatedSize : textureSize;
 
     auto textureFragmentMatrix = TransformationMatrix::identity;
 
     textureFragmentMatrix.translate3d(
-        static_cast<double>(sourceRect.x()) / textureSize.width(),
-        static_cast<double>(sourceRect.y()) / textureSize.height(),
+        static_cast<double>(sourceRect.x()) / coordSize.width(),
+        static_cast<double>(sourceRect.y()) / coordSize.height(),
         0
     ).scale3d(
-        static_cast<double>(sourceRect.width()) / textureSize.width(),
-        static_cast<double>(sourceRect.height()) / textureSize.height(),
+        static_cast<double>(sourceRect.width()) / coordSize.width(),
+        static_cast<double>(sourceRect.height()) / coordSize.height(),
         1
     );
 
     program->setMatrix(program->textureSpaceMatrixLocation(), textureFragmentMatrix);
     program->setMatrix(program->textureColorSpaceMatrixLocation(), colorSpaceMatrixForFlags(sourceTexture.colorConvertFlags()));
     glUniform1f(program->opacityLocation(), 1.0);
-    glUniform2f(program->texelSizeLocation(), 1.f / textureSize.width(), 1.f / textureSize.height());
+    glUniform2f(program->texelSizeLocation(), 1.f / allocatedSize.width(), 1.f / allocatedSize.height());
+
+    if (needsUVClamping) {
+        float uvMaxX = static_cast<float>(textureSize.width()) / allocatedSize.width();
+        float uvMaxY = static_cast<float>(textureSize.height()) / allocatedSize.height();
+        glUniform2f(program->uvMaxLocation(), uvMaxX, uvMaxY);
+    }
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, sourceTexture.id());
@@ -549,6 +597,9 @@ void TextureMapper::drawTexture(GLuint texture, OptionSet<TextureMapperFlags> fl
     }
     if (m_wrapMode == WrapMode::Repeat && !GLContext::current()->glExtensions().OES_texture_npot)
         options.add(TextureMapperShaderProgram::ManualRepeat);
+
+    if (m_uvClampMax && m_uvClampTexelSize)
+        options.add(TextureMapperShaderProgram::ClampUVBounds);
 
     auto filter = data().filterOperation;
     if (filter) {
@@ -576,6 +627,12 @@ void TextureMapper::drawTexture(GLuint texture, OptionSet<TextureMapperFlags> fl
 
     if (clipStack().isRoundedRectClipEnabled())
         prepareRoundedRectClip(program.get(), clipStack().roundedRectComponents(), clipStack().roundedRectInverseTransformComponents(), clipStack().roundedRectCount());
+
+    if (m_uvClampMax && m_uvClampTexelSize) {
+        glUseProgram(program->programID());
+        glUniform2f(program->uvMaxLocation(), m_uvClampMax->width(), m_uvClampMax->height());
+        glUniform2f(program->texelSizeLocation(), m_uvClampTexelSize->width(), m_uvClampTexelSize->height());
+    }
 
     drawTexturedQuadWithProgram(program.get(), texture, flags, targetRect, modelViewMatrix, opacity);
 }

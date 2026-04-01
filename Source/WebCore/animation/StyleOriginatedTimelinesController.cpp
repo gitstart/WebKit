@@ -85,9 +85,9 @@ Vector<WeakStyleable> StyleOriginatedTimelinesController::relatedTimelineScopeEl
 
 ScrollTimeline& StyleOriginatedTimelinesController::inactiveNamedTimeline(const AtomString& name)
 {
-    auto inactiveTimeline = ScrollTimeline::createInactiveStyleOriginatedTimeline(name);
-    timelinesForName(name).append(inactiveTimeline);
-    return inactiveTimeline.unsafeGet();
+    auto& timelines = timelinesForName(name);
+    timelines.append(ScrollTimeline::createInactiveStyleOriginatedTimeline(name));
+    return timelines.last();
 }
 
 static bool containsElement(const Vector<WeakStyleable>& timelineScopeElements, Element* matchElement)
@@ -209,7 +209,7 @@ void StyleOriginatedTimelinesController::registerNamedScrollTimeline(const AtomS
         auto newScrollTimeline = ScrollTimeline::create(name, axis);
         newScrollTimeline->setSource(source);
         updateTimelineForTimelineScope(newScrollTimeline, name);
-        timelines.append(WTFMove(newScrollTimeline));
+        timelines.append(WTF::move(newScrollTimeline));
         updateCSSAnimationsAssociatedWithNamedTimeline(name);
     }
 }
@@ -286,7 +286,7 @@ void StyleOriginatedTimelinesController::registerNamedViewTimeline(const AtomStr
         auto newViewTimeline = ViewTimeline::create(name, axis, insets);
         newViewTimeline->setSubject(subject);
         updateTimelineForTimelineScope(newViewTimeline, name);
-        timelines.append(WTFMove(newViewTimeline));
+        timelines.append(WTF::move(newViewTimeline));
     }
 
     if (!hasExistingTimeline)
@@ -397,7 +397,7 @@ void StyleOriginatedTimelinesController::attachAnimation(CSSAnimation& animation
         // and possibly also mark that animation's target as dirty to update the animated style.
         if (allowsDeferral == AllowsDeferral::Yes && timeline && timeline->isInactiveStyleOriginatedTimeline())
             m_cssAnimationsPendingAttachment.append(animation);
-        protectedAnimation->setTimeline(WTFMove(timeline));
+        protectedAnimation->setTimeline(WTF::move(timeline));
     }
 
     // Since we have no timeline defined for this name yet, we need

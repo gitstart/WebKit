@@ -65,7 +65,7 @@ class NetworkProcessConnection final : public RefCounted<NetworkProcessConnectio
 public:
     static Ref<NetworkProcessConnection> create(IPC::Connection::Identifier&& connectionIdentifier, WebCore::HTTPCookieAcceptPolicy httpCookieAcceptPolicy)
     {
-        return adoptRef(*new NetworkProcessConnection(WTFMove(connectionIdentifier), httpCookieAcceptPolicy));
+        return adoptRef(*new NetworkProcessConnection(WTF::move(connectionIdentifier), httpCookieAcceptPolicy));
     }
     ~NetworkProcessConnection();
 
@@ -80,9 +80,7 @@ public:
     WebIDBConnectionToServer& idbConnectionToServer();
 
     WebSWClientConnection& serviceWorkerConnection();
-    Ref<WebSWClientConnection> protectedServiceWorkerConnection();
     WebSharedWorkerObjectConnection& sharedWorkerConnection();
-    Ref<WebSharedWorkerObjectConnection> protectedSharedWorkerConnection();
 
 #if HAVE(AUDIT_TOKEN)
     void setNetworkProcessAuditToken(std::optional<audit_token_t> auditToken) { m_networkProcessAuditToken = auditToken; }

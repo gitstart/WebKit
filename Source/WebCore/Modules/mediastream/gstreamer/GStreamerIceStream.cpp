@@ -39,10 +39,11 @@ using namespace WTF;
 using namespace WebCore;
 
 typedef struct _WebKitGstIceStreamPrivate {
+    unsigned streamId;
     GThreadSafeWeakPtr<WebKitGstIceAgent> agent;
     GRefPtr<RiceStream> riceStream;
-    GRefPtr<GstWebRTCICETransport> rtpTransport;
-    GRefPtr<GstWebRTCICETransport> rtcpTransport;
+    GThreadSafeWeakPtr<GstWebRTCICETransport> rtpTransport;
+    GThreadSafeWeakPtr<GstWebRTCICETransport> rtcpTransport;
     bool haveLocalCredentials { false };
     bool haveRemoteCredentials { false };
     bool gatheringRequested { false };
@@ -71,14 +72,20 @@ GstWebRTCICETransport* webkitGstWebRTCIceStreamFindTransport(GstWebRTCICEStream*
         return nullptr;
 
     switch (component) {
-    case GST_WEBRTC_ICE_COMPONENT_RTP:
-        if (!stream->priv->rtpTransport)
-            stream->priv->rtpTransport = adoptGRef(GST_WEBRTC_ICE_TRANSPORT(webkitGstWebRTCIceAgentCreateTransport(agent.get(), GThreadSafeWeakPtr(stream), RTCIceComponent::Rtp)));
-        return stream->priv->rtpTransport.ref();
-    case GST_WEBRTC_ICE_COMPONENT_RTCP:
-        if (!stream->priv->rtcpTransport)
-            stream->priv->rtcpTransport = adoptGRef(GST_WEBRTC_ICE_TRANSPORT(webkitGstWebRTCIceAgentCreateTransport(agent.get(), GThreadSafeWeakPtr(stream), RTCIceComponent::Rtcp)));
-        return stream->priv->rtcpTransport.ref();
+    case GST_WEBRTC_ICE_COMPONENT_RTP: {
+        if (auto transport = stream->priv->rtpTransport.get())
+            return transport.ref();
+        auto transport = GST_WEBRTC_ICE_TRANSPORT(webkitGstWebRTCIceAgentCreateTransport(agent.get(), GThreadSafeWeakPtr(stream), RTCIceComponent::Rtp));
+        stream->priv->rtpTransport.reset(transport);
+        return transport;
+    }
+    case GST_WEBRTC_ICE_COMPONENT_RTCP: {
+        if (auto transport = stream->priv->rtcpTransport.get())
+            return transport.ref();
+        auto transport = GST_WEBRTC_ICE_TRANSPORT(webkitGstWebRTCIceAgentCreateTransport(agent.get(), GThreadSafeWeakPtr(stream), RTCIceComponent::Rtcp));
+        stream->priv->rtcpTransport.reset(transport);
+        return transport;
+    }
     }
 
     ASSERT_NOT_REACHED();
@@ -88,10 +95,10 @@ GstWebRTCICETransport* webkitGstWebRTCIceStreamFindTransport(GstWebRTCICEStream*
 void webkitGstWebRTCIceStreamGatheringDone(const WebKitGstIceStream* ice)
 {
     auto stream = WEBKIT_GST_WEBRTC_ICE_STREAM(ice);
-    if (stream->priv->rtpTransport)
-        gst_webrtc_ice_transport_gathering_state_change(GST_WEBRTC_ICE_TRANSPORT(stream->priv->rtpTransport.get()), GST_WEBRTC_ICE_GATHERING_STATE_COMPLETE);
-    if (stream->priv->rtcpTransport)
-        gst_webrtc_ice_transport_gathering_state_change(GST_WEBRTC_ICE_TRANSPORT(stream->priv->rtcpTransport.get()), GST_WEBRTC_ICE_GATHERING_STATE_COMPLETE);
+    if (auto transport = stream->priv->rtpTransport.get())
+        gst_webrtc_ice_transport_gathering_state_change(GST_WEBRTC_ICE_TRANSPORT(transport.get()), GST_WEBRTC_ICE_GATHERING_STATE_COMPLETE);
+    if (auto transport = stream->priv->rtcpTransport.get())
+        gst_webrtc_ice_transport_gathering_state_change(GST_WEBRTC_ICE_TRANSPORT(transport.get()), GST_WEBRTC_ICE_GATHERING_STATE_COMPLETE);
 }
 
 void webkitGstWebRTCIceStreamAddLocalGatheredCandidate(const WebKitGstIceStream* ice, RiceGatheredCandidate& candidate)
@@ -103,15 +110,15 @@ void webkitGstWebRTCIceStreamAddLocalGatheredCandidate(const WebKitGstIceStream*
 void webkitGstWebRTCIceStreamNewSelectedPair(const WebKitGstIceStream* ice, RiceAgentSelectedPair& pair)
 {
     auto stream = WEBKIT_GST_WEBRTC_ICE_STREAM(ice);
-    if (!stream->priv->rtpTransport) [[unlikely]]
-        return;
-    webkitGstWebRTCIceTransportNewSelectedPair(WEBKIT_GST_WEBRTC_ICE_TRANSPORT(stream->priv->rtpTransport.get()), pair);
+    if (auto transport = stream->priv->rtpTransport.get())
+        webkitGstWebRTCIceTransportNewSelectedPair(WEBKIT_GST_WEBRTC_ICE_TRANSPORT(transport.get()), pair);
 }
 
 void webkitGstWebRTCIceStreamComponentStateChanged(const WebKitGstIceStream* ice, RiceAgentComponentStateChange& change)
 {
     auto stream = WEBKIT_GST_WEBRTC_ICE_STREAM(ice);
-    if (!stream->priv->rtpTransport) [[unlikely]]
+    auto transport = stream->priv->rtpTransport.get();
+    if (!transport) [[unlikely]]
         return;
 
     GstWebRTCICEConnectionState gstState;
@@ -130,18 +137,18 @@ void webkitGstWebRTCIceStreamComponentStateChanged(const WebKitGstIceStream* ice
         break;
     }
 
-    gst_webrtc_ice_transport_connection_state_change(stream->priv->rtpTransport.get(), gstState);
+    gst_webrtc_ice_transport_connection_state_change(transport.get(), gstState);
 }
 
 static gboolean webkitGstWebRTCIceStreamGatherCandidates(GstWebRTCICEStream* ice)
 {
     auto stream = WEBKIT_GST_WEBRTC_ICE_STREAM(ice);
 
-    if (stream->priv->rtpTransport)
-        gst_webrtc_ice_transport_gathering_state_change(stream->priv->rtpTransport.get(), GST_WEBRTC_ICE_GATHERING_STATE_GATHERING);
+    if (auto transport = stream->priv->rtpTransport.get())
+        gst_webrtc_ice_transport_gathering_state_change(transport.get(), GST_WEBRTC_ICE_GATHERING_STATE_GATHERING);
 
-    if (stream->priv->rtcpTransport)
-        gst_webrtc_ice_transport_gathering_state_change(stream->priv->rtcpTransport.get(), GST_WEBRTC_ICE_GATHERING_STATE_GATHERING);
+    if (auto transport = stream->priv->rtcpTransport.get())
+        gst_webrtc_ice_transport_gathering_state_change(transport.get(), GST_WEBRTC_ICE_GATHERING_STATE_GATHERING);
 
     auto agent = stream->priv->agent.get();
     if (!agent)
@@ -152,14 +159,14 @@ static gboolean webkitGstWebRTCIceStreamGatherCandidates(GstWebRTCICEStream* ice
 
     Vector<GUniquePtr<RiceAddress>> riceAddresses;
     Vector<RiceTransportType> riceTransports;
-    for (const auto& address : addresses) {
-        GUniquePtr<RiceAddress> addr(rice_address_new_from_string(address.ascii().data()));
+    for (const auto& address : addresses.keys()) {
+        auto& [addressString, protocol] = address;
+        GUniquePtr<RiceAddress> addr(rice_address_new_from_string(addressString.ascii().data()));
         if (!addr) [[unlikely]]
             continue;
 
-        riceAddresses.append(WTFMove(addr));
-        riceTransports.append(RICE_TRANSPORT_TYPE_UDP);
-        // TODO: TCP
+        riceAddresses.append(WTF::move(addr));
+        riceTransports.append(fromRTCIceProtocol(protocol));
     }
     Vector<const RiceAddress*> riceAddressValues;
     for (const auto& addr : riceAddresses)
@@ -171,7 +178,7 @@ static gboolean webkitGstWebRTCIceStreamGatherCandidates(GstWebRTCICEStream* ice
     auto turnConfigs = webkitGstWebRTCIceAgentGetTurnConfigs(agent.get());
     for (const auto& config : turnConfigs) {
         GUniquePtr<RiceAddress> address(rice_turn_config_get_addr(config.get()));
-        turnAddresses.append(WTFMove(address));
+        turnAddresses.append(WTF::move(address));
     }
 
     Vector<const RiceAddress*> turnAddressValues;
@@ -196,15 +203,7 @@ bool webkitGstWebRTCIceStreamGatherCandidates(WebKitGstIceStream* stream)
 
 void webkitGstWebRTCIceStreamHandleIncomingData(const WebKitGstIceStream* stream, WebCore::RTCIceProtocol protocol, String&& from, String&& to, SharedMemory::Handle&& handle)
 {
-    RiceTransportType transport;
-    switch (protocol) {
-    case WebCore::RTCIceProtocol::Tcp:
-        transport = RICE_TRANSPORT_TYPE_TCP;
-        break;
-    case WebCore::RTCIceProtocol::Udp:
-        transport = RICE_TRANSPORT_TYPE_UDP;
-        break;
-    };
+    RiceTransportType transport = fromRTCIceProtocol(protocol);
     auto riceFrom = riceAddressFromString(from);
     auto riceTo = riceAddressFromString(to);
 
@@ -212,7 +211,7 @@ void webkitGstWebRTCIceStreamHandleIncomingData(const WebKitGstIceStream* stream
     GST_TRACE_OBJECT(stream, "Received %zu bytes", handle.size());
     RiceStreamIncomingData result;
 
-    auto sharedMemory = SharedMemory::map(WTFMove(handle), SharedMemory::Protection::ReadOnly);
+    auto sharedMemory = SharedMemory::map(WTF::move(handle), SharedMemory::Protection::ReadOnly);
     if (!sharedMemory)
         return;
 
@@ -232,18 +231,20 @@ void webkitGstWebRTCIceStreamHandleIncomingData(const WebKitGstIceStream* stream
 
     // Forward any non-STUN data to the pipeline for handling.
     if (result.data.size > 0 && result.data.ptr) {
-        auto buffer = adoptGRef(gst_buffer_new_memdup(result.data.ptr, result.data.size));
-        webkitGstWebRTCIceTransportHandleIncomingData(WEBKIT_GST_WEBRTC_ICE_TRANSPORT(stream->priv->rtpTransport.get()), WTFMove(buffer));
+        if (auto transport = stream->priv->rtpTransport.get()) {
+            auto buffer = adoptGRef(gst_buffer_new_memdup(result.data.ptr, result.data.size));
+            webkitGstWebRTCIceTransportHandleIncomingData(WEBKIT_GST_WEBRTC_ICE_TRANSPORT(transport.get()), WTF::move(buffer));
+        }
     }
 
     gsize dataSize;
     auto recvData = rice_stream_poll_recv(stream->priv->riceStream.get(), &componentId, &dataSize);
     while (recvData) {
-        auto transport = webkitGstWebRTCIceStreamFindTransport(GST_WEBRTC_ICE_STREAM(stream), (GstWebRTCICEComponent)componentId);
+        auto transport = adoptGRef(webkitGstWebRTCIceStreamFindTransport(GST_WEBRTC_ICE_STREAM(stream), static_cast<GstWebRTCICEComponent>(componentId)));
         if (transport) [[likely]] {
             auto buffer = adoptGRef(gst_buffer_new_wrapped_full(static_cast<GstMemoryFlags>(0), recvData, dataSize, 0, dataSize,
                 recvData, reinterpret_cast<GDestroyNotify>(rice_free_data)));
-            webkitGstWebRTCIceTransportHandleIncomingData(WEBKIT_GST_WEBRTC_ICE_TRANSPORT(transport), WTFMove(buffer));
+            webkitGstWebRTCIceTransportHandleIncomingData(WEBKIT_GST_WEBRTC_ICE_TRANSPORT(transport.get()), WTF::move(buffer));
         }
         recvData = rice_stream_poll_recv(stream->priv->riceStream.get(), &componentId, &dataSize);
     }
@@ -276,27 +277,15 @@ void webkitGstWebRTCIceStreamSetRemoteCredentials(WebKitGstIceStream* stream, co
 
 bool webkitGstWebRTCIceStreamGetSelectedPair(WebKitGstIceStream* stream, GstWebRTCICECandidateStats** localStats, GstWebRTCICECandidateStats** remoteStats)
 {
-    if (!stream->priv->rtpTransport) [[unlikely]]
+    auto transport = stream->priv->rtpTransport.get();
+    if (!transport) [[unlikely]]
         return false;
 
-    return webkitGstWebRTCIceTransportGetSelectedPair(WEBKIT_GST_WEBRTC_ICE_TRANSPORT(stream->priv->rtpTransport.get()), localStats, remoteStats);
-}
-
-static void webkitGstWebRTCIceStreamFinalize(GObject* object)
-{
-    auto stream = WEBKIT_GST_WEBRTC_ICE_STREAM(object);
-    auto agent = stream->priv->agent.get();
-    if (agent)
-        webkitGstWebRTCIceAgentFinalizeStream(agent.get(), GST_WEBRTC_ICE_STREAM(object)->stream_id);
-
-    G_OBJECT_CLASS(webkit_gst_webrtc_ice_stream_parent_class)->finalize(object);
+    return webkitGstWebRTCIceTransportGetSelectedPair(WEBKIT_GST_WEBRTC_ICE_TRANSPORT(transport.get()), localStats, remoteStats);
 }
 
 static void webkit_gst_webrtc_ice_stream_class_init(WebKitGstIceStreamClass* klass)
 {
-    auto gobjectClass = G_OBJECT_CLASS(klass);
-    gobjectClass->finalize = webkitGstWebRTCIceStreamFinalize;
-
     auto iceClass = GST_WEBRTC_ICE_STREAM_CLASS(klass);
     iceClass->find_transport = webkitGstWebRTCIceStreamFindTransport;
     iceClass->gather_candidates = webkitGstWebRTCIceStreamGatherCandidates;
@@ -309,8 +298,9 @@ WebKitGstIceStream* webkitGstWebRTCCreateIceStream(WebKitGstIceAgent* agent, GRe
 
     gst_object_ref_sink(stream);
 
+    stream->priv->streamId = streamId;
     stream->priv->agent.reset(agent);
-    stream->priv->riceStream = WTFMove(riceStream);
+    stream->priv->riceStream = WTF::move(riceStream);
     return stream;
 }
 

@@ -49,9 +49,11 @@ class AudioContext final
     , public MediaProducer
     , public MediaCanStartListener
     , private PlatformMediaSessionClient {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(AudioContext);
+    WTF_MAKE_TZONE_ALLOCATED(AudioContext);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(AudioContext);
 public:
+    USING_CAN_MAKE_WEAKPTR(EventTarget);
+
     // Create an AudioContext for rendering to the audio hardware.
     static ExceptionOr<Ref<AudioContext>> create(Document&, AudioContextOptions&&);
     virtual ~AudioContext();
@@ -64,9 +66,7 @@ public:
     void close(DOMPromiseDeferred<void>&&);
 
     DefaultAudioDestinationNode& destination() final { return m_destinationNode.get(); }
-    Ref<DefaultAudioDestinationNode> protectedDestination() { return destination(); }
     const DefaultAudioDestinationNode& destination() const final { return m_destinationNode.get(); }
-    Ref<const DefaultAudioDestinationNode> protectedDestination() const { return destination(); }
 
     double baseLatency();
     double outputLatency();
@@ -110,7 +110,7 @@ public:
 private:
     AudioContext(Document&, const AudioContextOptions&);
 
-    bool willBeginPlayback();
+    void willBeginPlayback(CompletionHandler<void(bool)>&&);
 
 #if !RELEASE_LOG_DISABLED
     const Logger& logger() const final;

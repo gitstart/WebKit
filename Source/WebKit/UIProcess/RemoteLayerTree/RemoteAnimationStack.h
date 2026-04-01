@@ -31,6 +31,7 @@
 #include <WebCore/AcceleratedEffectValues.h>
 #include <WebCore/PlatformCAFilters.h>
 #include <WebCore/PlatformLayer.h>
+#include <WebCore/ScrollingNodeID.h>
 #include <wtf/JSONValues.h>
 #include <wtf/OptionSet.h>
 #include <wtf/TZoneMalloc.h>
@@ -58,10 +59,13 @@ public:
 
 #if PLATFORM(MAC)
     void initEffectsFromMainThread(PlatformLayer*);
-    void applyEffectsFromScrollingThread() const;
+    void applyEffects() const;
 #endif
 
     void applyEffectsFromMainThread(PlatformLayer*, bool backdropRootIsOpaque) const;
+
+    bool isDependentOnScrollingNodeWithID(WebCore::ScrollingNodeID) const;
+    bool isTimeDependent() const;
 
     void clear(PlatformLayer*);
 

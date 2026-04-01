@@ -63,7 +63,7 @@ struct SelectionContext {
 static CheckedPtr<RenderObject> rendererAfterOffset(const RenderObject& renderer, unsigned offset)
 {
     CheckedPtr child = renderer.childAt(offset);
-    return child ? child : renderer.nextInPreOrderAfterChildren();
+    return child ? child : CheckedPtr { renderer.nextInPreOrderAfterChildren() };
 }
 
 static bool isValidRendererForSelection(const RenderObject& renderer, const RenderRange& selection)
@@ -271,7 +271,7 @@ void RenderSelection::apply(const RenderRange& newSelection, RepaintMode blockRe
             if (!currentRenderer->isRenderTextOrLineBreak())
                 m_selectionGeometryGatherer.setTextOnly(false);
 #endif
-            newSelectedRenderers.set(*currentRenderer, WTFMove(selectionGeometry));
+            newSelectedRenderers.set(*currentRenderer, WTF::move(selectionGeometry));
             CheckedPtr containingBlock = currentRenderer->containingBlock();
             while (containingBlock && !is<RenderView>(*containingBlock)) {
                 auto& blockSelectionGeometry = newSelectedBlocks.add(*containingBlock, nullptr).iterator->value;

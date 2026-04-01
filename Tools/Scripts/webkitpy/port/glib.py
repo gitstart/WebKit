@@ -28,12 +28,17 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import logging
 import os
+import re
 import uuid
 
+from webkitpy.common.memoized import memoized
 from webkitpy.port.base import Port
 from webkitpy.port.leakdetector_valgrind import LeakDetectorValgrind
 from webkitpy.port.linux_get_crash_log import GDBCrashLogGenerator
+
+_log = logging.getLogger(__name__)
 
 
 class GLibPort(Port):
@@ -63,6 +68,12 @@ class GLibPort(Port):
         if self.get_option('configuration') == 'Debug':
             multiplier *= 2
         return multiplier * default_timeout
+
+    @classmethod
+    def determine_full_port_name(cls, host, options, port_name):
+        """Return a fully-specified port name that can be used to construct objects."""
+        # gtk and wpe ports don't add a -wk2 suffix on the default port name because they don't support -wk1
+        return port_name
 
     def _built_executables_path(self, *path):
         return self._build_path(*(('bin',) + path))
@@ -130,7 +141,7 @@ class GLibPort(Port):
         # Disable SIMD optimization in GStreamer's ORC. Some bots (WPE release) crash in ORC's optimizations.
         environment['ORC_CODE'] = 'backup'
 
-        # Current LibRice version in SDK emits errors which seem to be debug leftover statements.
+        # Workaround for bots not using latest SDK version.
         environment['RICE_LOG'] = 'none'
 
         if self.get_option("leaks"):
@@ -215,3 +226,23 @@ class GLibPort(Port):
         environment['TEST_WEBKIT_API_WEBKIT2_RESOURCES_PATH'] = self.path_from_webkit_base('Tools', 'TestWebKitAPI', 'Tests', 'WebKit')
         environment['TEST_WEBKIT_API_WEBKIT2_INJECTED_BUNDLE_PATH'] = self._build_path('lib')
         return environment
+
+    @memoized
+    def _webkit_version(self):
+        options_filename = 'Options{}.cmake'.format(self.port_name.upper())
+        options_file = self.path_from_webkit_base('Source', 'cmake', options_filename)
+        try:
+            contents = self._filesystem.read_text_file(options_file)
+            match = re.search(r'SET_PROJECT_VERSION\((\d+)\s+(\d+)\s+(\d+)\)', contents)
+            if match:
+                return '{}.{}'.format(match.group(1), match.group(2))
+        except IOError:
+            _log.warning('Could not read %s to determine WebKit version' % options_file)
+        return None
+
+    def configuration_for_upload(self, host=None):
+        configuration = super(GLibPort, self).configuration_for_upload(host=host)
+        webkit_version = self._webkit_version()
+        if webkit_version:
+            configuration['version'] = webkit_version
+        return configuration

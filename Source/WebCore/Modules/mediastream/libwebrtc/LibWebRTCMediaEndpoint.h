@@ -81,7 +81,7 @@ class LibWebRTCMediaEndpoint final
 #endif
 {
 public:
-    static RefPtr<LibWebRTCMediaEndpoint> create(RTCPeerConnection&, LibWebRTCProvider&, Document&, webrtc::PeerConnectionInterface::RTCConfiguration&&);
+    static RefPtr<LibWebRTCMediaEndpoint> create(RTCPeerConnection&, LibWebRTCProvider&, Document&, webrtc::PeerConnectionInterface::RTCConfiguration&&, bool shouldEnableServiceClass);
     ~LibWebRTCMediaEndpoint();
 
     void restartIce();
@@ -107,7 +107,7 @@ public:
     void removeTrack(LibWebRTCRtpSenderBackend&);
 
     struct Backends {
-        std::unique_ptr<LibWebRTCRtpSenderBackend> senderBackend;
+        RefPtr<LibWebRTCRtpSenderBackend> senderBackend;
         std::unique_ptr<LibWebRTCRtpReceiverBackend> receiverBackend;
         std::unique_ptr<LibWebRTCRtpTransceiverBackend> transceiverBackend;
     };
@@ -131,8 +131,10 @@ public:
 
     void setPeerConnectionBackend(LibWebRTCPeerConnectionBackend&);
 
+    bool shouldEnableServiceClass() const { return m_rtcSocketFactory && m_rtcSocketFactory->shouldEnableServiceClass(); }
+
 private:
-    LibWebRTCMediaEndpoint(RTCPeerConnection&, LibWebRTCProvider&, Document&);
+    LibWebRTCMediaEndpoint(RTCPeerConnection&, LibWebRTCProvider&, Document&, bool shouldEnableServiceClass);
 
     // webrtc::PeerConnectionObserver API
     void OnSignalingChange(webrtc::PeerConnectionInterface::SignalingState) final;
@@ -142,7 +144,6 @@ private:
     void OnStandardizedIceConnectionChange(webrtc::PeerConnectionInterface::IceConnectionState) final;
     void OnIceGatheringChange(webrtc::PeerConnectionInterface::IceGatheringState) final;
     void OnIceCandidate(const webrtc::IceCandidate*) final;
-    void OnIceCandidatesRemoved(const std::vector<webrtc::Candidate>&) final;
 
     void createSessionDescriptionSucceeded(std::unique_ptr<webrtc::SessionDescriptionInterface>&&);
     void createSessionDescriptionFailed(ExceptionCode, const char*);
@@ -185,7 +186,6 @@ private:
 #endif
 
     RefPtr<LibWebRTCPeerConnectionBackend> protectedPeerConnectionBackend() const;
-    RefPtr<webrtc::PeerConnectionInterface> createBackend(LibWebRTCProvider&, webrtc::PeerConnectionInterface::RTCConfiguration&&);
 
     WeakPtr<LibWebRTCPeerConnectionBackend> m_peerConnectionBackend;
     const Ref<webrtc::PeerConnectionFactoryInterface> m_peerConnectionFactory;
@@ -199,7 +199,7 @@ private:
     SetLocalSessionDescriptionObserver<LibWebRTCMediaEndpoint> m_setLocalSessionDescriptionObserver;
     SetRemoteSessionDescriptionObserver<LibWebRTCMediaEndpoint> m_setRemoteSessionDescriptionObserver;
 
-    MemoryCompactRobinHoodHashMap<String, RefPtr<MediaStream>> m_remoteStreamsById;
+    MemoryCompactRobinHoodHashMap<String, Ref<MediaStream>> m_remoteStreamsById;
 
     bool m_isInitiator { false };
     Timer m_statsLogTimer;

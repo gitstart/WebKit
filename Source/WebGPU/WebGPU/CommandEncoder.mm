@@ -38,6 +38,9 @@
 #import "TextureOrTextureView.h"
 #if ENABLE(WEBGPU_SWIFT)
 #import "CxxBridging.h"
+#import <WebGPU/CxxBridgingPublic.h>
+#import <WebGPU/WGPUTextureImpl.h>
+#import <WebGPU/WebGPU.h>
 #import "WebGPUSwift-Generated.h"
 #endif
 #import <wtf/CheckedArithmetic.h>
@@ -145,8 +148,10 @@ CommandEncoder::CommandEncoder(id<MTLCommandBuffer> commandBuffer, Device& devic
                 continue;
             apiBuffer->removeSkippedValidationCommandEncoder(commandEncoder.uniqueId());
             if (apiBuffer->mustTakeSlowIndexValidationPath()) {
-                for (DrawIndexCacheContainerValue& key : skippedDrawIndexedValidationKeys) {
-                    apiBuffer->takeSlowIndexValidationPath(commandBuffer, key.firstIndex, key.indexCount, key.vertexCount, key.instanceCount, key.indexType(), key.firstInstance, key.baseVertex, key.minInstanceCount, key.primitiveOffset());
+                for (auto& keyValuePair : skippedDrawIndexedValidationKeys) {
+                    auto& key = keyValuePair.first;
+                    auto& value = keyValuePair.second;
+                    apiBuffer->takeSlowIndexValidationPath(commandBuffer, key.firstIndex, key.indexCount, key.indexType(), key.primitiveOffset(), value);
                     commandBuffer.addPostCommitHandler([bufferIdentifier, device = Ref { commandBuffer.device() }](id<MTLCommandBuffer>) {
                         if (RefPtr apiBuffer = device->lookupBuffer(bufferIdentifier))
                             apiBuffer->clearMustTakeSlowIndexValidationPath();
@@ -154,7 +159,7 @@ CommandEncoder::CommandEncoder(id<MTLCommandBuffer> commandBuffer, Device& devic
                 }
             }
         }
-        for (RefPtr group : commandEncoder.m_bindGroups)
+        for (Ref group : commandEncoder.m_bindGroups)
             group->rebindSamplersIfNeeded();
 
         return true;
@@ -178,6 +183,7 @@ CommandEncoder::~CommandEncoder()
     m_device->protectedQueue()->removeMTLCommandBuffer(m_commandBuffer);
     retainTimestampsForOneUpdateLoop();
     m_commandBuffer = nil; // Do not remove, this is needed to workaround rdar://143905417
+    clearTracking();
     m_device->removeCommandEncoder(m_uniqueId);
 }
 
@@ -2131,7 +2137,7 @@ Ref<CommandBuffer> CommandEncoder::finish(const WGPUCommandBufferDescriptor& des
     }
 #endif
 
-    auto result = CommandBuffer::create(commandBuffer, m_device, m_sharedEvent, m_sharedEventSignalValue, WTFMove(m_onCommitHandlers), *this);
+    auto result = CommandBuffer::create(commandBuffer, m_device, m_sharedEvent, m_sharedEventSignalValue, WTF::move(m_onCommitHandlers), *this);
     m_sharedEvent = nil;
     m_cachedCommandBuffer = result.ptr();
     result->setBufferMapCount(m_bufferMapCount);
@@ -2311,17 +2317,64 @@ void CommandEncoder::lock(bool shouldLock)
         setExistingEncoder(nil);
 }
 
-size_t CommandEncoder::computeSize(Vector<uint64_t>& container, const Device& device)
+size_t CommandEncoder::computeSize(TrackedResourceContainer& container, const Device& device)
 {
-    container.removeAllMatching([&](auto commandEncoder) {
+    container.removeIf([&](auto commandEncoder) {
         return !device.commandEncoderFromIdentifier(commandEncoder);
     });
     return container.size();
 }
 
-void CommandEncoder::trackEncoder(CommandEncoder& commandEncoder, Vector<uint64_t>& encoderContainer)
+void CommandEncoder::trackEncoder(TrackedResourceContainer& encoderContainer)
 {
-    encoderContainer.append(commandEncoder.uniqueId());
+    encoderContainer.add(uniqueId());
+}
+
+void CommandEncoder::clearTracking()
+{
+    auto identifier = uniqueId();
+    for (auto& resource : m_trackedBuffers)
+        resource->removeEncoder(identifier);
+    for (auto& resource : m_trackedTextures)
+        resource->removeEncoder(identifier);
+    for (auto& resource : m_trackedTextureViews)
+        resource->removeEncoder(identifier);
+    for (auto& resource : m_trackedExternalTextures)
+        resource->removeEncoder(identifier);
+    for (auto& resource : m_trackedQuerySets)
+        resource->removeEncoder(identifier);
+
+    m_trackedBuffers.clear();
+    m_trackedTextures.clear();
+    m_trackedTextureViews.clear();
+    m_trackedExternalTextures.clear();
+    m_trackedQuerySets.clear();
+}
+
+void CommandEncoder::trackEncoderForBuffer(const Buffer& buffer, TrackedResourceContainer& encoderContainer)
+{
+    trackEncoder(encoderContainer);
+    m_trackedBuffers.append(buffer);
+}
+void CommandEncoder::trackEncoderForTexture(const Texture& texture, TrackedResourceContainer& encoderContainer)
+{
+    trackEncoder(encoderContainer);
+    m_trackedTextures.append(texture);
+}
+void CommandEncoder::trackEncoderForTextureView(const TextureView& textureView, TrackedResourceContainer& encoderContainer)
+{
+    trackEncoder(encoderContainer);
+    m_trackedTextureViews.append(textureView);
+}
+void CommandEncoder::trackEncoderForExternalTexture(const ExternalTexture& externalTexture, TrackedResourceContainer& encoderContainer)
+{
+    trackEncoder(encoderContainer);
+    m_trackedExternalTextures.append(externalTexture);
+}
+void CommandEncoder::trackEncoderForQuerySet(const QuerySet& querySet, TrackedResourceContainer& encoderContainer)
+{
+    trackEncoder(encoderContainer);
+    m_trackedQuerySets.append(querySet);
 }
 
 void CommandEncoder::trackEncoder(CommandEncoder& commandEncoder, HashSet<uint64_t, DefaultHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t>>& encoderContainer)
@@ -2332,7 +2385,7 @@ void CommandEncoder::trackEncoder(CommandEncoder& commandEncoder, HashSet<uint64
 void CommandEncoder::addOnCommitHandler(Function<bool(CommandBuffer&, CommandEncoder&)>&& onCommitHandler)
 {
     ASSERT(m_commandBuffer);
-    m_onCommitHandlers.append(WTFMove(onCommitHandler));
+    m_onCommitHandlers.append(WTF::move(onCommitHandler));
 }
 
 #if ENABLE(WEBGPU_BY_DEFAULT)
@@ -2353,10 +2406,10 @@ bool CommandEncoder::useResidencySet(id<MTLResidencySet> residencySet)
 
 void CommandEncoder::skippedDrawIndexedValidation(uint64_t bufferIdentifier, DrawIndexCacheContainerIterator it)
 {
-    m_skippedDrawIndexedValidationKeys.add(bufferIdentifier, Vector<DrawIndexCacheContainerValue> { }).iterator->value.append(DrawIndexCacheContainerValue(it->key));
+    m_skippedDrawIndexedValidationKeys.add(bufferIdentifier, Vector<std::pair<DrawIndexCacheContainerValue, uint32_t>> { }).iterator->value.append(std::make_pair(DrawIndexCacheContainerValue(it->key.key()), it->value));
 }
 
-void CommandEncoder::rebindSamplersPreCommit(const BindGroup* group)
+void CommandEncoder::rebindSamplersPreCommit(const BindGroup& group)
 {
     m_bindGroups.append(group);
 }

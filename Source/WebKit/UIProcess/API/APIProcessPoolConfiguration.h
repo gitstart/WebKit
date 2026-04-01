@@ -76,10 +76,10 @@ public:
     void setInjectedBundlePath(const WTF::String& injectedBundlePath) { m_injectedBundlePath = injectedBundlePath; }
 
     const Vector<WTF::String>& cachePartitionedURLSchemes() { return m_cachePartitionedURLSchemes; }
-    void setCachePartitionedURLSchemes(Vector<WTF::String>&& cachePartitionedURLSchemes) { m_cachePartitionedURLSchemes = WTFMove(cachePartitionedURLSchemes); }
+    void setCachePartitionedURLSchemes(Vector<WTF::String>&& cachePartitionedURLSchemes) { m_cachePartitionedURLSchemes = WTF::move(cachePartitionedURLSchemes); }
 
     const Vector<WTF::String>& alwaysRevalidatedURLSchemes() { return m_alwaysRevalidatedURLSchemes; }
-    void setAlwaysRevalidatedURLSchemes(Vector<WTF::String>&& alwaysRevalidatedURLSchemes) { m_alwaysRevalidatedURLSchemes = WTFMove(alwaysRevalidatedURLSchemes); }
+    void setAlwaysRevalidatedURLSchemes(Vector<WTF::String>&& alwaysRevalidatedURLSchemes) { m_alwaysRevalidatedURLSchemes = WTF::move(alwaysRevalidatedURLSchemes); }
 
     const Vector<WTF::String>& additionalReadAccessAllowedPaths() { return m_additionalReadAccessAllowedPaths; }
     void setAdditionalReadAccessAllowedPaths(Vector<WTF::String>&& additionalReadAccessAllowedPaths) { m_additionalReadAccessAllowedPaths = additionalReadAccessAllowedPaths; }
@@ -115,7 +115,7 @@ public:
 
 #if HAVE(AUDIT_TOKEN)
     const std::optional<audit_token_t> presentingApplicationProcessToken() const { return m_presentingApplicationProcessToken; }
-    void setPresentingApplicationProcessToken(std::optional<audit_token_t>&& token) { m_presentingApplicationProcessToken = WTFMove(token); }
+    void setPresentingApplicationProcessToken(std::optional<audit_token_t>&& token) { m_presentingApplicationProcessToken = WTF::move(token); }
 #endif
 
     bool processSwapsOnNavigation() const
@@ -130,11 +130,6 @@ public:
 
     bool processSwapsOnNavigationWithinSameNonHTTPFamilyProtocol() const { return m_processSwapsOnNavigationWithinSameNonHTTPFamilyProtocol; }
     void setProcessSwapsOnNavigationWithinSameNonHTTPFamilyProtocol(bool swaps) { m_processSwapsOnNavigationWithinSameNonHTTPFamilyProtocol = swaps; }
-
-#if PLATFORM(GTK) && !USE(GTK4) && USE(CAIRO)
-    bool useSystemAppearanceForScrollbars() const { return m_useSystemAppearanceForScrollbars; }
-    void setUseSystemAppearanceForScrollbars(bool useSystemAppearanceForScrollbars) { m_useSystemAppearanceForScrollbars = useSystemAppearanceForScrollbars; }
-#endif
 
 #if PLATFORM(PLAYSTATION)
     const WTF::String& webProcessPath() const { return m_webProcessPath; }
@@ -161,7 +156,7 @@ public:
     void setMemoryFootprintPollIntervalForTesting(Seconds interval) { m_memoryFootprintPollIntervalForTesting = interval; }
     Seconds memoryFootprintPollIntervalForTesting() const { return m_memoryFootprintPollIntervalForTesting; }
 
-    void setMemoryFootprintNotificationThresholds(Vector<uint64_t>&& thresholds) { m_memoryFootprintNotificationThresholds = WTFMove(thresholds); }
+    void setMemoryFootprintNotificationThresholds(Vector<uint64_t>&& thresholds) { m_memoryFootprintNotificationThresholds = WTF::move(thresholds); }
     const Vector<uint64_t>& memoryFootprintNotificationThresholds() const { return m_memoryFootprintNotificationThresholds; }
 
 #if ENABLE(WEB_PROCESS_SUSPENSION_DELAY)
@@ -196,9 +191,6 @@ private:
     bool m_shouldConfigureJSCForTesting { false };
     bool m_isJITEnabled { true };
     bool m_usesSingleWebProcess { false };
-#if PLATFORM(GTK) && !USE(GTK4) && USE(CAIRO)
-    bool m_useSystemAppearanceForScrollbars { false };
-#endif
 #if PLATFORM(PLAYSTATION)
     WTF::String m_webProcessPath;
     WTF::String m_networkProcessPath;

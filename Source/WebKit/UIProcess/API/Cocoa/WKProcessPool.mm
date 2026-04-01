@@ -256,7 +256,7 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 
 - (id)_objectForBundleParameter:(NSString *)parameter
 {
-    return [protectedProcessPool(self)->protectedBundleParameters() objectForKey:parameter];
+    return [protect(protectedProcessPool(self)->bundleParameters()) objectForKey:parameter];
 }
 
 - (void)_setObject:(id <NSCopying, NSSecureCoding>)object forBundleParameter:(NSString *)parameter
@@ -372,7 +372,7 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
     for (NSString *extension in nsExtensions)
         extensions.add(extension);
 
-    protectedProcessPool(self)->addSupportedPlugin(domain, name, WTFMove(mimeTypes), WTFMove(extensions));
+    protectedProcessPool(self)->addSupportedPlugin(domain, name, WTF::move(mimeTypes), WTF::move(extensions));
 }
 
 - (void)_clearSupportedPlugins
@@ -470,7 +470,12 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 
 - (size_t)_webProcessCountIgnoringPrewarmed
 {
-    return [self _webProcessCount] - ([self _hasPrewarmedWebProcess] ? 1 : 0);
+    size_t count = 0;
+    for (auto process : _processPool->processes()) {
+        if (!process->isPrewarmed())
+            ++count;
+    }
+    return count;
 }
 
 - (size_t)_webProcessCountIgnoringPrewarmedAndCached
@@ -679,7 +684,7 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 
 - (WKNotificationManagerRef)_notificationManagerForTesting
 {
-    return WebKit::toAPI(protectedProcessPool(self)->protectedSupplement<WebKit::WebNotificationManagerProxy>().get());
+    return WebKit::toAPI(protect(protectedProcessPool(self)->supplement<WebKit::WebNotificationManagerProxy>()).get());
 }
 
 + (_WKProcessInfo *)_gpuProcessInfo

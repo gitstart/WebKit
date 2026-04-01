@@ -45,7 +45,7 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(StyleCachedImage);
 
 Ref<StyleCachedImage> StyleCachedImage::create(Style::URL&& url, Ref<CSSImageValue>&& cssValue, float scaleFactor)
 {
-    return adoptRef(*new StyleCachedImage(WTFMove(url), WTFMove(cssValue), scaleFactor));
+    return adoptRef(*new StyleCachedImage(WTF::move(url), WTF::move(cssValue), scaleFactor));
 }
 
 Ref<StyleCachedImage> StyleCachedImage::create(const Style::URL& url, const Ref<CSSImageValue>& cssValue, float scaleFactor)
@@ -62,8 +62,8 @@ Ref<StyleCachedImage> StyleCachedImage::copyOverridingScaleFactor(StyleCachedIma
 
 StyleCachedImage::StyleCachedImage(Style::URL&& url, Ref<CSSImageValue>&& cssValue, float scaleFactor)
     : StyleImage { Type::CachedImage }
-    , m_url { WTFMove(url) }
-    , m_cssValue { WTFMove(cssValue) }
+    , m_url { WTF::move(url) }
+    , m_cssValue { WTF::move(cssValue) }
     , m_scaleFactor { scaleFactor }
 {
     m_cachedImage = m_cssValue->cachedImage();
@@ -126,11 +126,11 @@ LegacyRenderSVGResourceContainer* StyleCachedImage::uncheckedRenderSVGResource(c
     }
 
     if (!m_cachedImage) {
-        auto fragmentIdentifier = SVGURIReference::fragmentIdentifierFromIRIString(m_url, renderer->protectedDocument());
+        auto fragmentIdentifier = SVGURIReference::fragmentIdentifierFromIRIString(m_url, protect(renderer->document()));
         return uncheckedRenderSVGResource(renderer->treeScopeForSVGReferences(), fragmentIdentifier);
     }
 
-    auto image = dynamicDowncast<SVGImage>(m_cachedImage->image());
+    RefPtr image = dynamicDowncast<SVGImage>(m_cachedImage->image());
     if (!image)
         return nullptr;
 
@@ -167,7 +167,7 @@ RenderSVGResourceContainer* StyleCachedImage::renderSVGResource(const RenderElem
         return nullptr;
     }
 
-    auto image = dynamicDowncast<SVGImage>(m_cachedImage->image());
+    RefPtr image = dynamicDowncast<SVGImage>(m_cachedImage->image());
     if (!image)
         return nullptr;
 

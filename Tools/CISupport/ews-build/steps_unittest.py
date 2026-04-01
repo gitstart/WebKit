@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Apple Inc. All rights reserved.
+# Copyright (C) 2018-2026 Apple Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -795,7 +795,7 @@ class TestRunEWSUnitTests(BuildStepMixinAdditions, unittest.TestCase):
             ExpectShell(workdir='build/Tools/CISupport',
                         timeout=120,
                         log_environ=False,
-                        command=['python3', 'runUnittests.py', 'ews-build', '--autoinstall'],
+                        command=['python3', './run-tests', 'ews-build'],
                         )
             .exit(0),
         )
@@ -808,7 +808,7 @@ class TestRunEWSUnitTests(BuildStepMixinAdditions, unittest.TestCase):
             ExpectShell(workdir='build/Tools/CISupport',
                         timeout=120,
                         log_environ=False,
-                        command=['python3', 'runUnittests.py', 'ews-build', '--autoinstall'],
+                        command=['python3', './run-tests', 'ews-build'],
                         )
             .log('stdio', stdout='Unhandled Error. Traceback (most recent call last): Keys in cmd missing from expectation: [logfiles.json]')
             .exit(2),
@@ -867,7 +867,7 @@ class TestRunBuildWebKitOrgUnitTests(BuildStepMixinAdditions, unittest.TestCase)
             ExpectShell(workdir='build/Tools/CISupport',
                         timeout=120,
                         log_environ=False,
-                        command=['python3', 'runUnittests.py', 'build-webkit-org', '--autoinstall'],
+                        command=['python3', './run-tests', 'build-webkit-org'],
                         )
             .exit(0),
         )
@@ -880,12 +880,48 @@ class TestRunBuildWebKitOrgUnitTests(BuildStepMixinAdditions, unittest.TestCase)
             ExpectShell(workdir='build/Tools/CISupport',
                         timeout=120,
                         log_environ=False,
-                        command=['python3', 'runUnittests.py', 'build-webkit-org', '--autoinstall'],
+                        command=['python3', './run-tests', 'build-webkit-org'],
                         )
             .log('stdio', stdout='Unhandled Error. Traceback (most recent call last): Keys in cmd missing from expectation: [logfiles.json]')
             .exit(2),
         )
         self.expect_outcome(result=FAILURE, state_string='Failed build.webkit.org unit tests')
+        return self.run_step()
+
+
+class TestRunSharedUnitTests(BuildStepMixinAdditions, unittest.TestCase):
+    def setUp(self):
+        self.longMessage = True
+        return self.setup_test_build_step()
+
+    def tearDown(self):
+        return self.tear_down_test_build_step()
+
+    def test_success(self):
+        self.setup_step(RunSharedUnitTests())
+        self.expectRemoteCommands(
+            ExpectShell(workdir='build/Tools/CISupport',
+                        timeout=120,
+                        log_environ=False,
+                        command=['python3', './run-tests', 'Shared'],
+                        )
+            .exit(0),
+        )
+        self.expect_outcome(result=SUCCESS, state_string='Passed Shared unit tests')
+        return self.run_step()
+
+    def test_failure(self):
+        self.setup_step(RunSharedUnitTests())
+        self.expectRemoteCommands(
+            ExpectShell(workdir='build/Tools/CISupport',
+                        timeout=120,
+                        log_environ=False,
+                        command=['python3', './run-tests', 'Shared'],
+                        )
+            .log('stdio', stdout='Unhandled Error. Traceback (most recent call last): Keys in cmd missing from expectation: [logfiles.json]')
+            .exit(2),
+        )
+        self.expect_outcome(result=FAILURE, state_string='Failed Shared unit tests')
         return self.run_step()
 
 
@@ -3261,7 +3297,6 @@ class TestAnalyzeLayoutTestsResultsRedTree(BuildStepMixinAdditions, unittest.Tes
     def test_pre_existent_failures(self):
         self.configureStep()
         self.configureCommonProperties()
-        # MARK HERE
         self.setProperty('first_run_failures', ["test/pre-existent/failure.html", "test/pre-existent/flaky.html"])
         self.setProperty('first_run_flakies', ["test/pre-existent/flaky2.html", "test/pre-existent/flaky3.html"])
         self.setProperty('with_change_repeat_failures_results_nonflaky_failures', ["test/pre-existent/failure.html"])
@@ -3322,8 +3357,8 @@ class TestAnalyzeLayoutTestsResultsRedTree(BuildStepMixinAdditions, unittest.Tes
         self.setProperty('clean_tree_run_status', FAILURE)
         expected_infrastructure_error = 'The layout-test run with change generated no list of results and exited with error, and the clean_tree without change run did the same thing.'
         self.expect_outcome(
-            result=WARNINGS,
-            state_string=f'{expected_infrastructure_error}\nReached the maximum number of retries (3). Unable to determine if change is bad or there is a pre-existent infrastructure issue. (warnings)')
+            result=FAILURE,
+            state_string=f'{expected_infrastructure_error}\nReached the maximum number of retries (3). Unable to determine if change is bad or there is a pre-existent infrastructure issue. (failure)')
         step_result = self.run_step()
         self.assertEqual(len(self._emails_list), 1)
         self.assertTrue(expected_infrastructure_error in self._emails_list[0])
@@ -3343,6 +3378,20 @@ class TestAnalyzeLayoutTestsResultsRedTree(BuildStepMixinAdditions, unittest.Tes
         step_result = self.run_step()
         self.assertEqual(len(self._emails_list), 1)
         self.assertTrue(expected_infrastructure_error in self._emails_list[0])
+        return step_result
+
+    def test_first_step_error_exit_code_with_only_flakies(self):
+        self.configureStep()
+        self.configureCommonProperties()
+        first_run_flakies = ["test/flaky1.html", "test/flaky2.html"]
+        self.setProperty('first_run_failures', [])
+        self.setProperty('first_run_flakies', first_run_flakies)
+        self.expect_outcome(result=SUCCESS, state_string='Passed layout tests')
+        step_result = self.run_step()
+        self.assertEqual(len(self._emails_list), 1)
+        self.assertTrue('Subject: Info about 2 flaky failures' in self._emails_list[0])
+        for flaky_test in first_run_flakies:
+            self.assertTrue(f'Test name: <a href="https://github.com/WebKit/WebKit/blob/main/LayoutTests/{flaky_test}">{flaky_test}</a>' in self._emails_list[0])
         return step_result
 
     def test_step_retry_with_change_exits_early_error(self):
@@ -3377,6 +3426,60 @@ class TestAnalyzeLayoutTestsResultsRedTree(BuildStepMixinAdditions, unittest.Tes
         step_result = self.run_step()
         self.assertEqual(len(self._emails_list), 1)
         self.assertTrue(expected_infrastructure_error in self._emails_list[0])
+        return step_result
+
+    def test_step_retry_with_change_pass(self):
+        self.configureStep()
+        self.configureCommonProperties()
+        first_run_failures = ["test/failure1.html", "test/failure2.html", "test/pre-existent/flaky1.html", "test/pre-existent/flaky2.html"]
+        first_run_flakies = ["test/flaky1.html", "test/flaky2.html"]
+        self.setProperty('first_run_failures', first_run_failures)
+        self.setProperty('first_run_flakies', first_run_flakies)
+        self.setProperty('with_change_repeat_failures_results_nonflaky_failures', [])
+        self.setProperty('with_change_repeat_failures_results_flakies', [])
+        self.setProperty('with_change_repeat_failures_retcode', SUCCESS)
+        self.expect_outcome(result=SUCCESS, state_string='Passed layout tests')
+        step_result = self.run_step()
+        self.assertEqual(len(self._emails_list), 1)
+        self.assertTrue('Subject: Info about 6 flaky failures' in self._emails_list[0])
+        for flaky_test in first_run_failures + first_run_flakies:
+            self.assertTrue(f'Test name: <a href="https://github.com/WebKit/WebKit/blob/main/LayoutTests/{flaky_test}">{flaky_test}</a>' in self._emails_list[0])
+        return step_result
+
+    def test_step_retry_with_change_warnings(self):
+        self.configureStep()
+        self.configureCommonProperties()
+        first_run_failures = ["test/failure1.html", "test/failure2.html", "test/pre-existent/flaky1.html", "test/pre-existent/flaky2.html"]
+        first_run_flakies = ["test/flaky1.html", "test/flaky2.html"]
+        self.setProperty('first_run_failures', first_run_failures)
+        self.setProperty('first_run_flakies', first_run_flakies)
+        self.setProperty('with_change_repeat_failures_results_nonflaky_failures', [])
+        self.setProperty('with_change_repeat_failures_results_flakies', ["test/pre-existent/flaky1.html"])
+        self.setProperty('with_change_repeat_failures_retcode', WARNINGS)
+        self.expect_outcome(result=SUCCESS, state_string='Passed layout tests')
+        step_result = self.run_step()
+        self.assertEqual(len(self._emails_list), 1)
+        self.assertTrue('Subject: Info about 6 flaky failures' in self._emails_list[0])
+        for flaky_test in first_run_failures + first_run_flakies:
+            self.assertTrue(f'Test name: <a href="https://github.com/WebKit/WebKit/blob/main/LayoutTests/{flaky_test}">{flaky_test}</a>' in self._emails_list[0])
+        return step_result
+
+    def test_step_retry_with_change_error_with_flakies(self):
+        self.configureStep()
+        self.configureCommonProperties()
+        first_run_failures = ["test/failure1.html", "test/failure2.html", "test/pre-existent/flaky1.html", "test/pre-existent/flaky2.html"]
+        first_run_flakies = ["test/flaky1.html", "test/flaky2.html"]
+        self.setProperty('first_run_failures', first_run_failures)
+        self.setProperty('first_run_flakies', first_run_flakies)
+        self.setProperty('with_change_repeat_failures_results_nonflaky_failures', [])
+        self.setProperty('with_change_repeat_failures_results_flakies', ["test/pre-existent/flaky1.html"])
+        self.setProperty('with_change_repeat_failures_retcode', FAILURE)
+        self.expect_outcome(result=SUCCESS, state_string='Passed layout tests')
+        step_result = self.run_step()
+        self.assertEqual(len(self._emails_list), 1)
+        self.assertTrue('Subject: Info about 6 flaky failures' in self._emails_list[0])
+        for flaky_test in first_run_failures + first_run_flakies:
+            self.assertTrue(f'Test name: <a href="https://github.com/WebKit/WebKit/blob/main/LayoutTests/{flaky_test}">{flaky_test}</a>' in self._emails_list[0])
         return step_result
 
     def test_step_retry_with_change_timeouts(self):
@@ -3485,7 +3588,7 @@ class TestAnalyzeLayoutTestsResultsRedTree(BuildStepMixinAdditions, unittest.Tes
         self.setProperty('without_change_repeat_failures_timedout', True)
         self.setProperty('retry_count', 3)
         expected_infrastructure_error = 'The step "layout-tests-repeat-failures-without-change" was interrumped because it reached the timeout.'
-        self.expect_outcome(result=WARNINGS, state_string=f'{expected_infrastructure_error}\nReached the maximum number of retries (3). Unable to determine if change is bad or there is a pre-existent infrastructure issue. (warnings)')
+        self.expect_outcome(result=FAILURE, state_string=f'{expected_infrastructure_error}\nReached the maximum number of retries (3). Unable to determine if change is bad or there is a pre-existent infrastructure issue. (failure)')
         step_result = self.run_step()
         self.assertEqual(len(self._emails_list), 1)
         self.assertTrue(expected_infrastructure_error in self._emails_list[0])
@@ -3607,7 +3710,7 @@ class TestUpdateWorkingDirectory(BuildStepMixinAdditions, unittest.TestCase):
                         ).exit(0),
             ExpectShell(workdir='wkdir',
                         log_environ=False,
-                        command=['git', 'checkout', '--progress', '-b', 'main'],
+                        command=['git', 'checkout', '--progress', '-B', 'main'],
                         ).exit(0),
         )
         self.expect_outcome(result=SUCCESS, state_string='Updated working directory')
@@ -3628,7 +3731,7 @@ class TestUpdateWorkingDirectory(BuildStepMixinAdditions, unittest.TestCase):
                         ).exit(0),
             ExpectShell(workdir='wkdir',
                         log_environ=False,
-                        command=['git', 'checkout', '--progress', '-b', 'safari-xxx-branch'],
+                        command=['git', 'checkout', '--progress', '-B', 'safari-xxx-branch'],
                         ).exit(0),
             ExpectShell(workdir='wkdir',
                         log_environ=False,
@@ -3657,7 +3760,7 @@ class TestUpdateWorkingDirectory(BuildStepMixinAdditions, unittest.TestCase):
                         ).exit(0),
             ExpectShell(workdir='wkdir',
                         log_environ=False,
-                        command=['git', 'checkout', '--progress', '-b', 'main'],
+                        command=['git', 'checkout', '--progress', '-B', 'main'],
                         ).exit(0),
         )
         self.expect_outcome(result=SUCCESS, state_string='Updated working directory')
@@ -3679,7 +3782,7 @@ class TestUpdateWorkingDirectory(BuildStepMixinAdditions, unittest.TestCase):
                         ).exit(0),
             ExpectShell(workdir='wkdir',
                         log_environ=False,
-                        command=['git', 'checkout', '--progress', '-b', 'safari-xxx-branch'],
+                        command=['git', 'checkout', '--progress', '-B', 'safari-xxx-branch'],
                         ).exit(0),
             ExpectShell(workdir='wkdir',
                         log_environ=False,
@@ -3948,7 +4051,7 @@ class TestCheckOutPullRequest(BuildStepMixinAdditions, unittest.TestCase):
                 timeout=600,
                 log_environ=False,
                 env=self.ENV,
-                command=['git', 'checkout', '--progress', '-b', 'eng/pull-request-branch'],
+                command=['git', 'checkout', '--progress', '-B', 'eng/pull-request-branch'],
             ).exit(0),
             ExpectShell(
                 workdir='wkdir',
@@ -4005,7 +4108,7 @@ class TestCheckOutPullRequest(BuildStepMixinAdditions, unittest.TestCase):
                 timeout=600,
                 log_environ=False,
                 env=self.ENV,
-                command=['git', 'checkout', '--progress', '-b', 'eng/pull-request-branch'],
+                command=['git', 'checkout', '--progress', '-B', 'eng/pull-request-branch'],
             ).exit(0),
             ExpectShell(
                 workdir='wkdir',
@@ -4062,7 +4165,7 @@ class TestCheckOutPullRequest(BuildStepMixinAdditions, unittest.TestCase):
                 timeout=600,
                 log_environ=False,
                 env=self.ENV,
-                command=['git', 'checkout', '--progress', '-b', 'integration/ci/1234'],
+                command=['git', 'checkout', '--progress', '-B', 'integration/ci/1234'],
             ).exit(0),
             ExpectShell(
                 workdir='wkdir',
@@ -4119,7 +4222,7 @@ class TestCheckOutPullRequest(BuildStepMixinAdditions, unittest.TestCase):
                 timeout=600,
                 log_environ=False,
                 env=self.ENV,
-                command=['git', 'checkout', '--progress', '-b', 'eng/pull-request-branch'],
+                command=['git', 'checkout', '--progress', '-B', 'eng/pull-request-branch'],
             ).exit(0),
             ExpectShell(
                 workdir='wkdir',
@@ -4454,7 +4557,7 @@ class TestCheckChangeRelevance(BuildStepMixinAdditions, unittest.TestCase):
         queues = ['Commit-Queue', 'Style-EWS', 'GTK-Build-EWS', 'GTK-WK2-Tests-EWS',
                   'iOS-13-Build-EWS', 'iOS-13-Simulator-Build-EWS', 'iOS-13-Simulator-WK2-Tests-EWS',
                   'macOS-Catalina-Release-Build-EWS', 'macOS-Catalina-Release-WK2-Tests-EWS', 'macOS-Catalina-Debug-Build-EWS',
-                  'PlayStation-Build-EWS', 'Win-Build-EWS', 'WPE-Build-EWS', 'WebKitPerl-Tests-EWS', 'WPE-Cairo-LibWebRTC-Build-EWS']
+                  'PlayStation-Build-EWS', 'Win-Build-EWS', 'WPE-Build-EWS', 'WebKitPerl-Tests-EWS', 'WPE-LibWebRTC-Build-EWS']
         for queue in queues:
             self.setup_step(CheckChangeRelevance())
             self.setProperty('buildername', queue)
@@ -4833,6 +4936,7 @@ class TestDownloadBuiltProduct(BuildStepMixinAdditions, unittest.TestCase):
         self.setProperty('configuration', 'release')
         self.setProperty('architecture', 'x86_64')
         self.setProperty('change_id', '1234')
+        self.assertTrue(DownloadBuiltProduct.haltOnFailure)
         self.expectRemoteCommands(
             ExpectShell(workdir='wkdir',
                         log_environ=False,
@@ -4873,6 +4977,14 @@ class TestDownloadBuiltProduct(BuildStepMixinAdditions, unittest.TestCase):
         self.expect_outcome(result=SKIPPED)
         with current_hostname('test-ews-deployment.igalia.com'):
             return self.run_step()
+
+    def test_halt_on_failure_with_suffix(self):
+        step = DownloadBuiltProduct(suffix=SUFFIX_WITHOUT_CHANGE)
+        self.assertFalse(step.haltOnFailure)
+
+    def test_step_name_with_suffix(self):
+        step = DownloadBuiltProduct(suffix=SUFFIX_WITHOUT_CHANGE)
+        self.assertEqual(step.name, 'download-built-product' + SUFFIX_WITHOUT_CHANGE)
 
 
 class TestDownloadBuiltProductFromMaster(BuildStepMixinAdditions, unittest.TestCase):
@@ -5984,6 +6096,7 @@ BuildVersion:	23F79'''),
             .log('stdio', stdout='''Linux kodama-ews 5.0.4-arch1-1-ARCH #1 SMP PREEMPT Sat Mar 23 21:00:33 UTC 2019 x86_64 GNU/Linux'''),
             ExpectShell(command=['uptime'], workdir='wkdir', timeout=60, log_environ=False).exit(0)
             .log('stdio', stdout=' 6:31  up 22 seconds, 12:05, 2 users, load averages: 3.17 7.23 5.45'),
+            ExpectShell(command=['/bin/bash', '--posix', '-o', 'pipefail', '-c', 'if test -f /etc/build-info; then cat /etc/build-info; else cat /etc/os-release; fi'], workdir='wkdir', timeout=60, log_environ=False).exit(0),
         )
         self.expect_outcome(result=SUCCESS, state_string='Printed configuration')
         return self.run_step()
@@ -5998,6 +6111,7 @@ BuildVersion:	23F79'''),
             ExpectShell(command=['date'], workdir='wkdir', timeout=60, log_environ=False).exit(0),
             ExpectShell(command=['uname', '-a'], workdir='wkdir', timeout=60, log_environ=False).exit(0),
             ExpectShell(command=['uptime'], workdir='wkdir', timeout=60, log_environ=False).exit(0),
+            ExpectShell(command=['/bin/bash', '--posix', '-o', 'pipefail', '-c', 'if test -f /etc/build-info; then cat /etc/build-info; else cat /etc/os-release; fi'], workdir='wkdir', timeout=60, log_environ=False).exit(0),
         )
         self.expect_outcome(result=SUCCESS, state_string='Printed configuration')
         return self.run_step()
@@ -6433,7 +6547,7 @@ class TestRetrievePRDataFromLabel(BuildStepMixinAdditions, unittest.TestCase):
     def test_success(self):
         self.setup_step(RetrievePRDataFromLabel(project='WebKit/WebKit'))
         GitHubMixin.get_number_of_prs_with_label = lambda self, label, retry=0: 4
-        query_result = {'data': {'repository': {'pullRequests': {'edges': [
+        query_result = {'data': {'search': {'edges': [
             {'node':
                 {'title': 'Fix `test-webkitpy webkitflaskpy`', 'number': 17412, 'commits':
                     {'nodes': [{'commit': {'commitUrl': 'https://github.com/WebKit/WebKit/commit/582fb8b4f85cc9f385c0e0809170cadc48c7fed5', 'status': {'state': 'SUCCESS', 'contexts': [
@@ -6533,7 +6647,7 @@ class TestRetrievePRDataFromLabel(BuildStepMixinAdditions, unittest.TestCase):
                         {'context': 'watch-sim', 'state': 'SUCCESS'},
                         {'context': 'webkitperl', 'state': 'SUCCESS'},
                         {'context': 'webkitpy', 'state': 'SUCCESS'},
-                        {'context': 'wpe', 'state': 'SUCCESS'}]}}}]}}}]}}}}
+                        {'context': 'wpe', 'state': 'SUCCESS'}]}}}]}}}]}}}
         GitHubMixin.query_graph_ql = lambda self, query: query_result
         self.expect_outcome(result=SUCCESS, state_string="Successfully retrieved pull request data")
         rc = self.run_step()
@@ -6545,7 +6659,7 @@ class TestRetrievePRDataFromLabel(BuildStepMixinAdditions, unittest.TestCase):
     def test_success_project(self):
         self.setup_step(RetrievePRDataFromLabel(project='testRepo/WebKit'))
         GitHubMixin.get_number_of_prs_with_label = lambda self, label, retry=0: 4
-        query_result = {'data': {'repository': {'pullRequests': {'edges': [
+        query_result = {'data': {'search': {'edges': [
             {'node':
                 {'title': 'Fix `test-webkitpy webkitflaskpy`', 'number': 17412, 'commits':
                     {'nodes': [{'commit': {'commitUrl': 'https://github.com/WebKit/WebKit/commit/582fb8b4f85cc9f385c0e0809170cadc48c7fed5',
@@ -6643,7 +6757,7 @@ class TestRetrievePRDataFromLabel(BuildStepMixinAdditions, unittest.TestCase):
                         {'context': 'watch-sim', 'state': 'SUCCESS'},
                         {'context': 'webkitperl', 'state': 'SUCCESS'},
                         {'context': 'webkitpy', 'state': 'SUCCESS'},
-                        {'context': 'wpe', 'state': 'SUCCESS'}]}}}]}}}]}}}}
+                        {'context': 'wpe', 'state': 'SUCCESS'}]}}}]}}}]}}}
         GitHubMixin.query_graph_ql = lambda self, query: query_result
         self.expect_outcome(result=SUCCESS, state_string="Successfully retrieved pull request data")
         rc = self.run_step()
@@ -10147,6 +10261,173 @@ class TestDisplaySaferCPPResults(BuildStepMixinAdditions, unittest.TestCase):
         self.expect_property('comment_text', expected_comment)
         self.expect_property('build_finish_summary', 'Found 10 new failures in File1.cpp')
         self.assertEqual([LeaveComment(), SetBuildSummary()], next_steps)
+
+
+class TestCheckParentBuildStatus(BuildStepMixinAdditions, unittest.TestCase):
+    def setUp(self):
+        self.longMessage = True
+        return self.setup_test_build_step()
+
+    def tearDown(self):
+        return self.tear_down_test_build_step()
+
+    def test_no_parent_build_info(self):
+        self.setup_step(CheckParentBuildStatus())
+        self.expect_outcome(result=FAILURE, state_string='No parent build information available')
+        return self.run_step()
+
+    def test_missing_parent_buildnumber(self):
+        self.setup_step(CheckParentBuildStatus())
+        self.setProperty('parent_builderid', 1)
+        self.expect_outcome(result=FAILURE, state_string='No parent build information available')
+        return self.run_step()
+
+    def test_missing_parent_builderid(self):
+        self.setup_step(CheckParentBuildStatus())
+        self.setProperty('parent_buildnumber', 100)
+        self.expect_outcome(result=FAILURE, state_string='No parent build information available')
+        return self.run_step()
+
+    def test_invalid_parent_builderid(self):
+        self.setup_step(CheckParentBuildStatus())
+        self.setProperty('parent_buildnumber', 100)
+        self.setProperty('parent_builderid', 'invalid')
+        self.expect_outcome(result=FAILURE, state_string='Invalid parent build information')
+        return self.run_step()
+
+    def test_after_waiting_default(self):
+        step = CheckParentBuildStatus()
+        self.assertFalse(step.after_waiting)
+
+    def test_after_waiting_true(self):
+        step = CheckParentBuildStatus(after_waiting=True)
+        self.assertTrue(step.after_waiting)
+
+    def test_wait_duration_constant(self):
+        self.assertEqual(CheckParentBuildStatus.WAIT_DURATION_SECONDS, 300)
+
+    def test_flunk_on_failure_false(self):
+        step = CheckParentBuildStatus()
+        self.assertFalse(step.flunkOnFailure)
+        self.assertFalse(step.haltOnFailure)
+
+    def test_parent_build_ongoing_returns_success(self):
+        self.setup_step(CheckParentBuildStatus())
+        self.setProperty('parent_buildnumber', 100)
+        self.setProperty('parent_builderid', 1)
+
+        original_get = self.master.data.get
+
+        def mock_data_get(path):
+            if path == ('builders', 1, 'builds', 100):
+                return defer.succeed({'results': None})
+            return original_get(path)
+
+        self.patch(self.master.data, 'get', mock_data_get)
+
+        next_steps = []
+        self.patch(self.build, 'addStepsAfterCurrentStep', lambda s: next_steps.extend(s))
+
+        self.expect_outcome(result=SUCCESS, state_string='Parent build is still in progress, waiting to re-check')
+        rc = self.run_step()
+
+        def check_steps(result):
+            self.assertEqual(len(next_steps), 2)
+            self.assertIsInstance(next_steps[0], WaitForDuration)
+            self.assertEqual(next_steps[0].duration, CheckParentBuildStatus.WAIT_DURATION_SECONDS)
+            self.assertIsInstance(next_steps[1], CheckParentBuildStatus)
+            self.assertTrue(next_steps[1].after_waiting)
+            return result
+
+        rc.addCallback(check_steps)
+        return rc
+
+    def test_parent_build_success_after_waiting_returns_success(self):
+        self.setup_step(CheckParentBuildStatus(after_waiting=True))
+        self.setProperty('parent_buildnumber', 100)
+        self.setProperty('parent_builderid', 1)
+
+        original_get = self.master.data.get
+
+        def mock_data_get(path):
+            if path == ('builders', 1, 'builds', 100):
+                return defer.succeed({'results': SUCCESS})
+            return original_get(path)
+
+        self.patch(self.master.data, 'get', mock_data_get)
+
+        next_steps = []
+        self.patch(self.build, 'addStepsAfterCurrentStep', lambda s: next_steps.extend(s))
+
+        self.expect_outcome(result=SUCCESS, state_string='Parent build succeeded, downloading built product')
+        rc = self.run_step()
+
+        def check_steps(result):
+            self.assertEqual(len(next_steps), 1)
+            self.assertIsInstance(next_steps[0], DownloadBuiltProduct)
+            self.assertEqual(next_steps[0].suffix, SUFFIX_WITHOUT_CHANGE)
+            return result
+
+        rc.addCallback(check_steps)
+        return rc
+
+
+class TestTrigger(BuildStepMixinAdditions, unittest.TestCase):
+    def setUp(self):
+        self.longMessage = True
+        return self.setup_test_build_step()
+
+    def tearDown(self):
+        return self.tear_down_test_build_step()
+
+    def test_defaults(self):
+        step = Trigger(schedulerNames=['test-scheduler'])
+        props = step.propertiesToPassToTriggers()
+        self.assertIn('configuration', props)
+        self.assertIn('platform', props)
+        self.assertIn('fullPlatform', props)
+        self.assertIn('architecture', props)
+        self.assertIn('codebase', props)
+        self.assertIn('retry_count', props)
+        self.assertIn('os_version_builder', props)
+        self.assertIn('xcode_version_builder', props)
+        self.assertIn('ews_revision', props)
+        self.assertIn('parent_buildnumber', props)
+        self.assertIn('parent_builderid', props)
+        self.assertNotIn('github.number', props)
+        self.assertNotIn('github.head.sha', props)
+        self.assertNotIn('repository', props)
+        self.assertFalse(step.updateSourceStamp)
+        self.assertNotIn('triggers', props)
+
+    def test_pull_request_properties_included_when_enabled(self):
+        step = Trigger(schedulerNames=['test-scheduler'], pull_request=True)
+        props = step.propertiesToPassToTriggers(pull_request=True)
+        self.assertIn('github.base.ref', props)
+        self.assertIn('github.head.ref', props)
+        self.assertIn('github.head.sha', props)
+        self.assertIn('github.head.repo.full_name', props)
+        self.assertIn('github.number', props)
+        self.assertIn('github.title', props)
+        self.assertIn('repository', props)
+        self.assertIn('project', props)
+        self.assertIn('owners', props)
+        self.assertIn('classification', props)
+        self.assertIn('identifier', props)
+
+    def test_triggers_property_included_when_triggers_set(self):
+        step = Trigger(schedulerNames=['test-scheduler'], triggers=['trigger1', 'trigger2'])
+        props = step.propertiesToPassToTriggers()
+        self.assertIn('triggers', props)
+
+    def test_ews_revision_excluded_when_include_revision_false(self):
+        step = Trigger(schedulerNames=['test-scheduler'], include_revision=False)
+        props = step.propertiesToPassToTriggers()
+        self.assertNotIn('ews_revision', props)
+
+    def test_scheduler_names_set(self):
+        step = Trigger(schedulerNames=['scheduler1', 'scheduler2'])
+        self.assertEqual(step.schedulerNames, ['scheduler1', 'scheduler2'])
 
 
 if __name__ == '__main__':

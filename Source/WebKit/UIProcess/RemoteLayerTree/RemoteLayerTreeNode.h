@@ -61,7 +61,6 @@ public:
     static Ref<RemoteLayerTreeNode> createWithPlainLayer(WebCore::PlatformLayerIdentifier);
 
     CALayer *layer() const { return m_layer.get(); }
-    RetainPtr<CALayer> protectedLayer() const;
 #if ENABLE(GAZE_GLOW_FOR_INTERACTION_REGIONS) || HAVE(CORE_ANIMATION_SEPARATED_LAYERS)
     const Markable<WebCore::FloatRect> visibleRect() const { return m_visibleRect; }
     void setVisibleRect(const WebCore::FloatRect& value) { m_visibleRect = value; }
@@ -93,7 +92,7 @@ public:
     const Vector<WebCore::PlatformLayerIdentifier>& stationaryScrollContainerIDs() const { return m_stationaryScrollContainerIDs; }
 
     void setActingScrollContainerID(std::optional<WebCore::PlatformLayerIdentifier> value) { m_actingScrollContainerID = value; }
-    void setStationaryScrollContainerIDs(Vector<WebCore::PlatformLayerIdentifier>&& value) { m_stationaryScrollContainerIDs = WTFMove(value); }
+    void setStationaryScrollContainerIDs(Vector<WebCore::PlatformLayerIdentifier>&& value) { m_stationaryScrollContainerIDs = WTF::move(value); }
 
     void detachFromParent();
 
@@ -125,7 +124,7 @@ public:
     Vector<CachedContentsBuffer> takeCachedContentsBuffers() { return std::exchange(m_cachedContentsBuffers, { }); }
     void setCachedContentsBuffers(Vector<CachedContentsBuffer>&& buffers)
     {
-        m_cachedContentsBuffers = WTFMove(buffers);
+        m_cachedContentsBuffers = WTF::move(buffers);
     }
 
     std::optional<WebCore::RenderingResourceIdentifier> asyncContentsIdentifier() const

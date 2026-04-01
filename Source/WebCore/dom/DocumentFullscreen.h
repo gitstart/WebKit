@@ -50,19 +50,19 @@ public:
     void deref() const { m_document->deref(); }
 
     // Document+Fullscreen.idl methods.
-    static void exitFullscreen(Document&, RefPtr<DeferredPromise>&&);
+    static void exitFullscreen(Document&, Ref<DeferredPromise>&&);
     static bool fullscreenEnabled(Document&);
-    static bool webkitFullscreenEnabled(Document& document) { return document.protectedFullscreen()->enabledByPermissionsPolicy(); }
-    static Element* webkitFullscreenElement(Document& document) { return document.ancestorElementInThisScope(document.protectedFullscreen()->protectedFullscreenElement().get()); };
+    static bool webkitFullscreenEnabled(Document& document) { return protect(document.fullscreen())->enabledByPermissionsPolicy(); }
+    static Element* webkitFullscreenElement(Document& document) { return document.ancestorElementInThisScope(protect(document.fullscreen())->protectedFullscreenElement().get()); };
     WEBCORE_EXPORT static void webkitExitFullscreen(Document&);
-    static bool webkitIsFullScreen(Document& document) { return document.protectedFullscreen()->isFullscreen(); };
-    static bool webkitFullScreenKeyboardInputAllowed(Document& document) { return document.protectedFullscreen()->isFullscreenKeyboardInputAllowed(); };
-    static void webkitCancelFullScreen(Document& document) { document.protectedFullscreen()->fullyExitFullscreen(); };
+    static bool webkitIsFullScreen(Document& document) { return protect(document.fullscreen())->isFullscreen(); };
+    static bool webkitFullScreenKeyboardInputAllowed(Document& document) { return protect(document.fullscreen())->isFullscreenKeyboardInputAllowed(); };
+    static void webkitCancelFullScreen(Document& document) { protect(document.fullscreen())->fullyExitFullscreen(); };
 
     // Helpers.
-    Document& document() { return m_document.get(); }
-    const Document& document() const { return m_document.get(); }
-    Ref<Document> protectedDocument() const { return m_document.get(); }
+    Document& document() { return m_document; }
+    const Document& document() const { return m_document; }
+    Ref<Document> protectedDocument() const { return m_document; }
     LocalFrame* frame() const;
     Element* documentElement() const { return document().documentElement(); }
     bool isSimpleFullscreenDocument() const;

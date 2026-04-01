@@ -36,24 +36,16 @@
 #include "NativeWebWheelEvent.h"
 #include "ScreenManager.h"
 #include "UIGamepadProvider.h"
+#include "ViewSnapshotStore.h"
 #include "WebPreferences.h"
 #include <WebCore/Cursor.h>
 #include <WebCore/NativeImage.h>
 #include <WebCore/SystemSettings.h>
 #include <wtf/glib/GUniquePtr.h>
 
-#if USE(CAIRO)
-#include <WebCore/RefPtrCairo.h>
-#include <cairo.h>
-#endif
-
-#if USE(SKIA)
-#include "ViewSnapshotStore.h"
-
 WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
 #include <skia/core/SkPixmap.h>
 WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
-#endif
 
 namespace WKWPE {
 using namespace WebKit;
@@ -124,8 +116,8 @@ ViewPlatform::ViewPlatform(WPEDisplay* display, const API::PageConfiguration& co
         auto& webView = *reinterpret_cast<ViewPlatform*>(userData);
         webView.toplevelStateChanged(previousState, wpe_view_get_toplevel_state(view));
     }), this);
-#if USE(GBM)
-    g_signal_connect(m_wpeView.get(), "preferred-dma-buf-formats-changed", G_CALLBACK(+[](WPEView*, gpointer userData) {
+#if USE(GBM) || OS(ANDROID)
+    g_signal_connect(m_wpeView.get(), "preferred-buffer-formats-changed", G_CALLBACK(+[](WPEView*, gpointer userData) {
         auto& webView = *reinterpret_cast<ViewPlatform*>(userData);
         webView.page().preferredBufferFormatsDidChange();
     }), this);
@@ -411,7 +403,6 @@ gboolean ViewPlatform::handleEvent(WPEEvent* event)
         m_touchEvents.set(wpe_event_touch_get_sequence_id(event), event);
         page().handleTouchEvent(nullptr, NativeWebTouchEvent(event, touchPointsForEvent(event)));
 #endif
-        handleGesture(event);
         return TRUE;
     case WPE_EVENT_TOUCH_UP:
     case WPE_EVENT_TOUCH_CANCEL: {
@@ -419,9 +410,8 @@ gboolean ViewPlatform::handleEvent(WPEEvent* event)
         m_touchEvents.set(wpe_event_touch_get_sequence_id(event), event);
         auto points = touchPointsForEvent(event);
         m_touchEvents.remove(wpe_event_touch_get_sequence_id(event));
-        page().handleTouchEvent(nullptr, NativeWebTouchEvent(event, WTFMove(points)));
+        page().handleTouchEvent(nullptr, NativeWebTouchEvent(event, WTF::move(points)));
 #endif
-        handleGesture(event);
         return TRUE;
     }
     case WPE_EVENT_TOUCH_MOVE:
@@ -429,7 +419,6 @@ gboolean ViewPlatform::handleEvent(WPEEvent* event)
         m_touchEvents.set(wpe_event_touch_get_sequence_id(event), event);
         page().handleTouchEvent(nullptr, NativeWebTouchEvent(event, touchPointsForEvent(event)));
 #endif
-        handleGesture(event);
         return TRUE;
     };
     return FALSE;
@@ -495,7 +484,7 @@ void ViewPlatform::handleGesture(WPEEvent* event)
 
 void ViewPlatform::synthesizeCompositionKeyPress(const String& text, std::optional<Vector<WebCore::CompositionUnderline>>&& underlines, std::optional<EditingRange>&& selectionRange)
 {
-    page().handleKeyboardEvent(WebKit::NativeWebKeyboardEvent(text, WTFMove(underlines), WTFMove(selectionRange)));
+    page().handleKeyboardEvent(WebKit::NativeWebKeyboardEvent(text, WTF::move(underlines), WTF::move(selectionRange)));
 }
 
 void ViewPlatform::setCursor(const WebCore::Cursor& cursor)
@@ -598,25 +587,6 @@ void ViewPlatform::setCursor(const WebCore::Cursor& cursor)
         return;
     }
 
-#if USE(CAIRO)
-    ASSERT(cursor.type() == WebCore::Cursor::Type::Custom);
-    auto image = cursor.image();
-    auto nativeImage = image->currentNativeImage();
-    if (!nativeImage)
-        return;
-
-    auto surface = nativeImage->platformImage();
-    auto width = cairo_image_surface_get_width(surface.get());
-    auto height = cairo_image_surface_get_height(surface.get());
-    auto stride = cairo_image_surface_get_stride(surface.get());
-    auto* data = cairo_image_surface_get_data(surface.get());
-    GRefPtr<GBytes> bytes = adoptGRef(g_bytes_new_with_free_func(data, height * stride, [](gpointer data) {
-        cairo_surface_destroy(static_cast<cairo_surface_t*>(data));
-    }, surface.leakRef()));
-
-    WebCore::IntPoint hotspot = WebCore::determineHotSpot(image.get(), cursor.hotSpot());
-    wpe_view_set_cursor_from_bytes(m_wpeView.get(), bytes.get(), width, height, stride, hotspot.x(), hotspot.y());
-#elif USE(SKIA)
     auto nativeImage = cursor.image()->currentNativeImage();
     if (!nativeImage)
         return;
@@ -632,7 +602,6 @@ void ViewPlatform::setCursor(const WebCore::Cursor& cursor)
 
     WebCore::IntPoint hotspot = WebCore::determineHotSpot(cursor.image().get(), cursor.hotSpot());
     wpe_view_set_cursor_from_bytes(m_wpeView.get(), bytes.get(), pixmap.width(), pixmap.height(), pixmap.rowBytes(), hotspot.x(), hotspot.y());
-#endif
 }
 
 #if ENABLE(POINTER_LOCK)
@@ -659,7 +628,7 @@ void ViewPlatform::dispatchPendingNextPresentationUpdateCallbacks()
 
 void ViewPlatform::callAfterNextPresentationUpdate(CompletionHandler<void()>&& callback)
 {
-    m_nextPresentationUpdateCallbacks.insert(0, WTFMove(callback));
+    m_nextPresentationUpdateCallbacks.insert(0, WTF::move(callback));
     if (!m_bufferRenderedID) {
         m_bufferRenderedID = g_signal_connect_after(m_wpeView.get(), "buffer-rendered", G_CALLBACK(+[](WPEView* view, WPEBuffer*, gpointer userData) {
             auto& webView = *reinterpret_cast<ViewPlatform*>(userData);
@@ -668,12 +637,10 @@ void ViewPlatform::callAfterNextPresentationUpdate(CompletionHandler<void()>&& c
     }
 }
 
-#if USE(SKIA)
 Expected<Ref<ViewSnapshot>, String> ViewPlatform::takeViewSnapshot(std::optional<WebCore::IntRect>&& clipRect)
 {
-    return m_backingStore->takeSnapshot(WTFMove(clipRect));
+    return m_backingStore->takeSnapshot(WTF::move(clipRect));
 }
-#endif
 
 } // namespace WKWPE
 

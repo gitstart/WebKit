@@ -117,7 +117,7 @@ const int initialNodeVectorSize = 11; // Covers 99.5%. See webkit.org/b/80706
 typedef Vector<Ref<Node>, initialNodeVectorSize> NodeVector;
 
 class Node : public EventTarget, public CanMakeCheckedPtr<Node> {
-    WTF_MAKE_PREFERABLY_COMPACT_TZONE_OR_ISO_ALLOCATED(Node);
+    WTF_MAKE_PREFERABLY_COMPACT_TZONE_ALLOCATED(Node);
     WTF_OVERRIDE_DELETE_FOR_CHECKED_PTR(Node);
 
     friend class Document;
@@ -165,21 +165,15 @@ public:
     NodeType nodeType() const { return nodeTypeFromBitFields(m_typeBitFields); }
     virtual size_t approximateMemoryCost() const { return sizeof(*this); }
     ContainerNode* parentNode() const;
-    inline RefPtr<ContainerNode> protectedParentNode() const;
     static constexpr ptrdiff_t parentNodeMemoryOffset() { return OBJECT_OFFSETOF(Node, m_parentNode); }
     inline Element* parentElement() const;
-    inline RefPtr<Element> protectedParentElement() const;
     Node* previousSibling() const { return m_previousSibling; }
-    RefPtr<Node> protectedPreviousSibling() const { return m_previousSibling; }
     static constexpr ptrdiff_t previousSiblingMemoryOffset() { return OBJECT_OFFSETOF(Node, m_previousSibling); }
-    Node* nextSibling() const { return m_next.get(); }
-    RefPtr<Node> protectedNextSibling() const { return m_next.get(); }
+    Node* nextSibling() const { return m_next; }
     static constexpr ptrdiff_t nextSiblingMemoryOffset() { return OBJECT_OFFSETOF(Node, m_next); }
-    WEBCORE_EXPORT RefPtr<NodeList> childNodes();
+    WEBCORE_EXPORT Ref<NodeList> childNodes();
     inline Node* firstChild() const;
-    inline RefPtr<Node> protectedFirstChild() const;
     inline Node* lastChild() const;
-    inline RefPtr<Node> protectedLastChild() const;
     inline bool hasAttributes() const;
     inline NamedNodeMap* attributesMap() const;
     Node* pseudoAwareNextSibling() const;
@@ -264,7 +258,6 @@ public:
     virtual bool isWebVTTElement() const { return false; }
 #endif
     bool isStyledElement() const { return hasTypeFlag(TypeFlag::IsHTMLElement) || hasTypeFlag(TypeFlag::IsSVGElement) || hasTypeFlag(TypeFlag::IsMathMLElement); }
-    virtual bool isAttributeNode() const { return false; }
     virtual bool isHTMLFrameOwnerElement() const { return false; }
     virtual bool isPluginElement() const { return false; }
 
@@ -287,11 +280,8 @@ public:
 
     // If this node is in a shadow tree, returns its shadow host. Otherwise, returns null.
     WEBCORE_EXPORT Element* shadowHost() const;
-    RefPtr<Element> protectedShadowHost() const;
     ShadowRoot* containingShadowRoot() const;
-    RefPtr<ShadowRoot> protectedContainingShadowRoot() const;
     inline ShadowRoot* shadowRoot() const; // Defined in ElementRareData.h
-    inline RefPtr<ShadowRoot> protectedShadowRoot() const; // Defined in ElementRareData.h
     bool isClosedShadowHidden(const Node&) const;
 
     HTMLSlotElement* assignedSlot() const;
@@ -327,7 +317,6 @@ public:
 
     // Node's parent or shadow tree host.
     inline ContainerNode* parentOrShadowHostNode() const; // Defined in NodeInlines.h
-    inline RefPtr<ContainerNode> protectedParentOrShadowHostNode() const; // Defined in NodeInlines.h
     ContainerNode* parentInComposedTree() const;
     WEBCORE_EXPORT Element* parentElementInComposedTree() const;
     Element* parentOrShadowHostElement() const;
@@ -442,14 +431,12 @@ public:
 
     // Returns the document associated with this node. A document node returns itself.
     inline Document& document() const; // Defined in NodeDocument.h
-    inline Ref<Document> protectedDocument() const; // Defined in NodeDocument.h
 
     TreeScope& treeScope() const
     {
         ASSERT(m_treeScope);
         return *m_treeScope;
     }
-    inline Ref<TreeScope> protectedTreeScope() const; // Defined in NodeInlines.h
     inline void setTreeScopeRecursively(TreeScope&);
     static constexpr ptrdiff_t treeScopeMemoryOffset() { return OBJECT_OFFSETOF(Node, m_treeScope); }
 
@@ -568,9 +555,9 @@ public:
 
     enum EventTargetInterfaceType eventTargetInterface() const override;
     ScriptExecutionContext* scriptExecutionContext() const final;
-    inline RefPtr<ScriptExecutionContext> protectedScriptExecutionContext() const;
 
     WEBCORE_EXPORT bool addEventListener(const AtomString& eventType, Ref<EventListener>&&, const AddEventListenerOptions&) override;
+    using EventTarget::addEventListener;
     bool removeEventListener(const AtomString& eventType, EventListener&, const EventListenerOptions&) override;
     void removeAllEventListeners() override;
 
@@ -581,6 +568,8 @@ public:
 
     void dispatchSubtreeModifiedEvent();
     void dispatchDOMActivateEvent(Event& underlyingClickEvent);
+
+    void dispatchWebKitSubmitEvent(Event& underlyingSubmitEvent);
 
 #if ENABLE(TOUCH_EVENTS)
     virtual bool allowsDoubleTapGesture() const { return true; }
@@ -809,7 +798,7 @@ private:
     void trackForDebugging();
     void materializeRareData();
 
-    Vector<std::unique_ptr<MutationObserverRegistration>>* mutationObserverRegistry();
+    Vector<Ref<MutationObserverRegistration>>* mutationObserverRegistry();
     WeakHashSet<MutationObserverRegistration>* transientMutationObserverRegistry();
 
     void adjustStyleValidity(Style::Validity, Style::InvalidationMode);
@@ -878,7 +867,7 @@ inline void Node::applyRefDuringDestructionCheck() const
 #if ASSERT_ENABLED
     if (!deletionHasBegun())
         return;
-    WTF::RefCountedBase::logRefDuringDestruction(this);
+    WTF::RefCountDebugger::logRefDuringDestruction(this);
 #endif
 }
 

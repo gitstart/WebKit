@@ -26,6 +26,7 @@
 #include "config.h"
 #include <wtf/Threading.h>
 
+#include <bmalloc/BPlatform.h>
 #include <cstring>
 #include <wtf/DateMath.h>
 #include <wtf/Gigacage.h>
@@ -51,8 +52,6 @@
 #include <wtf/darwin/LibraryPathDiagnostics.h>
 #endif
 
-#if !USE(SYSTEM_MALLOC)
-#include <bmalloc/BPlatform.h>
 #if BENABLE(LIBPAS)
 #define USE_LIBPAS_THREAD_SUSPEND_LOCK 1
 #include <bmalloc/pas_thread_suspend_lock.h>
@@ -64,7 +63,6 @@
 #error USE(TZONE_MALLOC) requires BUSE(TZONE)
 #endif
 #endif // USE(TZONE_MALLOC)
-#endif // !USE(SYSTEM_MALLOC)
 
 namespace WTF {
 
@@ -153,8 +151,8 @@ struct Thread::NewThreadContext : public ThreadSafeRefCounted<NewThreadContext> 
 public:
     NewThreadContext(ASCIILiteral name, Function<void()>&& entryPoint, Ref<Thread>&& thread)
         : name(name)
-        , entryPoint(WTFMove(entryPoint))
-        , thread(WTFMove(thread))
+        , entryPoint(WTF::move(entryPoint))
+        , thread(WTF::move(thread))
     {
     }
 
@@ -242,12 +240,12 @@ void Thread::entryPoint(NewThreadContext* newThreadContext)
 #endif
 
         Thread::initializeCurrentThreadInternal(context->name);
-        function = WTFMove(context->entryPoint);
+        function = WTF::move(context->entryPoint);
 
-        Ref thread = WTFMove(context->thread);
+        Ref thread = WTF::move(context->thread);
         thread->initializeInThread();
 
-        Thread::initializeTLS(WTFMove(thread));
+        Thread::initializeTLS(WTF::move(thread));
 
 #if !HAVE(STACK_BOUNDS_FOR_NEW_THREAD)
         // Ack completion of initialization to the creating thread.
@@ -266,7 +264,7 @@ Ref<Thread> Thread::create(ASCIILiteral name, Function<void()>&& entryPoint, Thr
 
     Ref thread = adoptRef(*new Thread(schedulingPolicy));
 
-    Ref context = adoptRef(*new NewThreadContext { name, WTFMove(entryPoint), thread.get() });
+    Ref context = adoptRef(*new NewThreadContext { name, WTF::move(entryPoint), thread.get() });
     {
         MutexLocker locker(context->mutex);
         context->ref(); // Adopted by Thread::entryPoint

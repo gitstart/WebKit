@@ -38,6 +38,7 @@
 #import "UIKitUtilities.h"
 #import "WKContentViewInteraction.h"
 #import "WKData.h"
+#import "WKSharedAPICast.h"
 #import "WKStringCF.h"
 #import "WKURLCF.h"
 #import "WKWebViewInternal.h"
@@ -233,7 +234,7 @@ static NSString * firstUTIThatConformsTo(NSArray<NSString *> *typeIdentifiers, U
     _processedVideoCount = 0;
     _videoCount = videoCount;
 
-    _completionHandler = WTFMove(completionHandler);
+    _completionHandler = WTF::move(completionHandler);
 
     return self;
 }
@@ -302,7 +303,7 @@ static NSString * firstUTIThatConformsTo(NSArray<NSString *> *typeIdentifiers, U
     [_exportSession setOutputFileType:AVFileTypeQuickTimeMovie];
 
     [_exportSession exportAsynchronouslyWithCompletionHandler:makeBlockPtr([weakSelf = WeakObjCPtr<WKFileUploadMediaTranscoder>(self), index] () mutable {
-        ensureOnMainRunLoop([weakSelf = WTFMove(weakSelf), index] {
+        ensureOnMainRunLoop([weakSelf = WTF::move(weakSelf), index] {
             auto strongSelf = weakSelf.get();
             if (!strongSelf)
                 return;
@@ -732,30 +733,30 @@ static NSSet<NSString *> *UTIsForMIMETypes(NSArray *mimeTypes)
 
 - (UIContextMenuConfiguration *)contextMenuInteraction:(UIContextMenuInteraction *)interaction configurationForMenuAtLocation:(CGPoint)location {
 
-    UIContextMenuActionProvider actionMenuProvider = [self, weakSelf = WeakObjCPtr<WKFileUploadPanel>(self)] (NSArray<UIMenuElement *> *) -> UIMenu * {
-        NSArray *actions;
-
+    WeakObjCPtr<WKFileUploadPanel> weakSelf { self };
+    UIContextMenuActionProvider actionMenuProvider = [weakSelf] (NSArray<UIMenuElement *> *) -> UIMenu * {
         auto strongSelf = weakSelf.get();
         if (!strongSelf)
             return nil;
 
-        self->_isPresentingSubMenu = NO;
+        strongSelf->_isPresentingSubMenu = NO;
         UIAction *chooseAction = [UIAction actionWithTitle:[strongSelf _chooseFilesButtonLabel] image:[UIImage systemImageNamed:@"folder"] identifier:@"choose" handler:^(__kindof UIAction *action) {
-            self->_isPresentingSubMenu = YES;
-            [self showFilePickerMenu];
+            strongSelf->_isPresentingSubMenu = YES;
+            [strongSelf showFilePickerMenu];
         }];
 
         UIAction *photoAction = [UIAction actionWithTitle:[strongSelf _photoLibraryButtonLabel] image:[UIImage systemImageNamed:@"photo.on.rectangle"] identifier:@"photo" handler:^(__kindof UIAction *action) {
-            self->_isPresentingSubMenu = YES;
-            [self _showPhotoPicker];
+            strongSelf->_isPresentingSubMenu = YES;
+            [strongSelf _showPhotoPicker];
         }];
 
+        NSArray *actions;
         if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera]) {
             NSString *cameraString = [strongSelf _cameraButtonLabel];
             UIAction *cameraAction = [UIAction actionWithTitle:cameraString image:[UIImage systemImageNamed:@"camera"] identifier:@"camera" handler:^(__kindof UIAction *action) {
-                _usingCamera = YES;
-                self->_isPresentingSubMenu = YES;
-                [self _showCamera];
+                strongSelf->_usingCamera = YES;
+                strongSelf->_isPresentingSubMenu = YES;
+                [strongSelf _showCamera];
             }];
             actions = @[photoAction, cameraAction, chooseAction];
         } else
@@ -1017,7 +1018,7 @@ static RetainPtr<NSString> displayStringForDocumentsAtURLs(NSArray<NSURL *> *url
         }
 
         [retainedSelf->_view _removeTemporaryDirectoriesWhenDeallocated:std::exchange(retainedSelf->_temporaryUploadedFileURLs, { })];
-        RunLoop::mainSingleton().dispatch([retainedSelf = WTFMove(retainedSelf), maybeMovedURLs = WTFMove(maybeMovedURLs)] {
+        RunLoop::mainSingleton().dispatch([retainedSelf = WTF::move(retainedSelf), maybeMovedURLs = WTF::move(maybeMovedURLs)] {
             [retainedSelf _chooseFiles:maybeMovedURLs.get() displayString:displayStringForDocumentsAtURLs(maybeMovedURLs.get()).get() iconImage:WebKit::iconForFiles({ maybeMovedURLs.get()[0].absoluteString }).get()];
         });
     }).get());
@@ -1170,7 +1171,7 @@ static RetainPtr<NSString> displayStringForDocumentsAtURLs(NSArray<NSURL *> *url
             }
 
             auto [operationResult, maybeMovedURL, temporaryURL] = [WKFileUploadPanel _moveToNewTemporaryDirectory:url fileCoordinator:_uploadFileCoordinator.get() fileManager:_uploadFileManager.get() asCopy:NO];
-            self->_temporaryUploadedFileURLs.append(WTFMove(temporaryURL));
+            self->_temporaryUploadedFileURLs.append(WTF::move(temporaryURL));
 
             successBlock(adoptNS([[_WKVideoFileUploadItem alloc] initWithFileURL:maybeMovedURL.get()]).get());
         }];
@@ -1201,7 +1202,7 @@ static RetainPtr<NSString> displayStringForDocumentsAtURLs(NSArray<NSURL *> *url
         }
 
         auto [operationResult, maybeMovedURL, temporaryURL] = [WKFileUploadPanel _moveToNewTemporaryDirectory:url fileCoordinator:_uploadFileCoordinator.get() fileManager:_uploadFileManager.get() asCopy:NO];
-        self->_temporaryUploadedFileURLs.append(WTFMove(temporaryURL));
+        self->_temporaryUploadedFileURLs.append(WTF::move(temporaryURL));
 
         successBlock(adoptNS([[_WKImageFileUploadItem alloc] initWithFileURL:maybeMovedURL.get()]).get());
     }];
@@ -1376,9 +1377,10 @@ static RetainPtr<NSString> displayStringForDocumentsAtURLs(NSArray<NSURL *> *url
         RetainPtr filePath = [temporaryDirectory stringByAppendingPathComponent:coordinatedOriginalURL.lastPathComponent];
         RetainPtr destinationFileURL = adoptNS([[NSURL alloc] initFileURLWithPath:filePath.get() isDirectory:NO]);
 
-        if (asCopy)
-            didMoveOrCopy = [fileManager copyItemAtURL:coordinatedOriginalURL toURL:destinationFileURL.get() error:&error];
-        else
+        if (asCopy) {
+            // This is a safer cpp false positive. Despite having `copy` in its name, this method returns a BOOL.
+            SUPPRESS_RETAINPTR_CTOR_ADOPT didMoveOrCopy = [fileManager copyItemAtURL:coordinatedOriginalURL toURL:destinationFileURL.get() error:&error];
+        } else
             didMoveOrCopy = [fileManager moveItemAtURL:coordinatedOriginalURL toURL:destinationFileURL.get() error:&error];
 
         if (!didMoveOrCopy || error) {

@@ -25,19 +25,24 @@
 
 #pragma once
 
-#include <JavaScriptCore/CatchScope.h>
 #include <JavaScriptCore/Debugger.h>
 #include <JavaScriptCore/MicrotaskQueue.h>
+#include <JavaScriptCore/TopExceptionScope.h>
 
 namespace JSC {
 
 template<bool useCallOnEachMicrotask>
 inline void MicrotaskQueue::performMicrotaskCheckpoint(VM& vm, NOESCAPE const Invocable<QueuedTask::Result(QueuedTask&)> auto& functor)
 {
-    auto catchScope = DECLARE_CATCH_SCOPE(vm);
+    auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     if (vm.executionForbidden()) [[unlikely]]
         clear();
     else {
+        if (vm.disallowVMEntryCount) [[unlikely]] {
+            VM::checkVMEntryPermission();
+            return;
+        }
+
         while (!m_queue.isEmpty()) {
             auto task = m_queue.dequeue();
             auto result = functor(task);
@@ -61,11 +66,12 @@ inline void MicrotaskQueue::performMicrotaskCheckpoint(VM& vm, NOESCAPE const In
                 // Let this task go away.
                 break;
             case QueuedTask::Result::Suspended: {
-                m_toKeep.enqueue(WTFMove(task));
+                m_toKeep.enqueue(WTF::move(task));
                 break;
             }
             }
         }
+        vm.didEnterVM = true;
     }
     m_queue.swap(m_toKeep);
 }

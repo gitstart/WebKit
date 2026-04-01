@@ -14,6 +14,7 @@ Property values requiring vendor prefixes:
 None
 ------------------------------------------------------------------------
 List of files:
+/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/WEB_FEATURES.yml
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/dominant-baseline-central-large-font-size-expected.svg
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/dominant-baseline-central-large-font-size-ref.svg
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/dominant-baseline-central-large-font-size.svg
@@ -110,6 +111,9 @@ List of files:
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-multiline-003-expected.svg
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-multiline-003-ref.svg
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-multiline-003.svg
+/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-path-transformed-002-expected.html
+/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-path-transformed-002-ref.html
+/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-path-transformed-002.html
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-path-transformed-expected.html
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-path-transformed-ref.html
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-path-transformed.html
@@ -119,27 +123,6 @@ List of files:
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-shape-inside-002-expected.svg
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-shape-inside-002-ref.svg
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-shape-inside-002.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-001-expected.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-001-ref.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-001.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-002-expected.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-002-ref.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-002.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-003-expected.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-003-ref.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-003.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-102-expected.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-102-ref.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-102.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-201-expected.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-201-ref.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-201.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-202-expected.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-202-ref.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-202.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-203-expected.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-203-ref.svg
-/LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-text-anchor-203.svg
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-transform-001-expected.html
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-transform-001-ref.html
 /LayoutTests/imported/w3c/web-platform-tests/svg/text/reftests/text-transform-001.html

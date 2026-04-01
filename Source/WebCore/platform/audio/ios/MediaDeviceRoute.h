@@ -25,12 +25,19 @@
 
 #pragma once
 
-#if HAVE(AVROUTING_FRAMEWORK)
+#if ENABLE(WIRELESS_PLAYBACK_MEDIA_PLAYER)
 
-#include <WebKitAdditions/MediaDeviceRouteInterfaceAdditions.h>
+#include "MediaDeviceRouteLoadURLResult.h"
+#include <WebKitAdditions/MediaDeviceRouteAdditions.h>
 #include <wtf/AbstractRefCountedAndCanMakeWeakPtr.h>
-#include <wtf/RefCounted.h>
+#include <wtf/Forward.h>
+#include <wtf/MediaTime.h>
+#include <wtf/RefCountedAndCanMakeWeakPtr.h>
+#include <wtf/RetainPtr.h>
 #include <wtf/TZoneMalloc.h>
+#include <wtf/UUID.h>
+#include <wtf/WeakPtr.h>
+#include <wtf/text/WTFString.h>
 
 OBJC_CLASS WebMediaDeviceRoute;
 
@@ -112,7 +119,7 @@ public:
     virtual void volumeDidChange(MediaDeviceRoute&) = 0;
 };
 
-class MediaDeviceRoute : public RefCountedAndCanMakeWeakPtr<MediaDeviceRoute> {
+class MediaDeviceRoute final : public RefCountedAndCanMakeWeakPtr<MediaDeviceRoute> {
     WTF_MAKE_TZONE_ALLOCATED(MediaDeviceRoute);
 public:
     static Ref<MediaDeviceRoute> create(WebMediaDevicePlatformRoute *);
@@ -121,6 +128,11 @@ public:
 
     MediaDeviceRouteClient* client() const { return m_client.get(); }
     void setClient(MediaDeviceRouteClient* client) { m_client = client; }
+
+    const WTF::UUID& identifier() const { return m_identifier; }
+    WebMediaDevicePlatformRoute *platformRoute() const;
+
+    void loadURL(const String&, CompletionHandler<void(const MediaDeviceRouteLoadURLResult&)>&&);
 
     float minValue() const;
     float maxValue() const;
@@ -153,10 +165,11 @@ public:
 private:
     explicit MediaDeviceRoute(WebMediaDevicePlatformRoute *);
 
+    WTF::UUID m_identifier;
     RetainPtr<WebMediaDeviceRoute> m_route;
     WeakPtr<MediaDeviceRouteClient> m_client;
 };
 
 } // namespace WebCore
 
-#endif // HAVE(AVROUTING_FRAMEWORK)
+#endif // ENABLE(WIRELESS_PLAYBACK_MEDIA_PLAYER)

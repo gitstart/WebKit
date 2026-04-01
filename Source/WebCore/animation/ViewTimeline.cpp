@@ -68,10 +68,10 @@ ExceptionOr<Ref<ViewTimeline>> ViewTimeline::create(Document& document, ViewTime
     if (!isValidInset(specifiedInsets.start) || !isValidInset(specifiedInsets.end))
         return Exception { ExceptionCode::TypeError };
 
-    viewTimeline->m_specifiedInsets = WTFMove(specifiedInsets);
+    viewTimeline->m_specifiedInsets = WTF::move(specifiedInsets);
     viewTimeline->setSubject(options.subject.get());
     if (auto subject = options.subject)
-        subject->protectedDocument()->updateLayoutIgnorePendingStylesheets();
+        protect(subject->document())->updateLayoutIgnorePendingStylesheets();
     viewTimeline->cacheCurrentTime();
 
     return viewTimeline;
@@ -193,7 +193,7 @@ void ViewTimeline::setSubject(const Styleable& styleable)
 
     removeTimelineFromDocument(previousSubject.get());
 
-    styleable.element.protectedDocument()->ensureTimelinesController().addTimeline(*this);
+    protect(styleable.element.document())->ensureTimelinesController().addTimeline(*this);
 }
 
 AnimationTimelinesController* ViewTimeline::controller() const
@@ -369,27 +369,28 @@ void ViewTimeline::cacheCurrentTime()
 
         enum class PaddingEdge : bool { Start, End };
         auto scrollPadding = [&](PaddingEdge edge) {
-            auto& style = sourceRenderer->style();
+            CheckedRef style = sourceRenderer->style();
             if (edge == PaddingEdge::Start)
-                return scrollDirection.isVertical ? style.scrollPaddingTop() : style.scrollPaddingLeft();
-            return scrollDirection.isVertical ? style.scrollPaddingBottom() : style.scrollPaddingRight();
+                return scrollDirection.isVertical ? style->scrollPaddingTop() : style->scrollPaddingLeft();
+            return scrollDirection.isVertical ? style->scrollPaddingBottom() : style->scrollPaddingRight();
         };
+        auto zoom = sourceRenderer->style().usedZoomForLength();
 
         float insetStart = 0;
         float insetEnd = 0;
 
         if (m_insets.start().isAuto())
-            insetStart = Style::evaluate<float>(scrollPadding(PaddingEdge::Start), scrollContainerSize, Style::ZoomNeeded { });
+            insetStart = Style::evaluate<float>(scrollPadding(PaddingEdge::Start), scrollContainerSize, zoom);
         else
             insetStart = Style::evaluate<float>(m_insets.start(), scrollContainerSize, Style::ZoomNeeded { });
 
         if (m_insets.end().isAuto())
-            insetEnd = Style::evaluate<float>(scrollPadding(PaddingEdge::End), scrollContainerSize, Style::ZoomNeeded { });
+            insetEnd = Style::evaluate<float>(scrollPadding(PaddingEdge::End), scrollContainerSize, zoom);
         else
             insetEnd = Style::evaluate<float>(m_insets.end(), scrollContainerSize, Style::ZoomNeeded { });
 
         StickinessAdjustmentData stickyData;
-        if (auto stickyContainer = dynamicDowncast<RenderBoxModelObject>(this->stickyContainer().get())) {
+        if (CheckedPtr stickyContainer = dynamicDowncast<RenderBoxModelObject>(this->stickyContainer().get())) {
             FloatRect constrainingRect = stickyContainer->constrainingRectForStickyPosition();
             StickyPositionViewportConstraints constraints;
             stickyContainer->computeStickyPositionConstraints(constraints, constrainingRect);
@@ -414,10 +415,8 @@ void ViewTimeline::cacheCurrentTime()
         || previousCurrentTimeData.insetEnd != m_cachedCurrentTimeData.insetEnd
         || previousCurrentTimeData.stickinessData != m_cachedCurrentTimeData.stickinessData;
 
-    if (metricsChanged) {
-        for (auto& animation : m_animations)
-            animation->progressBasedTimelineSourceDidChangeMetrics();
-    }
+    if (metricsChanged)
+        sourceMetricsDidChange();
 }
 
 AnimationTimeline::ShouldUpdateAnimationsAndSendEvents ViewTimeline::documentWillUpdateAnimationsAndSendEvents()
@@ -433,14 +432,14 @@ Style::SingleAnimationRange ViewTimeline::defaultRange() const
     return Style::SingleAnimationRange::defaultForViewTimeline();
 }
 
-Element* ViewTimeline::bindingsSource() const
+RefPtr<Element> ViewTimeline::bindingsSource() const
 {
     if (auto subject = m_subject.styleable())
-        subject->element.protectedDocument()->updateStyleIfNeeded();
+        protect(subject->element.document())->updateStyleIfNeeded();
     return ScrollTimeline::bindingsSource();
 }
 
-Element* ViewTimeline::source() const
+RefPtr<Element> ViewTimeline::source() const
 {
     if (CheckedPtr sourceRender = sourceScrollerRenderer())
         return sourceRender->element();
@@ -470,7 +469,7 @@ CheckedPtr<const RenderElement> ViewTimeline::stickyContainer() const
 
     CheckedPtr renderer = subject->renderer();
 
-    auto scrollerRenderer = sourceScrollerRenderer();
+    CheckedPtr scrollerRenderer = sourceScrollerRenderer();
     while (renderer && renderer.get() != scrollerRenderer) {
         if (renderer->isStickilyPositioned())
             return renderer;

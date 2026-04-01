@@ -44,11 +44,14 @@ add_library(Skia STATIC
     src/base/SkUtils.cpp
 
     src/codec/SkCodec.cpp
+    src/codec/SkCodecColorProfile.cpp
     src/codec/SkCodecImageGenerator.cpp
     src/codec/SkColorPalette.cpp
     src/codec/SkEncodedInfo.cpp
     src/codec/SkExif.cpp
     src/codec/SkGainmapInfo.cpp
+    src/codec/SkHdrAgtm.cpp
+    src/codec/SkHdrAgtmParse.cpp
     src/codec/SkHdrMetadata.cpp
     src/codec/SkImageGenerator_FromEncoded.cpp
     src/codec/SkJpegCodec.cpp
@@ -192,10 +195,8 @@ add_library(Skia STATIC
     src/core/SkPathPriv.cpp
     src/core/SkPathRaw.cpp
     src/core/SkPathRawShapes.cpp
-    src/core/SkPathRef.cpp
     src/core/SkPathUtils.cpp
-    src/core/SkPath_editing.cpp
-    src/core/SkPath_pathref.cpp
+    src/core/SkPath_pathdata.cpp
     src/core/SkPath_serial.cpp
     src/core/SkPicture.cpp
     src/core/SkPictureData.cpp
@@ -1033,8 +1034,6 @@ target_compile_definitions(Skia PUBLIC
 
     SK_ENABLE_PRECOMPILE
 
-    SK_R32_SHIFT=16
-
     $<IF:$<BOOL:${SKIA_DEBUG}>,SK_DEBUG,SK_RELEASE>
 )
 
@@ -1073,6 +1072,21 @@ if (WIN32)
     target_compile_definitions(Skia PRIVATE SK_TYPEFACE_FACTORY_DIRECTWRITE)
 else ()
     target_compile_definitions(Skia PRIVATE SK_TYPEFACE_FACTORY_FREETYPE)
+endif ()
+
+if (CMAKE_CXX_BYTE_ORDER STREQUAL "BIG_ENDIAN")
+    target_compile_definitions(Skia PUBLIC
+        I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN
+
+        SK_R32_SHIFT=24
+        SK_G32_SHIFT=16
+        SK_B32_SHIFT=8
+        SK_A32_SHIFT=0
+    )
+else ()
+    target_compile_definitions(Skia PUBLIC
+        SK_R32_SHIFT=16
+    )
 endif ()
 
 #

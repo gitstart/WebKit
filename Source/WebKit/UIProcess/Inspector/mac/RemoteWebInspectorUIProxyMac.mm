@@ -110,7 +110,7 @@ WKWebView *RemoteWebInspectorUIProxy::webView() const
 
 void RemoteWebInspectorUIProxy::didBecomeActive()
 {
-    protectedInspectorPage()->protectedLegacyMainFrameProcess()->send(Messages::RemoteWebInspectorUI::UpdateFindString(WebKit::stringForFind()), m_inspectorPage->webPageIDInMainFrameProcess());
+    protect(protect(m_inspectorPage)->legacyMainFrameProcess())->send(Messages::RemoteWebInspectorUI::UpdateFindString(WebKit::stringForFind()), m_inspectorPage->webPageIDInMainFrameProcess());
 }
 
 WebPageProxy* RemoteWebInspectorUIProxy::platformCreateFrontendPageAndWindow()
@@ -158,7 +158,7 @@ void RemoteWebInspectorUIProxy::platformResetState()
 void RemoteWebInspectorUIProxy::platformBringToFront()
 {
     [m_window makeKeyAndOrderFront:nil];
-    [m_window makeFirstResponder:protectedWebView().get()];
+    [m_window makeFirstResponder:protect(webView()).get()];
 }
 
 void RemoteWebInspectorUIProxy::platformSave(Vector<InspectorFrontendClient::SaveData>&& saveDatas, bool forceSaveAs)
@@ -180,7 +180,7 @@ void RemoteWebInspectorUIProxy::platformSave(Vector<InspectorFrontendClient::Sav
         forceSaveAs = true;
     }
 
-    WebInspectorUIProxy::showSavePanel(m_window.get(), platformURL.get(), WTFMove(saveDatas), forceSaveAs, [urlCommonPrefix, protectedThis = Ref { *this }] (NSURL *actualURL) {
+    WebInspectorUIProxy::showSavePanel(m_window.get(), platformURL.get(), WTF::move(saveDatas), forceSaveAs, [urlCommonPrefix, protectedThis = Ref { *this }] (NSURL *actualURL) {
         protectedThis->m_suggestedToActualURLMap.set(urlCommonPrefix.get(), actualURL);
     });
 }
@@ -196,7 +196,7 @@ void RemoteWebInspectorUIProxy::platformLoad(const String& path, CompletionHandl
 void RemoteWebInspectorUIProxy::platformPickColorFromScreen(CompletionHandler<void(const std::optional<WebCore::Color>&)>&& completionHandler)
 {
     auto sampler = adoptNS([[NSColorSampler alloc] init]);
-    [sampler.get() showSamplerWithSelectionHandler:makeBlockPtr([completionHandler = WTFMove(completionHandler)](NSColor *selectedColor) mutable {
+    [sampler.get() showSamplerWithSelectionHandler:makeBlockPtr([completionHandler = WTF::move(completionHandler)](NSColor *selectedColor) mutable {
         if (!selectedColor) {
             completionHandler(std::nullopt);
             return;
@@ -228,7 +228,7 @@ void RemoteWebInspectorUIProxy::platformSetForcedAppearance(InspectorFrontendCli
         break;
     }
 
-    protectedWebView().get().appearance = platformAppearance;
+    protect(webView()).get().appearance = platformAppearance;
 
     RetainPtr window = m_window.get();
     ASSERT(window);
@@ -237,7 +237,7 @@ void RemoteWebInspectorUIProxy::platformSetForcedAppearance(InspectorFrontendCli
 
 void RemoteWebInspectorUIProxy::platformStartWindowDrag()
 {
-    protectedWebView().get()._protectedPage->startWindowDrag();
+    protect(webView()).get()._protectedPage->startWindowDrag();
 }
 
 void RemoteWebInspectorUIProxy::platformOpenURLExternally(const String& url)
@@ -265,11 +265,6 @@ void RemoteWebInspectorUIProxy::platformShowCertificate(const CertificateInfo& c
     [certificateView setEditableTrust:NO];
     [certificateView setDisplayDetails:YES];
     [certificateView setDetailsDisclosed:YES];
-}
-
-RetainPtr<WKWebView> RemoteWebInspectorUIProxy::protectedWebView() const
-{
-    return webView();
 }
 
 } // namespace WebKit

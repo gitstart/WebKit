@@ -26,6 +26,25 @@
 
 #pragma once
 
+// WeakPtr is a nullable weak pointer that does not prevent the referenced
+// object from being destroyed. When the referenced object is destroyed, the
+// WeakPtr automatically becomes null. Use get() to retrieve the raw pointer,
+// which will return nullptr if the object has been destroyed. Note that
+// operator->() and operator*() will safely crash (via RELEASE_ASSERT) if
+// called on a null WeakPtr.
+//
+// WeakPtr can only be used with classes that inherit from CanMakeWeakPtr or
+// CanMakeWeakPtrWithBitField (which provide the weak pointer implementation).
+//
+// If you expect the pointer to never become null during its usage, consider
+// using WeakRef instead, which provides clearer semantics and more actionable
+// crash reports when the referenced object is unexpectedly destroyed.
+//
+// Performance note: WeakPtr is often less efficient than RefPtr or CheckedPtr
+// because it involves an extra level of indirection when dereferencing (it is
+// a pointer to a pointer). This can hurt compiler optimizations. Prefer RefPtr
+// or CheckedPtr in performance sensitive code.
+
 #include <type_traits>
 #include <wtf/CanMakeWeakPtr.h>
 #include <wtf/CompactRefPtrTuple.h>
@@ -39,8 +58,8 @@
 namespace WTF {
 
 template<typename, typename, typename = DefaultWeakPtrImpl> class WeakHashMap;
-template<typename, typename = DefaultWeakPtrImpl, EnableWeakPtrThreadingAssertions = EnableWeakPtrThreadingAssertions::Yes> class WeakHashSet;
-template <typename, typename = DefaultWeakPtrImpl, EnableWeakPtrThreadingAssertions = EnableWeakPtrThreadingAssertions::Yes> class WeakListHashSet;
+template<typename, typename = DefaultWeakPtrImpl> class WeakHashSet;
+template<typename, typename = DefaultWeakPtrImpl> class WeakListHashSet;
 
 template<typename T, typename WeakPtrImpl, typename PtrTraits> class WeakPtr {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED(WeakPtr);
@@ -83,11 +102,27 @@ public:
 
     template<typename OtherPtrTraits>
     explicit WeakPtr(RefPtr<WeakPtrImpl, OtherPtrTraits> impl)
-        : m_impl(WTFMove(impl))
+        : m_impl(WTF::move(impl))
     {
     }
 
-    RefPtr<WeakPtrImpl, PtrTraits> releaseImpl() { return WTFMove(m_impl); }
+    WeakPtr(HashTableDeletedValueType) : m_impl(HashTableDeletedValue) { }
+    WeakPtr(HashTableEmptyValueType) : m_impl(HashTableEmptyValue) { }
+
+    bool isHashTableDeletedValue() const { return m_impl.isHashTableDeletedValue(); }
+    bool isHashTableEmptyValue() const { return !m_impl; }
+    bool isWeakNullValue() const { return !*m_impl; }
+
+    T* ptrAllowingHashTableEmptyValue() const
+    {
+        static_assert(
+            HasRefPtrMemberFunctions<T>::value || HasCheckedPtrMemberFunctions<T>::value || IsDeprecatedWeakRefSmartPointerException<std::remove_cv_t<T>>::value,
+            "Classes that offer weak pointers should also offer RefPtr or CheckedPtr. Please do not add new exceptions.");
+
+        return !m_impl.isHashTableEmptyValue() ? static_cast<T*>(m_impl->template get<T>()) : nullptr;
+    }
+
+    RefPtr<WeakPtrImpl, PtrTraits> releaseImpl() { return WTF::move(m_impl); }
 
     T* get() const
     {
@@ -101,6 +136,8 @@ public:
         ASSERT(canSafelyBeUsed());
         return m_impl ? static_cast<T*>(m_impl->template get<T>()) : nullptr;
     }
+
+    operator T*() const { return get(); }
 
     WeakRef<T> releaseNonNull()
     {
@@ -158,15 +195,12 @@ public:
     }
 
 private:
-    template<typename, typename, typename> friend class WeakHashMap;
-    template<typename, typename, EnableWeakPtrThreadingAssertions> friend class WeakHashSet;
-    template<typename, typename, EnableWeakPtrThreadingAssertions> friend class WeakListHashSet;
     template<typename, typename, typename> friend class WeakPtr;
     template<typename, typename> friend class WeakPtrFactory;
     template<typename, typename> friend class WeakPtrFactoryWithBitField;
 
     explicit WeakPtr(Ref<WeakPtrImpl>&& ref, EnableWeakPtrThreadingAssertions shouldEnableAssertions)
-        : m_impl(WTFMove(ref))
+        : m_impl(WTF::move(ref))
 #if ASSERT_ENABLED
         , m_shouldEnableAssertions(shouldEnableAssertions == EnableWeakPtrThreadingAssertions::Yes)
 #endif
@@ -284,6 +318,38 @@ struct IsSmartPtr<WeakPtr<T, WeakPtrImpl, PtrTraits>> {
     static constexpr bool isNullable = true;
 };
 
+template<typename P, typename WeakPtrImpl> struct WeakPtrHashTraits : SimpleClassHashTraits<WeakPtr<P, WeakPtrImpl>> {
+    static constexpr bool emptyValueIsZero = true;
+    static P* emptyValue() { return nullptr; }
+
+    template <typename>
+    static void constructEmptyValue(WeakPtr<P, WeakPtrImpl>& slot)
+    {
+        new (NotNull, std::addressof(slot)) WeakPtr<P, WeakPtrImpl>();
+    }
+
+    static constexpr bool hasIsEmptyValueFunction = true;
+    static bool isEmptyValue(const WeakPtr<P, WeakPtrImpl>& value) { return value.isHashTableEmptyValue(); }
+
+    static constexpr bool hasIsWeakNullValueFunction = true;
+    static bool isWeakNullValue(const WeakPtr<P, WeakPtrImpl>& value) { return value.isWeakNullValue(); }
+
+    using PeekType = P*;
+    static PeekType peek(const WeakPtr<P, WeakPtrImpl>& value) { return const_cast<PeekType>(value.ptrAllowingHashTableEmptyValue()); }
+    static PeekType peek(P* value) { return value; }
+
+    using TakeType = WeakPtr<P, WeakPtrImpl>;
+    static TakeType take(WeakPtr<P, WeakPtrImpl>&& value) { return isEmptyValue(value) ? nullptr : WeakPtr<P, WeakPtrImpl>(WTF::move(value)); }
+};
+
+template<typename P, typename WeakPtrImpl> struct HashTraits<WeakPtr<P, WeakPtrImpl>> : WeakPtrHashTraits<P, WeakPtrImpl> { };
+
+template<typename P, typename WeakPtrImpl> struct PtrHash<WeakPtr<P, WeakPtrImpl>> : PtrHashBase<WeakPtr<P, WeakPtrImpl>, IsSmartPtr<WeakPtr<P, WeakPtrImpl>>::value> {
+    static constexpr bool safeToCompareToEmptyOrDeleted = false;
+};
+
+template<typename P, typename WeakPtrImpl> struct DefaultHash<WeakPtr<P, WeakPtrImpl>> : PtrHash<WeakPtr<P, WeakPtrImpl>> { };
+
 template<typename ExpectedType, typename ArgType, typename WeakPtrImpl, typename PtrTraits>
 inline bool is(WeakPtr<ArgType, WeakPtrImpl, PtrTraits>& source)
 {
@@ -325,6 +391,20 @@ template<typename T, typename U, typename WeakPtrImpl, typename PtrTraits> inlin
     return a.get() == b;
 }
 
+template<typename T, typename WeakPtrImpl, typename PtrTraits, typename RefPtrTraits = RawPtrTraits<T>, typename RefDerefTraits = DefaultRefDerefTraits<T>>
+    requires HasRefPtrMemberFunctions<T>::value
+ALWAYS_INLINE CLANG_POINTER_CONVERSION RefPtr<T, RefPtrTraits, RefDerefTraits> protect(const WeakPtr<T, WeakPtrImpl, PtrTraits>& weakPtr)
+{
+    return RefPtr<T, RefPtrTraits, RefDerefTraits>(weakPtr.get());
+}
+
+template<typename T, typename WeakPtrImpl, typename WeakPtrPtrTraits, typename CheckedPtrTraits = RawPtrTraits<T>>
+    requires (HasCheckedPtrMemberFunctions<T>::value && !HasRefPtrMemberFunctions<T>::value)
+ALWAYS_INLINE CLANG_POINTER_CONVERSION CheckedPtr<T, CheckedPtrTraits> protect(const WeakPtr<T, WeakPtrImpl, WeakPtrPtrTraits>& weakPtr)
+{
+    return CheckedPtr<T, CheckedPtrTraits>(weakPtr.get());
+}
+
 template<class T, typename = std::enable_if_t<!IsSmartPtr<T>::value>>
 WeakPtr(const T* value, EnableWeakPtrThreadingAssertions = EnableWeakPtrThreadingAssertions::Yes) -> WeakPtr<T, typename T::WeakPtrImplType>;
 
@@ -340,13 +420,13 @@ WeakPtr(const RefPtr<T>& value, EnableWeakPtrThreadingAssertions = EnableWeakPtr
 template<typename T, typename PtrTraits = RawPtrTraits<SingleThreadWeakPtrImpl>> using SingleThreadWeakPtr = WeakPtr<T, SingleThreadWeakPtrImpl, PtrTraits>;
 template<typename T> using SingleThreadPackedWeakPtr = WeakPtr<T, SingleThreadWeakPtrImpl, PackedPtrTraits<SingleThreadWeakPtrImpl>>;
 
-template<typename T, EnableWeakPtrThreadingAssertions enableWeakPtrThreadingAssertions = EnableWeakPtrThreadingAssertions::Yes>
-using SingleThreadWeakHashSet = WeakHashSet<T, SingleThreadWeakPtrImpl, enableWeakPtrThreadingAssertions>;
+template<typename T>
+using SingleThreadWeakHashSet = WeakHashSet<T, SingleThreadWeakPtrImpl>;
 
 template<typename KeyType, typename ValueType> using SingleThreadWeakHashMap = WeakHashMap<KeyType, ValueType, SingleThreadWeakPtrImpl>;
 
-template<typename T, EnableWeakPtrThreadingAssertions enableWeakPtrThreadingAssertions = EnableWeakPtrThreadingAssertions::Yes>
-using SingleThreadWeakListHashSet = WeakListHashSet<T, SingleThreadWeakPtrImpl, enableWeakPtrThreadingAssertions>;
+template<typename T>
+using SingleThreadWeakListHashSet = WeakListHashSet<T, SingleThreadWeakPtrImpl>;
 
 } // namespace WTF
 

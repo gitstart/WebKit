@@ -81,7 +81,7 @@ void DisplayCaptureSessionManager::alertForGetDisplayMedia(WebPageProxy& page, c
     button = [alert addButtonWithTitle:doNotAllowButtonString.get()];
     button.get().keyEquivalent = @"\E";
 
-    [alert beginSheetModalForWindow:retainPtr([webView window]).get() completionHandler:[completionBlock = makeBlockPtr(WTFMove(completionHandler))](NSModalResponse returnCode) {
+    [alert beginSheetModalForWindow:retainPtr([webView window]).get() completionHandler:[completionBlock = makeBlockPtr(WTF::move(completionHandler))](NSModalResponse returnCode) {
         DisplayCaptureSessionManager::CaptureSessionType result = DisplayCaptureSessionManager::CaptureSessionType::None;
         switch (returnCode) {
         case NSAlertFirstButtonReturn:
@@ -169,7 +169,7 @@ bool DisplayCaptureSessionManager::canRequestDisplayCapturePermission()
         return m_systemCanPromptForTesting == PromptOverride::CanPrompt;
 
 #if HAVE(SCREEN_CAPTURE_KIT)
-    return WebCore::ScreenCaptureKitSharingSessionManager::useSCContentSharingPicker();
+    return true;
 #else
     return false;
 #endif
@@ -194,9 +194,9 @@ void DisplayCaptureSessionManager::promptForGetDisplayMedia(UserMediaPermissionR
 {
     if (useMockCaptureDevices()) {
         if (promptType == UserMediaPermissionRequestProxy::UserMediaDisplayCapturePromptType::Window)
-            showWindowPicker(origin, WTFMove(completionHandler));
+            showWindowPicker(origin, WTF::move(completionHandler));
         else
-            showScreenPicker(origin, WTFMove(completionHandler));
+            showScreenPicker(origin, WTF::move(completionHandler));
         return;
     }
 
@@ -209,37 +209,37 @@ void DisplayCaptureSessionManager::promptForGetDisplayMedia(UserMediaPermissionR
     }
 
     if (WebCore::ScreenCaptureKitSharingSessionManager::isAvailable()) {
-        if (!page.protectedPreferences()->useGPUProcessForDisplayCapture()) {
-            WebCore::ScreenCaptureKitSharingSessionManager::singleton().promptForGetDisplayMedia(toScreenCaptureKitPromptType(promptType), WTFMove(completionHandler));
+        if (!protect(page.preferences())->useGPUProcessForDisplayCapture()) {
+            WebCore::ScreenCaptureKitSharingSessionManager::singleton().promptForGetDisplayMedia(toScreenCaptureKitPromptType(promptType), WTF::move(completionHandler));
             return;
         }
 
-        Ref gpuProcess = page.configuration().protectedProcessPool()->ensureGPUProcess();
+        Ref gpuProcess = protect(page.configuration().processPool())->ensureGPUProcess();
         gpuProcess->updateSandboxAccess(false, false, true);
-        gpuProcess->promptForGetDisplayMedia(toScreenCaptureKitPromptType(promptType), WTFMove(completionHandler));
+        gpuProcess->promptForGetDisplayMedia(toScreenCaptureKitPromptType(promptType), WTF::move(completionHandler));
         return;
     }
 
     if (promptType == UserMediaPermissionRequestProxy::UserMediaDisplayCapturePromptType::Screen) {
-        showScreenPicker(origin, WTFMove(completionHandler));
+        showScreenPicker(origin, WTF::move(completionHandler));
         return;
     }
 
     if (promptType == UserMediaPermissionRequestProxy::UserMediaDisplayCapturePromptType::Window) {
-        showWindowPicker(origin, WTFMove(completionHandler));
+        showWindowPicker(origin, WTF::move(completionHandler));
         return;
     }
 
-    alertForGetDisplayMedia(page, origin, [this, origin, completionHandler = WTFMove(completionHandler)] (DisplayCaptureSessionManager::CaptureSessionType sessionType) mutable {
+    alertForGetDisplayMedia(page, origin, [this, origin, completionHandler = WTF::move(completionHandler)] (DisplayCaptureSessionManager::CaptureSessionType sessionType) mutable {
         if (sessionType == CaptureSessionType::None) {
             completionHandler(std::nullopt);
             return;
         }
 
         if (sessionType == CaptureSessionType::Screen)
-            showScreenPicker(origin, WTFMove(completionHandler));
+            showScreenPicker(origin, WTF::move(completionHandler));
         else
-            showWindowPicker(origin, WTFMove(completionHandler));
+            showWindowPicker(origin, WTF::move(completionHandler));
     });
 #endif
 }
@@ -252,7 +252,7 @@ void DisplayCaptureSessionManager::cancelGetDisplayMediaPrompt(WebPageProxy& pag
     if (!isAvailable() || !WebCore::ScreenCaptureKitSharingSessionManager::isAvailable())
         return;
 
-    if (!page.protectedPreferences()->useGPUProcessForDisplayCapture()) {
+    if (!protect(page.preferences())->useGPUProcessForDisplayCapture()) {
         WebCore::ScreenCaptureKitSharingSessionManager::singleton().cancelGetDisplayMediaPrompt();
         return;
     }

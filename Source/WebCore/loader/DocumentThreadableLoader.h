@@ -69,13 +69,9 @@ class CachedRawResource;
         friend class InspectorInstrumentation;
         friend class InspectorNetworkAgent;
 
-        // CachedResourceClient.
+        // CachedResourceClient, ThreadableLoader.
         void ref() const final { RefCounted::ref(); }
         void deref() const final { RefCounted::deref(); }
-
-    protected:
-        void refThreadableLoader() override { ref(); }
-        void derefThreadableLoader() override { deref(); }
 
     private:
         enum BlockingBehavior {
@@ -113,13 +109,11 @@ class CachedRawResource;
 
         Ref<SecurityOrigin> topOrigin() const;
         SecurityOrigin& securityOrigin() const;
-        Ref<SecurityOrigin> protectedSecurityOrigin() const;
         const ContentSecurityPolicy& contentSecurityPolicy() const;
         CheckedRef<const ContentSecurityPolicy> checkedContentSecurityPolicy() const;
         const CrossOriginEmbedderPolicy& crossOriginEmbedderPolicy() const;
 
         Document& document() { return *m_document; }
-        Ref<Document> protectedDocument();
 
         const ThreadableLoaderOptions& options() const { return m_options; }
         const String& referrer() const { return m_referrer; }
@@ -134,10 +128,8 @@ class CachedRawResource;
         bool shouldSetHTTPHeadersToKeep() const;
         bool checkURLSchemeAsCORSEnabled(const URL&);
 
-        CachedResourceHandle<CachedRawResource> protectedResource() const;
-
         CachedResourceHandle<CachedRawResource> m_resource;
-        ThreadableLoaderClient* m_client; // FIXME: Use a smart pointer.
+        WeakPtr<ThreadableLoaderClient> m_client;
         WeakPtr<Document, WeakPtrImplWithEventTargetData> m_document;
         ThreadableLoaderOptions m_options;
         bool m_responsesCanBeOpaque { true };

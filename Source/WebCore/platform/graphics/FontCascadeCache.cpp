@@ -75,7 +75,7 @@ void FontCascadeCache::invalidate()
     m_entries.clear();
 }
 
-void FontCascadeCache::clearWidthCaches()
+void FontCascadeCache::clearMeasurementCaches()
 {
     for (auto& value : m_entries.values())
         value->fonts.get().widthCache().clear();
@@ -115,7 +115,7 @@ Ref<FontCascadeFonts> FontCascadeCache::retrieveOrAddCachedFonts(const FontCasca
         return addResult.iterator->value->fonts.get();
 
     auto& newEntry = addResult.iterator->value;
-    newEntry = makeUnique<FontCascadeCacheEntry>(FontCascadeCacheEntry { WTFMove(key), FontCascadeFonts::create() });
+    newEntry = makeUnique<FontCascadeCacheEntry>(FontCascadeCacheEntry { WTF::move(key), FontCascadeFonts::create() });
     Ref<FontCascadeFonts> fonts = newEntry->fonts.get();
 
 

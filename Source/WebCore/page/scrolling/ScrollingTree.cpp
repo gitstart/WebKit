@@ -50,7 +50,7 @@ namespace WebCore {
 
 WTF_MAKE_TZONE_ALLOCATED_IMPL(ScrollingTree);
 
-using OrphanScrollingNodeMap = HashMap<ScrollingNodeID, RefPtr<ScrollingTreeNode>>;
+using OrphanScrollingNodeMap = HashMap<ScrollingNodeID, Ref<ScrollingTreeNode>>;
 
 struct CommitTreeState {
     // unvisitedNodes starts with all nodes in the map; we remove nodes as we visit them. At the end, it's the unvisited nodes.
@@ -248,7 +248,7 @@ WheelEventHandlingResult ScrollingTree::handleWheelEventWithNode(const PlatformW
 
         if (RefPtr scrollProxyNode = dynamicDowncast<ScrollingTreeOverflowScrollProxyNode>(*node)) {
             if (RefPtr relatedNode = nodeForID(scrollProxyNode->overflowScrollingNodeID())) {
-                node = WTFMove(relatedNode);
+                node = WTF::move(relatedNode);
                 continue;
             }
         }
@@ -355,13 +355,13 @@ bool ScrollingTree::commitTreeStateInternal(std::unique_ptr<ScrollingStateTree>&
     if (hostingContextIdentifier) {
         LOG_WITH_STREAM(Scrolling, stream << "ScrollingTree::commitTreeState - starting hosted tree commit for hosting context ID:  " << *hostingContextIdentifier);
         if (RefPtr scrollingNode = m_hostedSubtrees.get(*hostingContextIdentifier))
-            commitState.frameHostingNode = WTFMove(scrollingNode);
+            commitState.frameHostingNode = WTF::move(scrollingNode);
         else {
             LOG_WITH_STREAM(Scrolling, stream << "ScrollingTree::commitTreeState - parent not present for hosted tree commit");
             // Add to hosted subtrees needing pairing since the hosting node is not in the scrolling tree yet
             m_hostedSubtreesNeedingPairing.ensure(*hostingContextIdentifier, [] {
                 return Vector<std::unique_ptr<ScrollingStateTree>> { };
-            }).iterator->value.append(WTFMove(scrollingStateTree));
+            }).iterator->value.append(WTF::move(scrollingStateTree));
             return true;
         }
         if (!rootNode) {
@@ -438,12 +438,12 @@ bool ScrollingTree::commitTreeStateInternal(std::unique_ptr<ScrollingStateTree>&
     LOG_WITH_STREAM(ScrollingTree, stream << "committed ScrollingTree" << scrollingTreeAsText(debugScrollingStateTreeAsTextBehaviors));
 
     // Recursively commit subtrees that can now be attatched
-    auto subtrees = WTFMove(commitState.pendingSubtreesNeedingCommit);
+    auto subtrees = WTF::move(commitState.pendingSubtreesNeedingCommit);
     for (auto& pair : subtrees) {
         auto hostingID = pair.first;
         LOG_WITH_STREAM(Scrolling, stream << "ScrollingTree::commitTreeState - committing unparented subtrees for hosting context ID: " << hostingID);
         for (auto& subtree : pair.second)
-            succeeded &= commitTreeStateInternal(WTFMove(subtree), hostingID);
+            succeeded &= commitTreeStateInternal(WTF::move(subtree), hostingID);
     }
 
     didCommitTree();
@@ -455,7 +455,7 @@ bool ScrollingTree::commitTreeState(std::unique_ptr<ScrollingStateTree>&& scroll
 {
     SetForScope inCommitTreeState(m_inCommitTreeState, true);
     Locker locker { m_treeLock };
-    return commitTreeStateInternal(WTFMove(scrollingStateTree), hostingContextIdentifier);
+    return commitTreeStateInternal(WTF::move(scrollingStateTree), hostingContextIdentifier);
 }
 
 bool ScrollingTree::updateTreeFromStateNodeRecursive(const ScrollingStateNode* stateNode, CommitTreeState& state)
@@ -475,7 +475,7 @@ bool ScrollingTree::updateTreeFromStateNodeRecursive(const ScrollingStateNode* s
 
     RefPtr<ScrollingTreeNode> node;
     if (it != m_nodeMap.end()) {
-        node = it->value;
+        node = it->value.ptr();
         state.unvisitedNodes.remove(nodeID);
     } else {
         node = createScrollingTreeNode(stateNode->nodeType(), nodeID);
@@ -488,7 +488,7 @@ bool ScrollingTree::updateTreeFromStateNodeRecursive(const ScrollingStateNode* s
             removeAllNodes();
         }
 
-        m_nodeMap.set(nodeID, node.get());
+        m_nodeMap.set(nodeID, *node);
         {
             Locker locker { m_frameIDMapLock };
             m_nodeMapPerFrame.ensure(state.frameId, [] { return HashSet<ScrollingNodeID> { }; }).iterator->value.add(node->scrollingNodeID());
@@ -524,7 +524,7 @@ bool ScrollingTree::updateTreeFromStateNodeRecursive(const ScrollingStateNode* s
         // Move all children into the orphanNodes map. Live ones will get added back as we recurse over children.
         for (auto& childScrollingNode : node->children()) {
             childScrollingNode->setParent(nullptr);
-            state.orphanNodes.add(childScrollingNode->scrollingNodeID(), childScrollingNode.ptr());
+            state.orphanNodes.add(childScrollingNode->scrollingNodeID(), childScrollingNode.copyRef());
         }
         node->removeAllChildren();
 
@@ -563,7 +563,7 @@ void ScrollingTree::removeAllNodes()
 {
     auto nodes = std::exchange(m_nodeMap, { });
     for (auto iter : nodes)
-        Ref { *iter.value }->willBeDestroyed();
+        Ref { iter.value }->willBeDestroyed();
 
     m_nodeMap.clear();
     {
@@ -915,12 +915,12 @@ void ScrollingTree::addPendingScrollUpdate(ScrollUpdate&& update)
     Locker locker { m_pendingScrollUpdatesLock };
     for (auto& existingUpdate : m_pendingScrollUpdates) {
         if (existingUpdate.canMerge(update)) {
-            existingUpdate.merge(WTFMove(update));
+            existingUpdate.merge(WTF::move(update));
             return;
         }
     }
 
-    m_pendingScrollUpdates.append(WTFMove(update));
+    m_pendingScrollUpdates.append(WTF::move(update));
 }
 
 Vector<ScrollUpdate> ScrollingTree::takePendingScrollUpdates()

@@ -36,12 +36,12 @@ struct ImageOrNone {
     }
 
     ImageOrNone(ImageWrapper&& image)
-        : m_value { WTFMove(image.value) }
+        : m_value { WTF::move(image.value) }
     {
     }
 
     ImageOrNone(RefPtr<StyleImage>&& image)
-        : m_value { WTFMove(image) }
+        : m_value { WTF::move(image) }
     {
     }
 
@@ -77,7 +77,7 @@ template<> struct CSSValueConversion<ImageOrNone> { auto operator()(BuilderState
 
 template<> struct Blending<ImageOrNone> {
     auto canBlend(const ImageOrNone&, const ImageOrNone&) -> bool;
-    auto blend(const ImageOrNone&, const ImageOrNone&, const BlendingContext&) -> ImageOrNone;
+    auto blend(const ImageOrNone&, const ImageOrNone&, const RenderStyle&, const RenderStyle&, const BlendingContext&) -> ImageOrNone;
 };
 
 } // namespace Style

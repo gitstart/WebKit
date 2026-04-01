@@ -73,7 +73,7 @@ RemoteScrollingCoordinator::~RemoteScrollingCoordinator()
 void RemoteScrollingCoordinator::scheduleTreeStateCommit()
 {
     if (RefPtr webPage = m_webPage.get())
-        webPage->protectedDrawingArea()->triggerRenderingUpdate();
+        protect(webPage->drawingArea())->triggerRenderingUpdate();
 }
 
 bool RemoteScrollingCoordinator::coordinatesScrollingForFrameView(const LocalFrameView& frameView) const
@@ -125,7 +125,7 @@ void RemoteScrollingCoordinator::scrollUpdateForNode(ScrollUpdate update, Comple
 {
     LOG_WITH_STREAM(Scrolling, stream << "RemoteScrollingCoordinator::scrollUpdateForNode: " << update);
 
-    applyScrollUpdate(WTFMove(update));
+    applyScrollUpdate(WTF::move(update));
     completionHandler();
 }
 

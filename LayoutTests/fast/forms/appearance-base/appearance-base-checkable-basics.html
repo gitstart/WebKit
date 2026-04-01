@@ -1,0 +1,40 @@
+<style>
+    input:is([type=checkbox]:not([switch]), [type=radio]) {
+        appearance: base;
+        width: 200px;
+        height: 200px;
+        font: 11px system-ui;
+        border: 0.3em solid currentColor;
+    }
+
+    input[type="checkbox"] {
+        border-radius: 0.5em;
+    }
+
+    input:is([type="checkbox"], [type="radio"]):disabled {
+        border-color: color-mix(in srgb, currentColor 30%, transparent);
+        background-color: color-mix(in srgb, currentColor 10%, transparent);
+    }
+
+    input:is([type=checkbox]:not([switch]), [type=radio]):checked:disabled::checkmark {
+        background-color: color-mix(in srgb, currentColor 30%, transparent);
+    }
+
+    .enabled input:is([type=checkbox]:not([switch]), [type=radio]) {
+        color: darkblue;
+    }
+
+    .disabled input:is([type=checkbox]:not([switch]), [type=radio]) {
+        color: darkgreen;
+    }
+</style>
+<body>
+    <div class="enabled">
+        <input type="checkbox">
+        <input type="radio">
+    </div>
+    <div class="disabled">
+        <input type="checkbox" disabled>
+        <input type="radio" disabled>
+    </div>
+</body>

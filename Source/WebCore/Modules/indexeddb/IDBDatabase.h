@@ -48,7 +48,7 @@ class IDBTransactionInfo;
 struct EventNames;
 
 class IDBDatabase final : public ThreadSafeRefCountedAndCanMakeThreadSafeWeakPtr<IDBDatabase>, public EventTarget, public IDBActiveDOMObject {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(IDBDatabase);
+    WTF_MAKE_TZONE_ALLOCATED(IDBDatabase);
 public:
     static Ref<IDBDatabase> create(ScriptExecutionContext&, IDBClient::IDBConnectionProxy&, const IDBResultData&);
 
@@ -136,12 +136,14 @@ private:
     bool m_closedInServer { false };
 
     RefPtr<IDBTransaction> m_versionChangeTransaction;
-    HashMap<IDBResourceIdentifier, RefPtr<IDBTransaction>> m_activeTransactions;
-    HashMap<IDBResourceIdentifier, RefPtr<IDBTransaction>> m_committingTransactions;
-    HashMap<IDBResourceIdentifier, RefPtr<IDBTransaction>> m_abortingTransactions;
+    HashMap<IDBResourceIdentifier, Ref<IDBTransaction>> m_activeTransactions;
+    HashMap<IDBResourceIdentifier, Ref<IDBTransaction>> m_committingTransactions;
+    HashMap<IDBResourceIdentifier, Ref<IDBTransaction>> m_abortingTransactions;
     
     const EventNames& m_eventNames; // Need to cache this so we can use it from GC threads.
     std::atomic<bool> m_isContextSuspended { false };
 };
 
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_EVENTTARGET(IDBDatabase)

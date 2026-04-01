@@ -27,7 +27,7 @@
 #import "PageClient.h"
 #import "ScrollingTreeScrollingNodeDelegateIOS.h"
 
-#if PLATFORM(IOS_FAMILY) && ENABLE(ASYNC_SCROLLING)
+#if PLATFORM(IOS_FAMILY)
 
 #import "RemoteLayerTreeViews.h"
 #import "RemoteScrollingCoordinatorProxyIOS.h"
@@ -310,8 +310,8 @@ void ScrollingTreeScrollingNodeDelegateIOS::commitStateBeforeChildren(const Scro
 
 void ScrollingTreeScrollingNodeDelegateIOS::updateScrollViewForOverscrollBehavior(UIScrollView *scrollView, const WebCore::OverscrollBehavior horizontalOverscrollBehavior, WebCore::OverscrollBehavior verticalOverscrollBehavior, AllowOverscrollToPreventScrollPropagation allowPropogation)
 {
-    if ([scrollView isKindOfClass:[WKScrollView class]])
-        [(WKScrollView*)scrollView _setBouncesInternal:horizontalOverscrollBehavior != WebCore::OverscrollBehavior::None vertical: verticalOverscrollBehavior != WebCore::OverscrollBehavior::None];
+    if (RetainPtr wkScrollView = dynamic_objc_cast<WKScrollView>(scrollView))
+        [wkScrollView _setBouncesInternal:horizontalOverscrollBehavior != WebCore::OverscrollBehavior::None vertical: verticalOverscrollBehavior != WebCore::OverscrollBehavior::None];
     else {
         scrollView.bouncesHorizontally = horizontalOverscrollBehavior != OverscrollBehavior::None;
         scrollView.bouncesVertically = verticalOverscrollBehavior != OverscrollBehavior::None;
@@ -342,12 +342,10 @@ void ScrollingTreeScrollingNodeDelegateIOS::commitStateAfterChildren(const Scrol
             scrollView.delegate = m_scrollViewDelegate.get();
             scrollView.baseScrollViewDelegate = m_scrollViewDelegate.get();
 
-ALLOW_DEPRECATED_DECLARATIONS_BEGIN
-            if ([scrollView respondsToSelector:@selector(_setAvoidsJumpOnInterruptedBounce:)]) {
-                scrollView.tracksImmediatelyWhileDecelerating = NO;
-                scrollView._avoidsJumpOnInterruptedBounce = YES;
-            }
-ALLOW_DEPRECATED_DECLARATIONS_END
+#if HAVE(UISCROLLVIEW_DECELERATION_TRACKING_BEHAVIOR)
+            if ([scrollView respondsToSelector:@selector(_setDecelerationTrackingBehavior:)])
+                [scrollView _setDecelerationTrackingBehavior:_UIScrollViewDecelerationTrackingBehaviorAdaptive];
+#endif
         }
 
         bool recomputeInsets = scrollingStateNode.hasChangedProperty(ScrollingStateNode::Property::TotalContentsSize);
@@ -538,7 +536,7 @@ bool ScrollingTreeScrollingNodeDelegateIOS::shouldAllowPanGestureRecognizerToRec
     if (!scrollingCoordinatorProxy)
         return true;
 
-    if (RefPtr pageClient = scrollingCoordinatorProxy->protectedWebPageProxy()->pageClient())
+    if (RefPtr pageClient = protect(scrollingCoordinatorProxy->webPageProxy())->pageClient())
         return !pageClient->isSimulatingCompatibilityPointerTouches();
 
     return true;
@@ -570,4 +568,4 @@ void ScrollingTreeScrollingNodeDelegateIOS::cancelPointersForGestureRecognizer(U
 
 } // namespace WebKit
 
-#endif // PLATFORM(IOS_FAMILY) && ENABLE(ASYNC_SCROLLING)
+#endif // PLATFORM(IOS_FAMILY)

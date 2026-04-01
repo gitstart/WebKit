@@ -40,6 +40,7 @@
 #include "LayoutRect.h"
 #include "Logging.h"
 #include "PlatformWheelEvent.h"
+#include "ScrollAnchoringController.h"
 #include "ScrollAnimator.h"
 #include "ScrollbarTheme.h"
 #include "ScrollbarsControllerMock.h"
@@ -96,7 +97,7 @@ void ScrollableArea::internalCreateScrollbarsController()
         auto mockController = makeUnique<ScrollbarsControllerMock>(const_cast<ScrollableArea&>(*this), [this](const String& message) {
             logMockScrollbarsControllerMessage(message);
         });
-        setScrollbarsController(WTFMove(mockController));
+        setScrollbarsController(WTF::move(mockController));
     } else
         createScrollbarsController();
 }
@@ -104,12 +105,12 @@ void ScrollableArea::internalCreateScrollbarsController()
 void ScrollableArea::createScrollbarsController()
 {
     auto controller = ScrollbarsController::create(const_cast<ScrollableArea&>(*this));
-    setScrollbarsController(WTFMove(controller));
+    setScrollbarsController(WTF::move(controller));
 }
 
 void ScrollableArea::setScrollbarsController(std::unique_ptr<ScrollbarsController>&& scrollbarsController)
 {
-    m_scrollbarsController = WTFMove(scrollbarsController);
+    m_scrollbarsController = WTF::move(scrollbarsController);
 }
 
 void ScrollableArea::setScrollOrigin(const IntPoint& origin)
@@ -234,10 +235,10 @@ void ScrollableArea::scrollPositionChanged(const ScrollPosition& position)
     // Tell the derived class to scroll its contents.
     setScrollOffset(scrollOffsetFromPosition(position));
 
-    auto* verticalScrollbar = this->verticalScrollbar();
+    RefPtr verticalScrollbar = this->verticalScrollbar();
 
     // Tell the scrollbars to update their thumb postions.
-    if (auto* horizontalScrollbar = this->horizontalScrollbar()) {
+    if (RefPtr horizontalScrollbar = this->horizontalScrollbar()) {
         horizontalScrollbar->offsetDidChange();
         if (horizontalScrollbar->isOverlayScrollbar() && !hasLayerForHorizontalScrollbar()) {
             if (!verticalScrollbar)
@@ -259,7 +260,7 @@ void ScrollableArea::scrollPositionChanged(const ScrollPosition& position)
 
     if (scrollPosition() != oldPosition) {
         scrollbarsController().notifyContentAreaScrolled(scrollPosition() - oldPosition);
-        invalidateScrollAnchoringElement();
+
         updateScrollAnchoringElement();
         updateAnchorPositionedAfterScroll();
     }
@@ -279,6 +280,24 @@ bool ScrollableArea::handleWheelEventForScrolling(const PlatformWheelEvent& whee
 void ScrollableArea::stopKeyboardScrollAnimation()
 {
     scrollAnimator().stopKeyboardScrollAnimation();
+}
+
+void ScrollableArea::updateScrollAnchoringElement(ComputeNewScrollAnchor computeNewScrollAnchor)
+{
+    CheckedPtr controller = scrollAnchoringController();
+    if (!controller)
+        return;
+
+    if (computeNewScrollAnchor == ComputeNewScrollAnchor::Yes)
+        controller->invalidateAnchorElement();
+
+    controller->updateAnchorElement();
+}
+
+void ScrollableArea::adjustScrollAnchoringPosition()
+{
+    if (CheckedPtr controller = scrollAnchoringController())
+        controller->adjustScrollPositionForAnchoring();
 }
 
 #if ENABLE(TOUCH_EVENTS)
@@ -428,10 +447,10 @@ void ScrollableArea::setScrollbarOverlayStyle(ScrollbarOverlayStyle overlayStyle
 {
     m_scrollbarOverlayStyle = overlayStyle;
 
-    if (auto* scrollbar = horizontalScrollbar())
+    if (RefPtr scrollbar = horizontalScrollbar())
         ScrollbarTheme::theme().updateScrollbarOverlayStyle(*scrollbar);
 
-    if (auto* scrollbar = verticalScrollbar())
+    if (RefPtr scrollbar = verticalScrollbar())
         ScrollbarTheme::theme().updateScrollbarOverlayStyle(*scrollbar);
 
     invalidateScrollbars();
@@ -441,14 +460,14 @@ void ScrollableArea::invalidateScrollbars()
 {
     invalidateScrollCorner(scrollCornerRect());
 
-    if (auto* scrollbar = horizontalScrollbar()) {
+    if (RefPtr scrollbar = horizontalScrollbar()) {
         scrollbar->invalidate();
-        scrollbarsController().invalidateScrollbarPartLayers(scrollbar);
+        scrollbarsController().invalidateScrollbarPartLayers(scrollbar.get());
     }
 
-    if (auto* scrollbar = verticalScrollbar()) {
+    if (RefPtr scrollbar = verticalScrollbar()) {
         scrollbar->invalidate();
-        scrollbarsController().invalidateScrollbarPartLayers(scrollbar);
+        scrollbarsController().invalidateScrollbarPartLayers(scrollbar.get());
     }
 }
 
@@ -464,13 +483,13 @@ void ScrollableArea::invalidateScrollbar(Scrollbar& scrollbar, const IntRect& re
         return;
 
     if (&scrollbar == horizontalScrollbar()) {
-        if (GraphicsLayer* graphicsLayer = layerForHorizontalScrollbar()) {
+        if (RefPtr graphicsLayer = layerForHorizontalScrollbar()) {
             graphicsLayer->setNeedsDisplay();
             graphicsLayer->setContentsNeedsDisplay();
             return;
         }
     } else if (&scrollbar == verticalScrollbar()) {
-        if (GraphicsLayer* graphicsLayer = layerForVerticalScrollbar()) {
+        if (RefPtr graphicsLayer = layerForVerticalScrollbar()) {
             graphicsLayer->setNeedsDisplay();
             graphicsLayer->setContentsNeedsDisplay();
             return;
@@ -482,7 +501,7 @@ void ScrollableArea::invalidateScrollbar(Scrollbar& scrollbar, const IntRect& re
 
 void ScrollableArea::invalidateScrollCorner(const IntRect& rect)
 {
-    if (GraphicsLayer* graphicsLayer = layerForScrollCorner()) {
+    if (RefPtr graphicsLayer = layerForScrollCorner()) {
         graphicsLayer->setNeedsDisplay();
         return;
     }
@@ -517,13 +536,13 @@ bool ScrollableArea::hasLayerForScrollCorner() const
 
 bool ScrollableArea::allowsHorizontalScrolling() const
 {
-    auto* horizontalScrollbar = this->horizontalScrollbar();
+    RefPtr horizontalScrollbar = this->horizontalScrollbar();
     return horizontalScrollbar && horizontalScrollbar->enabled();
 }
 
 bool ScrollableArea::allowsVerticalScrolling() const
 {
-    auto* verticalScrollbar = this->verticalScrollbar();
+    RefPtr verticalScrollbar = this->verticalScrollbar();
     return verticalScrollbar && verticalScrollbar->enabled();
 }
 
@@ -800,9 +819,9 @@ IntRect ScrollableArea::visibleContentRectInternal(VisibleContentRectIncludesScr
     int horizontalScrollbarHeight = 0;
 
     if (scrollbarInclusion == VisibleContentRectIncludesScrollbars::Yes) {
-        if (Scrollbar* verticalBar = verticalScrollbar())
+        if (RefPtr verticalBar = verticalScrollbar())
             verticalScrollbarWidth = verticalBar->occupiedWidth();
-        if (Scrollbar* horizontalBar = horizontalScrollbar())
+        if (RefPtr horizontalBar = horizontalScrollbar())
             horizontalScrollbarHeight = horizontalBar->occupiedHeight();
     }
 

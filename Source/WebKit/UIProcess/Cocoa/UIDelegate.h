@@ -117,17 +117,17 @@ private:
         bool takeFocus(WebPageProxy*, WKFocusDirection) final;
         void handleAutoplayEvent(WebPageProxy&, WebCore::AutoplayEvent, OptionSet<WebCore::AutoplayEventFlags>) final;
         void decidePolicyForNotificationPermissionRequest(WebPageProxy&, API::SecurityOrigin&, CompletionHandler<void(bool allowed)>&&) final;
-        void requestCookieConsent(CompletionHandler<void(WebCore::CookieConsentDecisionResult)>&&) final;
         bool focusFromServiceWorker(WebKit::WebPageProxy&) final;
         bool runOpenPanel(WebPageProxy&, WebFrameProxy*, FrameInfoData&&, API::OpenPanelParameters*, WebOpenPanelResultListenerProxy*) final;
 #if PLATFORM(MAC) || HAVE(UIKIT_WITH_MOUSE_SUPPORT)
         void mouseDidMoveOverElement(WebPageProxy&, const WebHitTestResultData&, OptionSet<WebEventModifier>);
 #endif
 
-#if PLATFORM(MAC)
-        void showPage(WebPageProxy*) final;
         void focus(WebPageProxy*) final;
         void unfocus(WebPageProxy*) final;
+
+#if PLATFORM(MAC)
+        void showPage(WebPageProxy*) final;
 
         bool canRunModal() const final;
         void runModal(WebPageProxy&) final;
@@ -220,7 +220,6 @@ private:
 #endif
 
         id<WKUIDelegatePrivate> uiDelegatePrivate();
-        RetainPtr<id<WKUIDelegatePrivate>> protectedUIDelegatePrivate();
 
         WeakPtr<UIDelegate> m_uiDelegate;
     };
@@ -247,10 +246,10 @@ private:
 #if PLATFORM(MAC) || HAVE(UIKIT_WITH_MOUSE_SUPPORT)
         bool webViewMouseDidMoveOverElementWithFlagsUserInfo : 1;
 #endif
-#if PLATFORM(MAC)
-        bool showWebView : 1;
         bool focusWebView : 1;
         bool unfocusWebView : 1;
+#if PLATFORM(MAC)
+        bool showWebView : 1;
         bool webViewRunModal : 1;
         bool webViewDidScroll : 1;
         bool webViewHeaderHeight : 1;
@@ -325,7 +324,6 @@ private:
         bool webViewSupportedXRSessionFeatures : 1;
 #endif
         bool webViewRequestNotificationPermissionForSecurityOriginDecisionHandler : 1;
-        bool webViewRequestCookieConsentWithMoreInfoHandlerDecisionHandler : 1;
         bool webViewUpdatedAppBadge : 1;
         bool webViewDidAdjustVisibilityWithSelectors : 1;
 

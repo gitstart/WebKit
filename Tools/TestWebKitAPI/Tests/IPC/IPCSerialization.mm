@@ -91,13 +91,13 @@ struct CFHolderForTesting {
 
     CFTypeRef valueAsCFType() const
     {
-        CFTypeRef result;
+        RetainPtr<CFTypeRef> result;
         WTF::switchOn(value, [&] (std::nullptr_t) {
             result = nullptr;
         }, [&](auto&& arg) {
             result = arg.get();
         });
-        return result;
+        return result.autorelease();
     }
 
     using ValueType = Variant<
@@ -138,7 +138,7 @@ std::optional<CFHolderForTesting> CFHolderForTesting::decode(IPC::Decoder& decod
         return std::nullopt;
 
     return { {
-        WTFMove(*value)
+        WTF::move(*value)
     } };
 }
 
@@ -418,13 +418,13 @@ struct ObjCHolderForTesting {
 
     id valueAsID() const
     {
-        id result;
+        RetainPtr<id> result;
         WTF::switchOn(value, [&] (std::nullptr_t) {
             result = nil;
         }, [&](auto&& arg) {
             result = arg.get();
         });
-        return result;
+        return result.autorelease();
     }
 
     typedef Variant<
@@ -486,7 +486,7 @@ std::optional<ObjCHolderForTesting> ObjCHolderForTesting::decode(IPC::Decoder& d
         return std::nullopt;
 
     return { {
-        WTFMove(*value)
+        WTF::move(*value)
     } };
 }
 
@@ -919,7 +919,7 @@ ALLOW_DEPRECATED_DECLARATIONS_END
 static void runTestNS(ObjCHolderForTesting&& holderArg)
 {
     __block bool done = false;
-    __block ObjCHolderForTesting holder = WTFMove(holderArg);
+    __block ObjCHolderForTesting holder = WTF::move(holderArg);
     auto sender = SerializationTestSender { };
     sender.sendWithAsyncReplyWithoutUsingIPCConnection(ObjCPingBackMessage(holder), ^(ObjCHolderForTesting&& result) {
         EXPECT_TRUE(holder == result);
@@ -1232,9 +1232,9 @@ TEST(IPCSerialization, Basic)
     auto items = adoptCF(itemsPtr);
     EXPECT_GT(CFArrayGetCount(items.get()), 0);
 
-    SecKeychainItemRef keychainItemRef = (SecKeychainItemRef)CFArrayGetValueAtIndex(items.get(), 0);
-    EXPECT_NOT_NULL(keychainItemRef);
-    runTestCF({ keychainItemRef });
+    RetainPtr keychainItemRef = (SecKeychainItemRef)CFArrayGetValueAtIndex(items.get(), 0);
+    EXPECT_NOT_NULL(keychainItemRef.get());
+    runTestCF({ keychainItemRef.get() });
 
     CFRelease(certData);
 
@@ -1767,6 +1767,21 @@ TEST(IPCSerialization, DDScannerResultPlist)
                                displayName:(NSString *)displayName
             operationalAnalyticsIdentifier:(NSString *)operationalAnalyticsIdentifier
                                  signature:(NSData *)signature;
+
+#if HAVE(PASSKIT_DELEGATED_REQUEST)
+- (instancetype)initWithDelegateDisplayName:(NSString *)delegateDisplayName
+                         merchantIdentifier:(NSString *)merchantIdentifier
+                                displayName:(NSString *)displayName
+                                 initiative:(NSString *)initiative
+                          initiativeContext:(NSString *)initiativeContext
+                  merchantSessionIdentifier:(NSString *)merchantSessionIdentifier
+                                      nonce:(NSString *)nonce
+                             epochTimestamp:(NSUInteger)epochTimestamp
+                                  expiresAt:(NSUInteger)expiresAt
+             operationalAnalyticsIdentifier:(NSString *)operationalAnalyticsIdentifier
+                               signedFields:(NSArray<NSString *> *)signedFields
+                                  signature:(NSData *)signature;
+#endif
 @end
 
 TEST(IPCSerialization, DataDetectors)
@@ -1818,6 +1833,24 @@ TEST(IPCSerialization, SecureCoding)
         operationalAnalyticsIdentifier:@"WebKitOperations42"
         signature:[NSData new]]);
     runTestNS({ session.get() });
+
+#if HAVE(PASSKIT_DELEGATED_REQUEST)
+    // This initializer adopts delegate fields, but retryNonce and domain are unexercised
+    session = adoptNS([[PAL::getPKPaymentMerchantSessionClassSingleton() alloc]
+        initWithDelegateDisplayName:@"WebKit (Delegate)"
+        merchantIdentifier:@"WebKit Open Source Project"
+        displayName:@"WebKit"
+        initiative:@"WebKit Regression Test Suite"
+        initiativeContext:@"WebKit IPC Testing"
+        merchantSessionIdentifier:@"WebKitMerchantSession"
+        nonce:@"WebKitNonce"
+        epochTimestamp:1000000000
+        expiresAt:2000000000
+        operationalAnalyticsIdentifier:@"WebKitOperations42"
+        signedFields:@[ @"FirstField", @"AndTheSecond" ]
+        signature:[NSData new]]);
+    runTestNS({ session.get() });
+#endif
 
     RetainPtr<CNPostalAddress> address = postalAddressForTesting();
     RetainPtr<CNLabeledValue> labeledPostalAddress = adoptNS([[PAL::getCNLabeledValueClassSingleton() alloc] initWithLabel:@"Work" value:address.get()]);

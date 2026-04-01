@@ -33,13 +33,13 @@ namespace WebCore {
 class RTCIceCandidate;
 
 class RTCPeerConnectionIceEvent final : public Event {
-    WTF_MAKE_TZONE_OR_ISO_ALLOCATED(RTCPeerConnectionIceEvent);
+    WTF_MAKE_TZONE_ALLOCATED(RTCPeerConnectionIceEvent);
 public:
     virtual ~RTCPeerConnectionIceEvent();
 
     struct Init : EventInit {
-        RefPtr<RTCIceCandidate> candidate;
-        String url;
+        std::optional<RefPtr<RTCIceCandidate>> candidate;
+        std::optional<String> url;
     };
 
     static Ref<RTCPeerConnectionIceEvent> create(const AtomString& type, Init&&);

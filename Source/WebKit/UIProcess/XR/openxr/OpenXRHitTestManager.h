@@ -19,7 +19,7 @@
 
 #pragma once
 
-#if ENABLE(WEBXR) && USE(OPENXR)
+#if ENABLE(WEBXR_HIT_TEST) && USE(OPENXR)
 
 #include <WebCore/PlatformXR.h>
 #include <openxr/openxr.h>
@@ -32,16 +32,18 @@ class OpenXRHitTestManager {
     WTF_MAKE_TZONE_ALLOCATED(OpenXRHitTestManager);
     WTF_MAKE_NONCOPYABLE(OpenXRHitTestManager);
 public:
-    OpenXRHitTestManager(XrSession);
+    static std::unique_ptr<OpenXRHitTestManager> create(XrInstance, XrSystemId, XrSession);
+    OpenXRHitTestManager(XrInstance, XrSystemId, XrSession);
+    ~OpenXRHitTestManager();
     Vector<PlatformXR::FrameData::HitTestResult> requestHitTest(const PlatformXR::Ray&, XrSpace, XrTime);
 
 private:
     XrSession m_session { XR_NULL_HANDLE };
-#if defined(XR_ANDROID_raycast)
-    XrTrackableTrackerANDROID m_trackableTracker { XR_NULL_HANDLE };
+#if defined(XR_ANDROID_trackables)
+    Vector<XrTrackableTrackerANDROID> m_trackableTrackers;
 #endif
 };
 
 } // namespace WebKit
 
-#endif // ENABLE(WEBXR) && USE(OPENXR)
+#endif // ENABLE(WEBXR_HIT_TEST) && USE(OPENXR)

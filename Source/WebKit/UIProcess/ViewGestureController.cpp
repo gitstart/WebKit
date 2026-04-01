@@ -53,6 +53,11 @@
 #include "ViewGestureGeometryCollectorMessages.h"
 #endif
 
+// FIXME: https://bugs.webkit.org/show_bug.cgi?id=306415
+#if ENABLE(BACK_FORWARD_LIST_SWIFT)
+#include "WebKit-Swift.h"
+#endif
+
 namespace WebKit {
 using namespace WebCore;
 
@@ -131,7 +136,7 @@ void ViewGestureController::connectToProcess()
 
     m_webPageIDInMainFrameProcess = page->webPageIDInMainFrameProcess();
     m_mainFrameProcess = page->legacyMainFrameProcess();
-    Ref { *m_mainFrameProcess }->addMessageReceiver(Messages::ViewGestureController::messageReceiverName(), *m_webPageIDInMainFrameProcess, *this);
+    protect(*m_mainFrameProcess)->addMessageReceiver(Messages::ViewGestureController::messageReceiverName(), *m_webPageIDInMainFrameProcess, *this);
     m_isConnectedToProcess = true;
 }
 
@@ -304,7 +309,7 @@ void ViewGestureController::didSameDocumentNavigationForMainFrame(SameDocumentNa
 void ViewGestureController::checkForActiveLoads()
 {
     RefPtr page = m_webPageProxy.get();
-    if (page && page->protectedPageLoadState()->isLoading()) {
+    if (page && protect(page->pageLoadState())->isLoading()) {
         if (!m_swipeActiveLoadMonitoringTimer.isActive())
             m_swipeActiveLoadMonitoringTimer.startRepeating(swipeSnapshotRemovalActiveLoadMonitoringInterval);
         return;
@@ -363,7 +368,7 @@ void ViewGestureController::SnapshotRemovalTracker::resume()
 void ViewGestureController::SnapshotRemovalTracker::start(Events desiredEvents, WTF::Function<void()>&& removalCallback)
 {
     m_outstandingEvents = desiredEvents;
-    m_removalCallback = WTFMove(removalCallback);
+    m_removalCallback = WTF::move(removalCallback);
     m_startTime = MonotonicTime::now();
 
     log("start"_s);
@@ -433,7 +438,7 @@ void ViewGestureController::SnapshotRemovalTracker::fireRemovalCallbackImmediate
 {
     m_watchdogTimer.stop();
 
-    auto removalCallback = WTFMove(m_removalCallback);
+    auto removalCallback = WTF::move(m_removalCallback);
     if (removalCallback) {
         log("removing snapshot"_s);
         reset();
@@ -475,11 +480,6 @@ ViewGestureController::PendingSwipeTracker::PendingSwipeTracker(WebPageProxy& we
 {
 }
 
-Ref<ViewGestureController> ViewGestureController::PendingSwipeTracker::protectedViewGestureController() const
-{
-    return m_viewGestureController.get();
-}
-
 bool ViewGestureController::PendingSwipeTracker::scrollEventCanBecomeSwipe(PlatformScrollEvent event, ViewGestureController::SwipeDirection& potentialSwipeDirection)
 {
     if (!scrollEventCanStartSwipe(event) || !scrollEventCanInfluenceSwipe(event))
@@ -503,7 +503,7 @@ bool ViewGestureController::PendingSwipeTracker::scrollEventCanBecomeSwipe(Platf
         return false;
 
     potentialSwipeDirection = tryingToSwipeBack ? SwipeDirection::Back : SwipeDirection::Forward;
-    return protectedViewGestureController()->canSwipeInDirection(potentialSwipeDirection, DeferToConflictingGestures::No);
+    return protect(m_viewGestureController)->canSwipeInDirection(potentialSwipeDirection, DeferToConflictingGestures::No);
 }
 
 bool ViewGestureController::PendingSwipeTracker::handleEvent(PlatformScrollEvent event)
@@ -570,7 +570,7 @@ bool ViewGestureController::PendingSwipeTracker::tryToStartSwipe(PlatformScrollE
     }
 
     if (std::abs(m_cumulativeDelta.width()) >= minimumHorizontalSwipeDistance)
-        protectedViewGestureController()->startSwipeGesture(event, m_direction);
+        protect(m_viewGestureController)->startSwipeGesture(event, m_direction);
     else
         m_state = State::InsufficientMagnitude;
 
@@ -675,7 +675,7 @@ void ViewGestureController::willEndSwipeGesture(WebBackForwardListItem& targetIt
     m_didStartProvisionalLoad = false;
     m_pendingNavigation = page->goToBackForwardItem(targetItem);
 
-    RefPtr currentItem = Ref { page->backForwardList() }->currentItem();
+    RefPtr currentItem = protect(page->backForwardList())->currentItem();
     // The main frame will not be navigated so hide the snapshot right away.
     if (currentItem && currentItem->itemIsClone(targetItem)) {
         removeSwipeSnapshot();
@@ -746,7 +746,7 @@ void ViewGestureController::requestRenderTreeSizeNotificationIfNeeded()
     if (page->provisionalPageProxy())
         page->provisionalPageProxy()->send(Messages::ViewGestureGeometryCollector::SetRenderTreeSizeNotificationThreshold(threshold));
     else
-        page->protectedLegacyMainFrameProcess()->send(Messages::ViewGestureGeometryCollector::SetRenderTreeSizeNotificationThreshold(threshold), page->webPageIDInMainFrameProcess());
+        protect(page->legacyMainFrameProcess())->send(Messages::ViewGestureGeometryCollector::SetRenderTreeSizeNotificationThreshold(threshold), page->webPageIDInMainFrameProcess());
 }
 
 FloatPoint ViewGestureController::scaledMagnificationOrigin(FloatPoint origin, double scale)
@@ -779,7 +779,7 @@ void ViewGestureController::prepareMagnificationGesture(FloatPoint origin)
         return;
 
     m_magnification = page->pageScaleFactor();
-    page->protectedLegacyMainFrameProcess()->send(Messages::ViewGestureGeometryCollector::CollectGeometryForMagnificationGesture(), page->webPageIDInMainFrameProcess());
+    protect(page->legacyMainFrameProcess())->send(Messages::ViewGestureGeometryCollector::CollectGeometryForMagnificationGesture(), page->webPageIDInMainFrameProcess());
 
     m_initialMagnification = m_magnification;
     m_initialMagnificationOrigin = FloatPoint(origin);

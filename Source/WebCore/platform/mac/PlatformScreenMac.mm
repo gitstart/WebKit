@@ -98,13 +98,14 @@ static RetainPtr<NSWindow> protectedWindow(Widget* widget)
     return window(widget);
 }
 
+// If the widget is in a window, use that, otherwise use the display ID from the host window.
+// First case is for when the NSWindow is in the same process, second case for when it's not.
 static NSScreen *screen(Widget* widget)
 {
     ASSERT(hasProcessPrivilege(ProcessPrivilege::CanCommunicateWithWindowServer));
-    // If the widget is in a window, use that, otherwise use the display ID from the host window.
-    // First case is for when the NSWindow is in the same process, second case for when it's not.
-    if (RetainPtr<NSScreen> screenFromWindow = [protectedWindow(widget) screen])
-        return screenFromWindow.unsafeGet();
+    if (NSScreen *screenFromWindow = [protectedWindow(widget) screen])
+        return screenFromWindow;
+
     return screen(displayID(widget));
 }
 
@@ -201,7 +202,7 @@ ScreenProperties collectScreenProperties()
         screenData.currentEDRHeadroom = [screen maximumExtendedDynamicRangeColorComponentValue];
 #endif
 
-        screenProperties.screenDataMap.set(displayID, WTFMove(screenData));
+        screenProperties.screenDataMap.set(displayID, WTF::move(screenData));
         if (!screenProperties.primaryDisplayID)
             screenProperties.primaryDisplayID = displayID;
     }

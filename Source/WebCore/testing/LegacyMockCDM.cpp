@@ -102,26 +102,26 @@ void LegacyMockCDM::deref() const
 
 static Uint8Array* initDataPrefix()
 {
-    const unsigned char prefixData[] = { 'm', 'o', 'c', 'k' };
-    static Uint8Array& prefix { Uint8Array::create(prefixData, std::size(prefixData)).leakRef() };
+    static constexpr std::array<uint8_t, 4> prefixData { 'm', 'o', 'c', 'k' };
+    static NeverDestroyed<Ref<Uint8Array>> prefix { Uint8Array::create(prefixData) };
 
-    return &prefix;
+    return prefix->ptr();
 }
 
 static Uint8Array* keyPrefix()
 {
-    static const unsigned char prefixData[] = {'k', 'e', 'y'};
-    static Uint8Array& prefix { Uint8Array::create(prefixData, std::size(prefixData)).leakRef() };
+    static constexpr std::array<uint8_t, 3> prefixData { 'k', 'e', 'y' };
+    static NeverDestroyed<Ref<Uint8Array>> prefix { Uint8Array::create(prefixData) };
 
-    return &prefix;
+    return prefix->ptr();
 }
 
 static Uint8Array* keyRequest()
 {
-    static const unsigned char requestData[] = {'r', 'e', 'q', 'u', 'e', 's', 't'};
-    static Uint8Array& request { Uint8Array::create(requestData, std::size(requestData)).leakRef() };
+    static constexpr std::array<uint8_t, 7> requestData { 'r', 'e', 'q', 'u', 'e', 's', 't' };
+    static NeverDestroyed<Ref<Uint8Array>> request { Uint8Array::create(requestData) };
 
-    return &request;
+    return request->ptr();
 }
 
 static String generateSessionId()

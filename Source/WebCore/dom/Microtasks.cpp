@@ -30,9 +30,9 @@
 #include "RejectedPromiseTracker.h"
 #include "ScriptExecutionContext.h"
 #include "WorkerGlobalScope.h"
-#include <JavaScriptCore/CatchScope.h>
 #include <JavaScriptCore/MicrotaskQueueInlines.h>
 #include <JavaScriptCore/ScriptProfilingScope.h>
+#include <JavaScriptCore/TopExceptionScope.h>
 #include <JavaScriptCore/VMEntryScopeInlines.h>
 #include <wtf/MainThread.h>
 #include <wtf/NeverDestroyed.h>
@@ -66,12 +66,12 @@ MicrotaskQueue::~MicrotaskQueue() = default;
 
 void MicrotaskQueue::append(JSC::QueuedTask&& task)
 {
-    m_microtaskQueue.enqueue(WTFMove(task));
+    m_microtaskQueue.enqueue(WTF::move(task));
 }
 
 void MicrotaskQueue::runJSMicrotaskWithDebugger(JSC::JSGlobalObject* globalObject, JSC::VM& vm, JSC::QueuedTask& task)
 {
-    auto scope = DECLARE_CATCH_SCOPE(vm);
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
 
     auto identifier = task.identifier();
     if (auto* debugger = globalObject->debugger(); debugger && identifier) [[unlikely]] {
@@ -95,8 +95,8 @@ void MicrotaskQueue::runJSMicrotaskWithDebugger(JSC::JSGlobalObject* globalObjec
 
 void MicrotaskQueue::runJSMicrotask(JSC::JSGlobalObject* globalObject, JSC::VM& vm, JSC::QueuedTask& task)
 {
-    auto scope = DECLARE_CATCH_SCOPE(vm);
-    JSC::runInternalMicrotask(globalObject, task.job(), task.arguments());
+    auto scope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
+    JSC::runInternalMicrotask(globalObject, task.job(), task.payload(), task.arguments());
     if (scope.exception()) [[unlikely]] {
         auto* exception = scope.exception();
         if (!scope.clearExceptionExceptTermination()) [[unlikely]]
@@ -115,7 +115,7 @@ void MicrotaskQueue::performMicrotaskCheckpoint()
     SetForScope change(m_performingMicrotaskCheckpoint, true);
     Ref vm = this->vm();
     JSC::JSLockHolder locker(vm);
-    auto catchScope = DECLARE_CATCH_SCOPE(vm);
+    auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
     {
         SUPPRESS_UNCOUNTED_ARG auto& data = threadGlobalDataSingleton();
         auto* previousState = data.currentState();
@@ -164,12 +164,12 @@ void MicrotaskQueue::performMicrotaskCheckpoint()
     if (!vm->executionForbidden()) {
         auto checkpointTasks = std::exchange(m_checkpointTasks, { });
         for (auto& checkpointTask : checkpointTasks) {
-            auto* group = checkpointTask->group();
+            CheckedPtr group = checkpointTask->group();
             if (!group || group->isStoppedPermanently())
                 continue;
 
             if (group->isSuspended()) {
-                m_checkpointTasks.append(WTFMove(checkpointTask));
+                m_checkpointTasks.append(WTF::move(checkpointTask));
                 continue;
             }
 
@@ -183,7 +183,7 @@ void MicrotaskQueue::performMicrotaskCheckpoint()
     Ref { *m_eventLoop }->forEachAssociatedContext([vm = vm.copyRef()](auto& context) {
         if (vm->executionForbidden()) [[unlikely]]
             return;
-        auto catchScope = DECLARE_CATCH_SCOPE(vm);
+        auto catchScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
         if (CheckedPtr tracker = context.rejectedPromiseTracker())
             tracker->processQueueSoon();
         catchScope.clearExceptionExceptTermination();
@@ -195,7 +195,7 @@ void MicrotaskQueue::performMicrotaskCheckpoint()
 
 void MicrotaskQueue::addCheckpointTask(std::unique_ptr<EventLoopTask>&& task)
 {
-    m_checkpointTasks.append(WTFMove(task));
+    m_checkpointTasks.append(WTF::move(task));
 }
 
 bool MicrotaskQueue::hasMicrotasksForFullyActiveDocument() const

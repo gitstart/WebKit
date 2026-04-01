@@ -47,7 +47,7 @@
 #import "LocalFrameInlines.h"
 #import "Logging.h"
 #import "NodeRenderStyle.h"
-#import "RenderStyleInlines.h"
+#import "RenderStyle+GettersInlines.h"
 #import "RenderedDocumentMarker.h"
 #import "TextAnimationTypes.h"
 #import "TextIterator.h"
@@ -193,7 +193,7 @@ static RetainPtr<NSAttributedString> attributedStringApplyingBodyTextColorIfNece
 
     CheckedRef style = renderer->style();
 
-    Color textColor = style->visitedDependentColorWithColorFilter(CSSPropertyColor);
+    auto textColor = style->visitedDependentColorApplyingColorFilter();
     if (!textColor.isVisible())
         return attributedString;
 
@@ -581,7 +581,7 @@ void WritingToolsController::smartReplySessionDidReceiveTextWithReplacementRange
     Ref currentCommand = state->reappliedCommands.takeLast();
 
     // The prior replacement command must be undone in such a way as to not have it be added to the undo stack.
-    currentCommand->ensureComposition().unapply(EditCommandComposition::AddToUndoStack::No);
+    currentCommand->ensureComposition()->unapply(EditCommandComposition::AddToUndoStack::No);
 
     // Now that the prior replacement command is undone, remove and replace it with a fresh command, with the same range.
     // The same range is used since it represents the end of the previous command, and is only updated again when `finished` is `true`,
@@ -665,7 +665,7 @@ void WritingToolsController::compositionSessionDidReceiveTextWithReplacementRang
     Ref currentCommand = state->reappliedCommands.takeLast();
 
     // The prior replacement command must be undone in such a way as to not have it be added to the undo stack
-    currentCommand->ensureComposition().unapply(EditCommandComposition::AddToUndoStack::No);
+    currentCommand->ensureComposition()->unapply(EditCommandComposition::AddToUndoStack::No);
 
     // Now that the prior replacement command is undone, remove and replace it with a fresh command, with the same range.
     // The same range is used since it represents the end of the previous command, and is only updated again when `finished` is `true`,
@@ -782,7 +782,7 @@ void WritingToolsController::compositionSessionDidReceiveTextWithReplacementRang
     if (isZeroToOneCompositionType(session.compositionType))
         finished = false;
 
-    m_page->chrome().client().addSourceTextAnimationForActiveWritingToolsSession(sourceAnimationUUID, destinationAnimationUUID, finished, range, attributedText.string, WTFMove(addDestinationTextAnimation));
+    m_page->chrome().client().addSourceTextAnimationForActiveWritingToolsSession(sourceAnimationUUID, destinationAnimationUUID, finished, range, attributedText.string, WTF::move(addDestinationTextAnimation));
 }
 
 template<>
@@ -841,7 +841,7 @@ void WritingToolsController::writingToolsSessionDidReceiveAction<WritingTools::S
         auto newData = DocumentMarker::WritingToolsTextSuggestionData { currentText, oldData.suggestionID, newState, oldData.decoration };
         auto newOffsetRange = OffsetRange { startOffset, endOffset + previousText.length() - currentText.length() };
 
-        markers.addMarker(node, DocumentMarker { DocumentMarkerType::WritingToolsTextSuggestion, newOffsetRange, WTFMove(newData) });
+        markers.addMarker(node, DocumentMarker { DocumentMarkerType::WritingToolsTextSuggestion, newOffsetRange, WTF::move(newData) });
     }
 }
 
@@ -1057,7 +1057,7 @@ void WritingToolsController::updateStateForSelectedSuggestionIfNeeded()
 static bool appliedCommandIsWritingToolsCommand(const Vector<Ref<WritingToolsCompositionCommand>>& commands, EditCommandComposition* composition)
 {
     return std::ranges::any_of(commands, [composition](const auto& command) {
-        return &command->ensureComposition() == composition;
+        return command->ensureComposition().ptr() == composition;
     });
 }
 
@@ -1144,7 +1144,7 @@ void WritingToolsController::showOriginalCompositionForSession()
         auto oldSize = stack.size();
 
         // Each call to `unapply` indirectly results in a call to `respondToUnappliedEditing`, which decrements the size of the stack.
-        stack.last()->ensureComposition().unapply();
+        stack.last()->ensureComposition()->unapply();
 
         RELEASE_ASSERT(oldSize > stack.size());
     }
@@ -1166,7 +1166,7 @@ void WritingToolsController::showRewrittenCompositionForSession()
         auto oldSize = stack.size();
 
         // Each call to `reapply` indirectly results in a call to `respondToReappliedEditing`, which decrements the size of the stack.
-        stack.last()->ensureComposition().reapply();
+        stack.last()->ensureComposition()->reapply();
 
         RELEASE_ASSERT(oldSize > stack.size());
     }
@@ -1316,7 +1316,7 @@ void WritingToolsController::replaceContentsOfRangeInSession(CompositionState& s
     auto matchStyle = hasAttributes ? WritingToolsCompositionCommand::MatchStyle::No : WritingToolsCompositionCommand::MatchStyle::Yes;
 
     EditingScope editingScope { *document() };
-    state.reappliedCommands.last()->replaceContentsOfRangeWithFragment(WTFMove(fragment), range, matchStyle, commandState);
+    state.reappliedCommands.last()->replaceContentsOfRangeWithFragment(WTF::move(fragment), range, matchStyle, commandState);
 }
 
 void WritingToolsController::commitComposition(CompositionState& state, Document& document)

@@ -89,9 +89,9 @@ bool ApplicationManifestLoader::startLoading()
         CachingPolicy::AllowCaching);
     options.destination = FetchOptions::Destination::Manifest;
     options.sameOriginDataURLFlag = SameOriginDataURLFlag::Set;
-    CachedResourceRequest request(WTFMove(resourceRequest), options);
+    CachedResourceRequest request(WTF::move(resourceRequest), options);
 
-    auto cachedResource = frame->document()->protectedCachedResourceLoader()->requestApplicationManifest(WTFMove(request));
+    auto cachedResource = protect(frame->document()->cachedResourceLoader())->requestApplicationManifest(WTF::move(request));
     m_resource = cachedResource.value_or(nullptr);
     if (CachedResourceHandle resource = m_resource)
         resource->addClient(*this);
@@ -115,7 +115,7 @@ std::optional<ApplicationManifest>& ApplicationManifestLoader::processManifest()
         if (CachedResourceHandle resource = m_resource) {
             auto manifestURL = m_url;
             auto documentURL = m_documentLoader->url();
-            auto frame = m_documentLoader->frame();
+            RefPtr frame = m_documentLoader->frame();
             RefPtr document = frame ? frame->document() : nullptr;
             m_processedManifest = resource->process(manifestURL, documentURL, document.get());
         }
